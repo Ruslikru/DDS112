@@ -1,0 +1,26 @@
+node_modules/
+.venv/
+dist/
+__pycache__/
+.pytest_cache/
+.env
+var/
+output/
+tmp/
+*.pyc
+.playwright-cli/
+backups/
+*.tsbuildinfo
+
+build/
+release/
+packaging/THIRD_PARTY_NOTICES.txt
+local_ai/models/*
+local_ai/runtime/*
+local_ai/downloads/*
+local_ai/data/
+local_ai/*-results.json
+local_ai/benchmark-*.json
+Dispetcher112/
+Изображение Codex *.gif
+local_ai/voice/

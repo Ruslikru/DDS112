@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1644 804" preserveAspectRatio="xMidYMid slice">
+<defs><linearGradient id="sky"><stop stop-color="#88b9d1"/><stop offset="1" stop-color="#69add0"/></linearGradient></defs>
+<path fill="url(#sky)" d="M0 0h1644v804H0z"/>
+<g fill="#5687a7"><path d="M0 76Q0 15 45 0h38v804H0z"/><path d="M194 0h75l15 804H178z"/><path d="M331 133h57v671h-57z"/><path d="M418 244l52-18v578h-52z"/><path d="M488 396h83v408h-83z"/><path d="M622 288l70-29v545h-70z"/><path d="M872 599l30-14v219h-30z"/></g>
+<g fill="#afd5e7"><path d="M46 0q52-12 82 15l-2 789H46z"/><path d="M272 0h65v804h-65z"/><path d="M387 143h18v661h-18z"/><path d="M466 226l28 7v571h-28z"/><path d="M569 413l22 7v384h-22z"/><path d="M691 261l32 8v535h-32z"/><path d="M724 269h49v535h-49z"/><path d="M904 585l27 5v214h-27z"/></g>
+<g fill="#7faccc"><path d="M0 288l111-28 33 544H0z"/><path d="M339 326l41-6 13 484h-54z"/><path d="M439 306l56 7v117l-56-7z"/><path d="M434 434l60-4v115l-60 7z"/><path d="M433 562l62-10v125l-62 8z"/><path d="M900 601h45v203h-45z"/></g>
+<g fill="#d8d9d9"><path d="M0 755h86v49H0z"/><path d="M86 672h36v-21h135v153H86z"/><path d="M275 750h53v54h-53z"/><path d="M347 756h157v48H347z"/><path d="M973 763h39v-65h83v-16h40v-26h67v148H973z"/><path d="M1287 768h63v-12h61v48h-124z"/></g>
+<g fill="#f1f2f2"><path d="M241 666l55 5v133h-55z"/><path d="M330 767h67v37h-67z"/><path d="M495 765h166v39H495z"/><path d="M1028 699h66v105h-66z"/><path d="M1201 665l33 10v7l105 7v115h-138z"/><path d="M1410 759l41 10v9l63 3v23h-104z"/></g>
+<g fill="#b8baba"><path d="M99 688h128v12H99zM99 713h128v12H99zM99 738h128v12H99zM99 763h128v12H99zM99 788h128v12H99zM1136 711h118v13h-118zM1136 739h118v13h-118zM1136 767h118v13h-118zM1136 795h118v9h-118z"/></g>
+<g fill="#dcdede"><path d="M1044 715h32v5h-32zM1044 729h32v5h-32zM1044 743h32v5h-32zM1044 757h32v5h-32zM1044 771h32v5h-32zM404 776h87v5h-87zM510 785h135v5H510z"/></g>
+<g transform="translate(580 126)"><path d="M-18 0h118" stroke="#638a9c" stroke-width="3"/><path d="M45 0v10" stroke="#5b8299" stroke-width="3"/><path d="M7 20q10-18 36-14l48 8 27-5-2 8-27 4-12 14H1z" fill="#f1f2f2"/><path d="M13 16h18l-6 14H5zM37 13h23l-8 17H30z" fill="#6da3bb"/><path d="M5 34h60l-9 8H-1z" fill="#f26432"/><path d="M12 43v5h46M115 10l-3-10" fill="none" stroke="#5b7580" stroke-width="3"/></g>
+</svg>

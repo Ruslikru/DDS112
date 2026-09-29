@@ -1,0 +1,12 @@
+fastapi>=0.115,<1
+uvicorn>=0.34,<1
+sqlalchemy>=2.0,<3
+psycopg[binary]>=3.2,<4
+argon2-cffi>=23,<26
+python-multipart>=0.0.20,<1
+pytest>=8,<10
+httpx>=0.28,<1
+openpyxl>=3.1,<4
+alembic>=1.15,<2
+pyspellchecker==0.8.3
+reportlab>=4.4,<5

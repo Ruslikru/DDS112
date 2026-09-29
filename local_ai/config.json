@@ -1,0 +1,6 @@
+{
+  "mode": "cpu",
+  "threads": 6,
+  "context": 4096,
+  "model": "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+}

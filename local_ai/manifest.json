@@ -1,0 +1,24 @@
+{
+  "model": "Qwen3-4B-Instruct-2507",
+  "quantization": "Q4_K_M",
+  "license": "Apache-2.0",
+  "source": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507",
+  "artifact_source": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF",
+  "revision": "a06e946bb6b655725eafa393f4a9745d460374c9",
+  "file": "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+  "bytes": 2497281120,
+  "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+  "alternative_models": [
+    {
+      "model": "Qwen3-0.6B",
+      "file": "models/Qwen3-0.6B-Q4_K_M.gguf",
+      "bytes": 396705472,
+      "sha256": "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a",
+      "source": "https://huggingface.co/Qwen/Qwen3-0.6B",
+      "artifact_source": "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF",
+      "revision": "50968a4468ef4233ed78cd7c3de230dd1d61a56b"
+    }
+  ],
+  "runtime": "llama.cpp b11149",
+  "runtime_source": "https://github.com/ggml-org/llama.cpp/releases/tag/b11149"
+}
