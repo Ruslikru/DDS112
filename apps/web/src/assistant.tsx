@@ -7,8 +7,11 @@ import {record,hasVoiceBridge,serverTranscribe} from './voice';
 
 /** Teacher assistant: text commands parsed by server rules. Reading and navigation run at once,
  *  changing commands (tickets) go through a slot form and confirmation cards with a server token.
- *  The log and the open slot form live in TeacherAssistant, so closing the window keeps them. */
+ *  The log and the open slot form live in TeacherAssistant, so closing the window keeps them.
+ *  The window is a docked panel in the bottom-right corner without a shade: the page behind stays
+ *  usable and a navigation command keeps the panel open; whether it is open survives a reload. */
 const TOGGLE='training112:assistant-toggle';
+const OPEN_KEY='training112:assistant-open';
 /** Push-to-talk: recording runs while the microphone button or Ctrl+Space is held and is sent on release. */
 const VOICE_START='training112:assistant-voice-start';
 const VOICE_STOP='training112:assistant-voice-stop';
@@ -44,7 +47,8 @@ export function AssistantButton(){
 }
 
 export function TeacherAssistant(){
- const u=useContext(UserContext),[open,setOpen]=useState(false);
+ const u=useContext(UserContext),[open,setOpen]=useState(()=>{try{return localStorage.getItem(OPEN_KEY)==='1';}catch{return false;}});
+ useEffect(()=>{try{localStorage.setItem(OPEN_KEY,open?'1':'0');}catch{}},[open]);
  const [messages,setMessages]=useState<Message[]>([WELCOME]),[dialog,setDialog]=useState<Dialog>(null);
  /** The phrase that opened the current slot form (for «Составить заново») and the last create confirmation (for «Сгенерировать заново»). */
  const origin=useRef(''),creation=useRef<Confirm|null>(null),autoRecord=useRef(false),holding=useRef(false);
@@ -84,7 +88,8 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  useEffect(()=>{log.current?.scrollTo({top:log.current.scrollHeight});},[messages,busy]);
  const push=(message:Message)=>setMessages(list=>[...list,message]);
  const focus=()=>setTimeout(()=>input.current?.focus(),0);
- const go=(to:string)=>{navigate(to);onClose();};
+ /** Navigation keeps the panel open: the page changes behind it and the answer stays in the log. */
+ const go=(to:string)=>{navigate(to);focus();};
  const finish=(action:Obj|undefined)=>{
   if(action?.kind==='navigate'){go(action.to);return true;}
   if(action?.kind==='close'){onClose();return true;}
@@ -192,10 +197,10 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const cancel=()=>{setDialog(null);creation.current=null;push({who:'assistant',text:'Отменено. Ничего не изменено.'});focus();};
  const clear=()=>{setMessages([WELCOME]);setDialog(null);creation.current=null;focus();};
  const adjust=()=>{push({who:'assistant',text:'Напишите, что поменять: например «сложность 4», «режим 112» или «без пострадавших».'});focus();};
- const openWizard=(slots:Obj)=>{navigate('/tickets',{state:{wizard:{own_service:slots.own_service,services:slots.services,incident_type:slots.incident_type,mode:slots.mode,difficulty_stars:slots.difficulty,victims_state:slots.victims,victims_count:slots.victims_count||1,traits:slots.traits||[]}}});onClose();};
+ const openWizard=(slots:Obj)=>{navigate('/tickets',{state:{wizard:{own_service:slots.own_service,services:slots.services,incident_type:slots.incident_type,mode:slots.mode,difficulty_stars:slots.difficulty,victims_state:slots.victims,victims_count:slots.victims_count||1,traits:slots.traits||[]}}});focus();};
  const last=messages.length-1;
  const busyText=busy==='generate'?'Создаю черновик… Модель работает локально, это может занять до минуты.':busy==='run'?'Выполняю…':'Разбираю команду…';
- return <ArmDialog title="Ассистент" className="assistant-shade" onClose={onClose}>
+ return <ArmDialog title="Ассистент" className="assistant-shade" modal={false} onClose={onClose}>
   <div className="assistant-log" ref={log} aria-live="polite">
    {messages.map((message,index)=><div key={index} className={'assistant-message '+message.who+(message.error?' error':'')}>
     <p>{message.text}</p>

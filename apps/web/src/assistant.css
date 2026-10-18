@@ -1,5 +1,9 @@
 .arm-console nav .assistant-button{background:#2f5f8a;border-color:#4d86b7}.arm-console nav .assistant-button:hover{background:#3a74a8}
-.assistant-shade{z-index:2500}.assistant-shade .arm-dialog{width:min(680px,94vw);max-height:84dvh;display:flex;flex-direction:column}.assistant-shade .arm-dialog>header{margin-bottom:12px}
+/* Docked panel: no shade, the page behind stays clickable; only the panel itself takes pointer events. */
+.assistant-shade{z-index:2500;background:transparent;pointer-events:none;align-items:flex-end;justify-content:flex-end;padding:0 16px 16px 0}
+.assistant-shade .arm-dialog{pointer-events:auto;width:min(460px,calc(100vw - 32px));max-height:min(76dvh,calc(100dvh - 32px));display:flex;flex-direction:column;padding:14px 16px 12px;border:1px solid #9fb3c0;box-shadow:0 8px 32px #0005}
+.assistant-shade .arm-dialog>header{margin-bottom:8px}.assistant-shade .arm-dialog h2{font-size:19px}
+@media(max-width:850px){.assistant-shade{padding:0}.assistant-shade .arm-dialog{width:100vw;max-height:88dvh;border-width:1px 0 0}}
 .assistant-log{flex:1;min-height:240px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px;background:#f4f6f7;border:1px solid #d6dde1}
 .assistant-message{max-width:88%;padding:8px 12px;font-size:14px;line-height:1.45}.assistant-message p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .assistant-message.user{align-self:flex-end;background:#dbe8f5;color:#1b2f44}.assistant-message.assistant{align-self:flex-start;background:#fff;border:1px solid #d6dde1}.assistant-message.error{background:#fdecea;border-color:#f1b3ad;color:#7a1f16}
