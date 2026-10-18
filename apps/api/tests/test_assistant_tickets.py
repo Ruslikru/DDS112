@@ -62,9 +62,9 @@ def test_slot_form_asks_one_question_at_a_time(teacher):
     assert r['slots']['difficulty']==4 and r['missing'][0]['slot']=='victims'
     r=follow(teacher,r,'есть')
     assert r['slots']['victims']=='yes' and r['missing'][0]['slot']=='victims_count'
-    r=follow(teacher,r,'трое')
+    r=follow(teacher,r,'много')
     assert r['missing'][0]['slot']=='victims_count','an unreadable answer repeats the same question'
-    r=follow(teacher,r,'3')
+    r=follow(teacher,r,'трое')
     assert r['confirm_required'] and r['slots']['victims_count']==3 and 'оператор 112' in r['preview']
     done=run(teacher,r);assert done.status_code==200,done.text
     version_id=int(done.json()['action']['to'].rsplit('/',1)[1])
