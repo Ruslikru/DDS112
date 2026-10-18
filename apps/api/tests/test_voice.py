@@ -71,3 +71,21 @@ def test_queue_restart_preserves_ready_and_requeues_interrupted(monkeypatch,tmp_
             assert db.get(voice.VoiceJob,ready_id).audio_id==audio_id
         q=c.get('/api/voice/queue').json()
         assert q['pending']>=1 and q['ready']>=1
+
+def test_retry_failed_requeues_all_failed_for_staff():
+    from apps.api.app import voice
+    with TestClient(app) as c:
+        with SessionLocal() as db:
+            ready=db.query(voice.VoiceJob).filter(voice.VoiceJob.status=='ready').first()
+            spec={'owner':ready.data['owner'],'speaker_id':'brigade','gender':'male','settings':voice.runtime.settings()['pre']}
+            for i in range(3):db.add(voice.VoiceJob(id=f'failed-{i}',status='failed',error='Голосовой модуль не запускается',data={**spec,'text':f'Реплика {i}'}))
+            ready_id=ready.id;db.commit()
+        login(c,'student')
+        assert post(c,'/voice/jobs/retry-failed').status_code==403
+        login(c,'teacher')
+        assert len(c.get('/api/voice/queue').json()['failed'])==3
+        assert post(c,'/voice/jobs/retry-failed').json()['count']==3
+        with SessionLocal() as db:
+            assert all(db.get(voice.VoiceJob,f'failed-{i}').status=='pending' and db.get(voice.VoiceJob,f'failed-{i}').error=='' for i in range(3))
+            assert db.get(voice.VoiceJob,ready_id).status=='ready'
+        assert post(c,'/voice/jobs/retry-failed').json()['count']==0

@@ -7,7 +7,7 @@ import shutil
 import threading
 from fastapi import APIRouter,Depends,Request
 from fastapi.responses import FileResponse
-from sqlalchemy import String,JSON,Text,select
+from sqlalchemy import String,JSON,Text,select,update
 from sqlalchemy.orm import Mapped,mapped_column
 from .db import Base,DATA,SessionLocal,TicketVersion,Media
 from . import main as m
@@ -192,6 +192,11 @@ def jobs(data:dict,u=Depends(m.current),db=Depends(m.getdb)):
     m.staff(u)
     ids=data.get('keys',[])[:500]
     return [{'id':j.id,'status':j.status,'error':j.error,'audio_id':j.audio_id,'text':j.data['text'],'speaker_id':j.data['speaker_id'],'duration':j.data.get('duration')} for j in db.scalars(select(VoiceJob).where(VoiceJob.id.in_(ids)))]
+
+@router.post('/jobs/retry-failed')
+def retry_failed(u=Depends(m.current),db=Depends(m.getdb)):
+    m.staff(u);n=db.execute(update(VoiceJob).where(VoiceJob.status=='failed').values(status='pending',error='')).rowcount;db.commit()
+    return {'ok':True,'count':n}
 
 @router.post('/jobs/{id}/retry')
 def retry(id:str,u=Depends(m.current),db=Depends(m.getdb)):

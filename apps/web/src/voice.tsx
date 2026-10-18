@@ -20,6 +20,12 @@ async function voiceBridge(){
  if(!native?.voice_transcribe||!native?.voice_speak)throw Error('На этом ПК запущена старая версия приложения без голосового модуля. Откройте актуальную сборку на этом рабочем месте.');
  return native;
 }
+// One shared error is shown once above the list instead of in every row.
+const sameError=(failed:Obj[])=>failed.length>1&&failed.every(j=>j.error===failed[0].error)?failed[0].error||'':'';
+function RetryAll({failed,error,onDone}:{failed:Obj[],error:string,onDone:()=>Promise<void>}){
+ if(failed.length<2)return null;
+ return <><Notice>{error&&'Не удалось озвучить '+failed.length+' записей: '+error}</Notice><button onClick={async()=>{await api('/voice/jobs/retry-failed','POST');await onDone();}}>Повторить все ({failed.length})</button></>;
+}
 export function VoiceDraft({data}:{data:Obj}){
  const [jobs,setJobs]=useState<Obj[]>([]),[error,setError]=useState('');
  const signature=JSON.stringify(data);
@@ -29,8 +35,9 @@ export function VoiceDraft({data}:{data:Obj}){
    if(!closed){setError('');poll();}
  }catch(e:any){if(!closed)setError(e.message);}},2500);return()=>{closed=true;clearTimeout(start);clearTimeout(timer);};},[signature]);
  if(!jobs.length&&!error)return null;
- const pending=jobs.some(j=>['pending','running'].includes(j.status));
- return <aside className="voice-draft" aria-live="polite"><details><summary>{pending?'Идёт генерация звуков для сообщений руководителей бригад':'Звуки сообщений бригад'} · {jobs.filter(j=>j.status==='ready').length}/{jobs.length}</summary><Notice>{error}</Notice>{jobs.map(j=><div key={j.id}><p>{j.text}</p>{j.audio_id?<audio controls preload="none" src={'/api/media/'+j.audio_id}/>:<span>{j.status==='failed'?j.error:'Готовится…'}</span>}{j.status==='failed'&&<button onClick={async()=>{await api('/voice/jobs/'+j.id+'/retry','POST');setJobs(await api('/voice/jobs','POST',{keys:jobs.map(x=>x.id)}));setError('');}}>Повторить</button>}</div>)}</details></aside>;
+ const pending=jobs.some(j=>['pending','running'].includes(j.status)),failed=jobs.filter(j=>j.status==='failed'),common=sameError(failed);
+ const reload=async()=>{setJobs(await api('/voice/jobs','POST',{keys:jobs.map(x=>x.id)}));setError('');};
+ return <aside className="voice-draft" aria-live="polite"><details><summary>{pending?'Идёт генерация звуков для сообщений руководителей бригад':'Звуки сообщений бригад'} · {jobs.filter(j=>j.status==='ready').length}/{jobs.length}</summary><Notice>{error}</Notice><RetryAll failed={failed} error={common} onDone={reload}/>{jobs.map(j=><div key={j.id}><p>{j.text}</p>{j.audio_id?<audio controls preload="none" src={'/api/media/'+j.audio_id}/>:<span>{j.status==='failed'?common?'Не озвучено':j.error:'Готовится…'}</span>}{j.status==='failed'&&<button onClick={async()=>{await api('/voice/jobs/'+j.id+'/retry','POST');await reload();}}>Повторить</button>}</div>)}</details></aside>;
 }
 
 async function record(onDone:(text:string)=>void,onError:(text:string)=>void){
@@ -103,7 +110,8 @@ export function VoiceQueue(){
  const [q,setQ]=useState<Obj|null>(null);
  useEffect(()=>{let live=true;const poll=()=>api('/voice/queue').then(v=>{if(live)setQ(v);}).catch(()=>{});poll();const timer=setInterval(poll,3000);return()=>{live=false;clearInterval(timer);};},[]);
  if(!q||!q.pending&&!q.failed.length)return null;
- return <aside className="voice-queue" role="status"><details><summary>{q.pending?'Генерируются голосовые сообщения':'Не удалось озвучить сообщения'} · готово {q.ready}/{q.total}</summary><p>Генерация продолжается после публикации. При следующем запуске готовые записи сохранятся, незавершённые будут продолжены.</p>{q.failed.map((j:Obj)=><div key={j.id}><p>{j.text}</p><small>{j.error}</small><button onClick={async()=>{await api('/voice/jobs/'+j.id+'/retry','POST');setQ(await api('/voice/queue'));}}>Повторить</button></div>)}</details></aside>;
+ const common=sameError(q.failed),reload=async()=>setQ(await api('/voice/queue'));
+ return <aside className="voice-queue" role="status"><details><summary>{q.pending?'Генерируются голосовые сообщения':'Не удалось озвучить сообщения'} · готово {q.ready}/{q.total}</summary><p>Генерация продолжается после публикации. При следующем запуске готовые записи сохранятся, незавершённые будут продолжены.</p><RetryAll failed={q.failed} error={common} onDone={reload}/>{q.failed.map((j:Obj)=><div key={j.id}><p>{j.text}</p>{!common&&<small>{j.error}</small>}<button onClick={async()=>{await api('/voice/jobs/'+j.id+'/retry','POST');await reload();}}>Повторить</button></div>)}</details></aside>;
 }
 
 export function DDSVoiceCall({disabled,contacts,contactId,service,textOnly=false,incomingState,onSelect,onSend}:{disabled:boolean,contacts:Obj[],contactId:string,service:string,textOnly?:boolean,incomingState?:string,onSelect:(id:string)=>void,onSend:(text:string,id:string)=>Promise<any>}){
