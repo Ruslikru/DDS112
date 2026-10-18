@@ -25,6 +25,9 @@ try {
     if ($LASTEXITCODE) { throw 'License notices failed' }
     & $python -m PyInstaller packaging/desktop.spec --noconfirm --distpath build/desktop-dist --workpath build/desktop-work
     if ($LASTEXITCODE) { throw 'PyInstaller failed' }
+    # The bundled speech Python must not import packages from the build PC.
+    & (Join-Path $projectRoot 'local_ai/voice/runtime/python.exe') -I scripts/check_voice_runtime.py
+    if ($LASTEXITCODE) { throw 'Voice runtime is not self-contained: run scripts/prepare-voice-runtime.ps1' }
     & $InnoCompiler packaging/installer.iss
     if ($LASTEXITCODE) { throw 'Installer compilation failed' }
     $versionLine=Get-Content packaging/installer.iss | Select-String '^#define AppVersion "([^"]+)"$'

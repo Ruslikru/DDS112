@@ -48,6 +48,8 @@ foreach ($item in @(
 foreach ($name in @('Qwen3-4B-Instruct-2507-Q4_K_M.gguf', 'Qwen3-0.6B-Q4_K_M.gguf')) {
     Copy-Required "local_ai/models/$name" (Join-Path $ai "models/$name")
 }
+& (Join-Path $ai 'voice/runtime/python.exe') -I (Join-Path $PSScriptRoot 'check_voice_runtime.py')
+if ($LASTEXITCODE) { throw 'Voice runtime is not self-contained: run scripts/prepare-voice-runtime.ps1' }
 Copy-Required 'packaging/QUICKSTART.txt' (Join-Path $destination 'README.txt')
 
 # The SFX opens a folder picker. It extracts the complete portable application
