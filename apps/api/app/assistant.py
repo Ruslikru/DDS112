@@ -55,6 +55,34 @@ def levenshtein(a,b):
         previous=row
     return previous[-1]
 
+"""Expected-words hint for Whisper: the command vocabulary, so short commands are not heard as look-alikes."""
+SPEECH_PROMPT=('Команды преподавателю тренажёра 112: открой журнал, проверка работ, рабочие места, режимы, студенты, аналитика, билеты, минивопросы, занятия, '
+               'кто сейчас в классе, где сидит ученик, найди последнюю работу, создай билет про пожар на три звезды для ДДС, в билете поменяй сложность, закрой.')
+"""Command words a recognised phrase is corrected to when a word is one typo away («белет» → «билет»). Normalized forms, ё as е."""
+VOCAB=set('''журнал журнала журнале проверка проверку проверки проверить проверь работ работы работу работа рабочие рабочих места место месте
+режимы режим режима студенты студентов студента студент ученики учеников ученика ученик аналитика аналитику статистика билет билеты билете билета билетов
+минивопросы вопросы вопрос занятия занятие занятий открой открыть покажи показать найди найти перейди последнюю последний попытку попытка карточку карточка
+рекомендации ошибки профиль результаты успеваемость классе класс онлайн сети сидит находится работает компьютер компьютером создай создать сделай новый
+сложность сложный сложного простой звезды звезд звезда пожар пожара переименуй поменяй измени назови закрой закрыть отмена отменить выполни выполнить сохрани сохранить
+пострадавших пострадавшие пострадавший служба службы службу служб диспетчер диспетчера оператор оператора норматив описание название признаки признак
+нужно надо какие какой сейчас уровень режиме подключен подключены подключи рабочий мастер версия версию критерии контакты события'''.split())
+def fix_keywords(text,protected=()):
+    """Replaces words one typo away from a command word (two for long words). Quoted text and protected words (student names) stay as written."""
+    protected={normalize(w) for w in protected}
+    def fix(word):
+        w=normalize(word)
+        if len(w)<4 or w in VOCAB or w in STOP or w in protected or w.isdigit():return word
+        limit=1 if len(w)<8 else 2
+        best=[v for v in VOCAB if abs(len(v)-len(w))<=limit and levenshtein(w,v)<=limit]
+        if not best:return word
+        best.sort(key=lambda v:(levenshtein(w,v),v[0]!=w[0],-len(v)))
+        # Two different candidates at the same distance: the word is left alone rather than guessed.
+        if len(best)>1 and levenshtein(w,best[0])==levenshtein(w,best[1]) and (best[0][0]!=w[0])==(best[1][0]!=w[0]) and best[0][:3]!=best[1][:3]:return word
+        value=best[0]
+        return value.capitalize() if word[:1].isupper() else value
+    parts=re.split(r'(«[^»]*»|"[^"]*")',text)
+    return ''.join(part if i%2 else re.sub(r'[А-Яа-яЁё]+',lambda m:fix(m.group(0)),part) for i,part in enumerate(parts))
+
 def resolve_students(db,u,query):
     """Visible students whose name matches the query: exact word, word stem (5 letters), then Levenshtein ≤2."""
     terms=[w for w in (query if isinstance(query,list) else words(query)) if w]
@@ -136,6 +164,9 @@ def check_token(u,intent,slots,token):
 def interpret(data:Interpret,u=Depends(m.current),db=Depends(m.getdb)):
     m.staff(u)
     text=clean_speech(data.text)
+    # Typos and mis-heard command words are corrected, but never the names of the teacher's students.
+    names=[w for s in db.scalars(select(User).where(User.role=='student',User.deleted_at.is_(None))) if m.visible(db,u,s.id) for w in re.split(r'[\s-]+',s.name) if w]
+    text=fix_keywords(text,names)
     intent=detect(text)
     query=student_query(text)
     dialog=data.dialog

@@ -7,13 +7,15 @@ from apps.api.app.assistant import clean_speech
 
 def test_transcribe_route_uses_runtime_and_requires_staff(monkeypatch):
     seen=[]
-    def fake(content):seen.append(content);return {'text':' Покажи журнал. ','seconds':.2,'model':'tiny'}
+    def fake(content,**options):seen.append((content,options));return {'text':' Покажи журнал. ','seconds':.2,'model':'tiny'}
     monkeypatch.setattr(voice.runtime,'transcribe',fake)
     audio=base64.b64encode(b'webm-bytes').decode()
     with TestClient(app) as c:
         login(c,'teacher')
         r=post(c,'/voice/transcribe',{'audio':audio});assert r.status_code==200,r.text
-        assert r.json()=={'seconds':.2,'model':'tiny','text':'Покажи журнал.'} and seen==[audio]
+        assert r.json()=={'seconds':.2,'model':'tiny','text':'Покажи журнал.'}
+        # The assistant asks for the bigger model and hints the command vocabulary, so «билет» is not heard as «белет».
+        assert len(seen)==1 and seen[0][0]==audio and seen[0][1]['model']=='base' and 'билеты' in seen[0][1]['prompt']
         assert post(c,'/voice/transcribe',{'audio':''}).status_code==422
         post(c,'/logout');login(c,'student')
         assert post(c,'/voice/transcribe',{'audio':audio}).status_code==403
@@ -23,13 +25,13 @@ def test_transcribe_length_limit_and_missing_module(monkeypatch):
         login(c,'teacher')
         r=post(c,'/voice/transcribe',{'audio':'A'*16000001})
         assert r.status_code==400 and 'слишком длинная' in r.json()['detail']
-        monkeypatch.setattr(voice.runtime,'transcribe',lambda content:(_ for _ in ()).throw(RuntimeError('Голосовой модуль не установлен рядом с приложением (local_ai/voice).')))
+        monkeypatch.setattr(voice.runtime,'transcribe',lambda content,**options:(_ for _ in ()).throw(RuntimeError('Голосовой модуль не установлен рядом с приложением (local_ai/voice).')))
         r=post(c,'/voice/transcribe',{'audio':'QUJD'})
         assert r.status_code==503 and 'Голосовой модуль не установлен' in r.json()['detail']
 
 def test_empty_recording_is_not_reported_as_outage(monkeypatch):
     """Whisper reports silence as an error string; the teacher gets a hint about holding the button, not a 503."""
-    monkeypatch.setattr(voice.runtime,'transcribe',lambda content:(_ for _ in ()).throw(RuntimeError('Речь не распознана. Повторите запись.')))
+    monkeypatch.setattr(voice.runtime,'transcribe',lambda content,**options:(_ for _ in ()).throw(RuntimeError('Речь не распознана. Повторите запись.')))
     with TestClient(app) as c:
         login(c,'teacher')
         r=post(c,'/voice/transcribe',{'audio':'QUJD'})

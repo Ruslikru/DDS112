@@ -82,12 +82,14 @@ class VoiceRuntime:
             value=self.call({'op':'synthesize','text':text[:5000],'gender':gender,'model':cfg['tts'],'device':cfg['tts_device'],'output':str(temp)})
             temp.replace(target);meta.write_text(json.dumps(value),encoding='utf-8')
             return target,value
-    def transcribe(self,content):
+    def transcribe(self,content,prompt=None,model=None,beam=None):
+        """Speech to text. `model` overrides the live setting (used when the bigger model is installed), `prompt` is an expected-words hint."""
         if len(content)>16000000:raise ValueError('Запись слишком длинная')
         path=self.data/(uuid.uuid4().hex+'.webm')
         try:
             path.write_bytes(base64.b64decode(content,validate=True));cfg=self.settings()['live']
-            return self.call({'op':'transcribe','input':str(path),'model':cfg['stt'],'device':cfg['stt_device']})
+            if model and not (self.bundle/'models'/('whisper-'+model)/'model.bin').exists():model=None
+            return self.call({'op':'transcribe','input':str(path),'model':model or cfg['stt'],'device':cfg['stt_device'],'prompt':prompt,'beam':beam})
         finally:path.unlink(missing_ok=True)
     def speak(self,text,gender='female'):
         path,meta=self.synthesize(text,gender)
