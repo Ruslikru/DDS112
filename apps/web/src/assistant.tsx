@@ -3,11 +3,17 @@ import {useLocation,useNavigate} from 'react-router-dom';
 import {Sparkles,Send} from 'lucide-react';
 import {api,UserContext,type Obj} from './shared';
 import {ArmDialog} from './arm-ui';
+import {record,MicButton,hasVoiceBridge,serverTranscribe} from './voice';
 
 /** Teacher assistant: text commands parsed by server rules. Reading and navigation run at once,
  *  changing commands (tickets) go through a slot form and confirmation cards with a server token.
  *  The log and the open slot form live in TeacherAssistant, so closing the window keeps them. */
 const TOGGLE='training112:assistant-toggle';
+const VOICE='training112:assistant-voice';
+const VOICE_HINT='Голосовой ввод доступен в приложении Windows или на ПК сервера.';
+/** Spoken answers to an open confirmation card are handled on the client, without the server. JS \b ignores Cyrillic, hence the lookahead. */
+const VOICE_YES=/^(да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|сохрани|сохранить|ок|окей|хорошо)(?=[\s.,!?]|$)/i;
+const VOICE_NO=/^(нет|отмена|отмени|отменить|не надо|не нужно|стоп|не выполняй)(?=[\s.,!?]|$)/i;
 const HINTS=['Что умеешь?','Журнал','Проверить работы','Кто сейчас в классе?','Новый билет'];
 const DIALOG_INTENTS=['create_ticket','edit_ticket','save_ticket'];
 const HISTORY_KEY='training112:assistant-history';
@@ -23,7 +29,8 @@ type Link={label:string,to:string};
 type Message={who:'user'|'assistant',text:string,candidates?:Obj[],options?:{slot:string,options:Obj[]},confirm?:Confirm,links?:Link[],error?:boolean,retry?:{confirm:Confirm}|{origin:string}};
 /** The open slot form: intent, accumulated slots and the question waiting for an answer. */
 type Dialog={intent:string,slots:Obj,missing?:string}|null;
-type Store={messages:Message[],setMessages:React.Dispatch<React.SetStateAction<Message[]>>,dialog:Dialog,setDialog:(d:Dialog)=>void,origin:React.MutableRefObject<string>,creation:React.MutableRefObject<Confirm|null>};
+type Store={messages:Message[],setMessages:React.Dispatch<React.SetStateAction<Message[]>>,dialog:Dialog,setDialog:(d:Dialog)=>void,origin:React.MutableRefObject<string>,creation:React.MutableRefObject<Confirm|null>,autoRecord:React.MutableRefObject<boolean>};
+type VoiceSource='checking'|'bridge'|'server'|'none';
 
 /** Header button: the window itself is mounted once in App, so the shortcut is registered once. */
 export function AssistantButton(){
@@ -36,22 +43,35 @@ export function TeacherAssistant(){
  const u=useContext(UserContext),[open,setOpen]=useState(false);
  const [messages,setMessages]=useState<Message[]>([WELCOME]),[dialog,setDialog]=useState<Dialog>(null);
  /** The phrase that opened the current slot form (for «Составить заново») and the last create confirmation (for «Сгенерировать заново»). */
- const origin=useRef(''),creation=useRef<Confirm|null>(null);
+ const origin=useRef(''),creation=useRef<Confirm|null>(null),autoRecord=useRef(false);
+ const opened=useRef(open);opened.current=open;
  useEffect(()=>{
   if(!allowed(u.role))return;
   const toggle=()=>setOpen(value=>!value);
-  const key=(e:KeyboardEvent)=>{if(e.ctrlKey&&!e.altKey&&!e.metaKey&&e.code==='Space'){e.preventDefault();toggle();}};
+  // Ctrl+Space: opens the window and starts recording; pressed again, it stops the recording (or starts one in an open window).
+  const key=(e:KeyboardEvent)=>{if(e.ctrlKey&&!e.altKey&&!e.metaKey&&e.code==='Space'){e.preventDefault();if(opened.current)window.dispatchEvent(new Event(VOICE));else{autoRecord.current=true;setOpen(true);}}};
   window.addEventListener(TOGGLE,toggle);document.addEventListener('keydown',key);
   return()=>{window.removeEventListener(TOGGLE,toggle);document.removeEventListener('keydown',key);};
  },[u.role]);
  if(!allowed(u.role)||!open)return null;
- return <AssistantDialog onClose={()=>setOpen(false)} store={{messages,setMessages,dialog,setDialog,origin,creation}}/>;
+ return <AssistantDialog onClose={()=>setOpen(false)} store={{messages,setMessages,dialog,setDialog,origin,creation,autoRecord}}/>;
 }
 
 function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const navigate=useNavigate(),location=useLocation();
- const {messages,setMessages,dialog,setDialog,origin,creation}=store;
+ const {messages,setMessages,dialog,setDialog,origin,creation,autoRecord}=store;
  const [text,setText]=useState(''),[busy,setBusy]=useState<''|'ask'|'run'|'generate'>('');
+ const [voice,setVoice]=useState<VoiceSource>(()=>hasVoiceBridge()?'bridge':'checking'),[recording,setRecording]=useState(false),[listening,setListening]=useState(''),[heard,setHeard]=useState('');
+ const stopRecording=useRef<(()=>void)|undefined>(undefined);
+ /** Recognition finishes asynchronously, so spoken answers must look at the current log and slot form, not at the ones captured when recording started. */
+ const latest=useRef({messages,dialog});latest.current={messages,dialog};
+ useEffect(()=>{
+  if(voice!=='checking')return;
+  let alive=true;
+  api('/voice/settings').then((s:Obj)=>{if(alive)setVoice(s?.available?'server':'none');}).catch(()=>{if(alive)setVoice('none');});
+  return()=>{alive=false;};
+ },[voice]);
+ useEffect(()=>()=>{stopRecording.current?.();},[]);
  const [history,setHistory]=useState<string[]>(readHistory),[historyOpen,setHistoryOpen]=useState(false),[cursor,setCursor]=useState(-1);
  const input=useRef<HTMLTextAreaElement>(null),log=useRef<HTMLDivElement>(null);
  useEffect(()=>{const t=setTimeout(()=>input.current?.focus(),0);return()=>clearTimeout(t);},[]);
@@ -65,9 +85,9 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   return false;
  };
  /** Sends a phrase; `slots` carries an answer given with a button, `shown` is what the log displays. */
- const send=async(command:string,slots?:Obj,shown?:string)=>{
+ const send=async(command:string,slots?:Obj,shown?:string):Promise<Obj|null>=>{
   const phrase=command.trim();
-  if(!phrase&&!slots)return;
+  if(!phrase&&!slots)return null;
   push({who:'user',text:shown||phrase});setText('');setCursor(-1);setBusy('ask');
   if(!slots&&phrase&&!dialog?.missing)setHistory(list=>remember(list,phrase));
   try{
@@ -76,12 +96,39 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
    const r:Obj=await api('/assistant/interpret','POST',body);
    const question=r.missing?.[0];
    push({who:'assistant',text:r.preview||'Готово.',candidates:r.candidates?.length?r.candidates:undefined,options:question?.options?.length?{slot:question.slot,options:question.options}:undefined,confirm:r.confirm_required?{intent:r.intent,slots:r.slots,token:r.confirm_token}:undefined,links:r.links?.length?r.links:undefined});
-   if(finish(r.action))return;
+   if(finish(r.action))return r;
    if(r.candidates?.length||question||r.confirm_required){if(!dialog)origin.current=phrase;setDialog({intent:r.intent,slots:DIALOG_INTENTS.includes(r.intent)?r.slots:{},missing:question?.slot});}
    else setDialog(null);
-  }catch(e:any){push({who:'assistant',text:e.message,error:true});}
+   return r;
+  }catch(e:any){push({who:'assistant',text:e.message,error:true});return null;}
   finally{setBusy('');focus();}
  };
+ /** Recognised speech: short answers close an open confirmation card, anything else is sent as a command;
+  *  an unrecognised command stays in the field for editing instead of doing anything. */
+ const heardText=async(spoken:string)=>{
+  const phrase=spoken.trim();
+  setListening('');setHeard(phrase);
+  const {messages:log,dialog:form}=latest.current;
+  const card=log[log.length-1]?.confirm;
+  if(card&&form){
+   if(VOICE_YES.test(phrase)){run(card,card.intent==='save_ticket'?'Сохранить':'Выполнить');return;}
+   if(VOICE_NO.test(phrase)){cancel();return;}
+  }
+  if(phrase.length<3){setHeard('');push({who:'assistant',text:'Речь не распознана, повторите.',error:true});return;}
+  const r=await send(phrase);
+  if(r&&r.intent==='unknown'){setText(phrase);push({who:'assistant',text:'Команда оставлена в поле: поправьте текст и отправьте.'});}
+ };
+ const toggleRecording=async()=>{
+  if(recording){stopRecording.current?.();setRecording(false);setListening('Распознаём…');return;}
+  if(busy||voice==='none'||voice==='checking')return;
+  setHeard('');setListening('Запись, до 15 с. Нажмите микрофон ещё раз, чтобы закончить.');
+  stopRecording.current=await record(spoken=>{setRecording(false);heardText(spoken);},problem=>{setRecording(false);setListening('');push({who:'assistant',text:problem,error:true});},voice==='server'?serverTranscribe:undefined);
+  setRecording(!!stopRecording.current);
+  if(!stopRecording.current)setListening('');
+ };
+ const voiceToggle=useRef(toggleRecording);voiceToggle.current=toggleRecording;
+ useEffect(()=>{const handler=()=>{voiceToggle.current();};window.addEventListener(VOICE,handler);return()=>window.removeEventListener(VOICE,handler);},[]);
+ useEffect(()=>{if(autoRecord.current&&voice!=='checking'){autoRecord.current=false;if(voice!=='none')voiceToggle.current();}},[voice]);
  /** Runs a confirmed command. A new ticket answers with its draft and a second confirmation («Сохранить»). */
  const run=async(confirm:Confirm,label='Выполнить')=>{
   if(busy)return;
@@ -148,10 +195,12 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   </div>
   <div className="assistant-hints">{HINTS.map(hint=><button type="button" key={hint} disabled={!!busy} onClick={()=>send(hint)}>{hint}</button>)}{dialog?<button type="button" className="assistant-cancel" disabled={!!busy} onClick={cancel}>Сбросить диалог</button>:messages.length>1&&<button type="button" className="assistant-cancel" disabled={!!busy} onClick={clear}>Очистить ленту</button>}</div>
   {history.length>0&&<div className="assistant-history"><button type="button" aria-expanded={historyOpen} onClick={()=>setHistoryOpen(v=>!v)}>История команд ({history.length}) {historyOpen?'▴':'▾'}</button>{historyOpen&&<ul>{history.map(item=><li key={item}><button type="button" disabled={!!busy} title="Повторить команду" onClick={()=>{setHistoryOpen(false);send(item);}}>{item}</button></li>)}</ul>}</div>}
+  {(listening||heard)&&<div className="assistant-voice-status" role="status" aria-live="polite">{listening||('Распознано: '+heard)}</div>}
   <form className="assistant-input" onSubmit={submit}>
+   <MicButton recording={recording} disabled={!recording&&(!!busy||voice==='none'||voice==='checking')} title={voice==='none'?VOICE_HINT:voice==='checking'?'Проверяем голосовой модуль…':recording?'Закончить запись':'Сказать команду (Ctrl+Space)'} onClick={toggleRecording}/>
    <textarea ref={input} aria-label="Команда ассистенту" rows={2} value={text} maxLength={500} placeholder={dialog?.missing==='student'?'Фамилия или имя ученика':dialog?.missing?'Ответ на вопрос ассистента':dialog?'Что изменить в команде?':'Команда, например «открой журнал». Enter — отправить, ↑ — предыдущая команда'} onChange={e=>{setText(e.target.value);setCursor(-1);}} onKeyDown={keys} disabled={!!busy}/>
    <button type="submit" disabled={!!busy||!text.trim()} title="Отправить"><Send size={16}/><span>отправить</span></button>
   </form>
-  <small className="assistant-note">Чтение и переходы выполняются сразу. Создание и изменение билета выполняются только после кнопки «Выполнить», черновик показывается перед сохранением.</small>
+  <small className="assistant-note">Чтение и переходы выполняются сразу. Создание и изменение билета выполняются только после кнопки «Выполнить», черновик показывается перед сохранением.{voice==='none'&&' '+VOICE_HINT}{voice==='server'&&' Распознавание речи выполняется на сервере.'}</small>
  </ArmDialog>;
 }

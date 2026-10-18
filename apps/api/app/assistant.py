@@ -39,6 +39,12 @@ STOP={'у','по','о','об','про','с','со','и','а','в','на','за',
 def normalize(text):
     return re.sub(r'\s+',' ',str(text).lower().replace('ё','е')).strip()
 
+GLUE=r'(подключени[ея]|подключись|подключиться|перейди|перейти|открой|открыть|покажи|показать|найди|найти|сидит|работ[аыу]|билет[ыа]?)(к|ко|на|в|во|у|по|за|из)\b'
+def clean_speech(text):
+    """Recognised speech comes with trailing punctuation and words Whisper glued to a preposition («подключениек»)."""
+    text=re.sub(r'\s+',' ',str(text)).strip().strip(' .!?…,;:')
+    return re.sub(GLUE,r'\1 \2',text,flags=re.I)
+
 def words(text):
     return re.findall(r'[а-яa-z0-9-]+',normalize(text))
 
@@ -134,7 +140,7 @@ def check_token(u,intent,slots,token):
 @router.post('/interpret')
 def interpret(data:Interpret,u=Depends(m.current),db=Depends(m.getdb)):
     m.staff(u)
-    text=data.text.strip()
+    text=clean_speech(data.text)
     intent=detect(text)
     query=student_query(text)
     dialog=data.dialog

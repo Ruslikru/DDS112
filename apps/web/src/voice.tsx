@@ -33,16 +33,28 @@ export function VoiceDraft({data}:{data:Obj}){
  return <aside className="voice-draft" aria-live="polite"><details><summary>{pending?'Идёт генерация звуков для сообщений руководителей бригад':'Звуки сообщений бригад'} · {jobs.filter(j=>j.status==='ready').length}/{jobs.length}</summary><Notice>{error}</Notice>{jobs.map(j=><div key={j.id}><p>{j.text}</p>{j.audio_id?<audio controls preload="none" src={'/api/media/'+j.audio_id}/>:<span>{j.status==='failed'?j.error:'Готовится…'}</span>}{j.status==='failed'&&<button onClick={async()=>{await api('/voice/jobs/'+j.id+'/retry','POST');setJobs(await api('/voice/jobs','POST',{keys:jobs.map(x=>x.id)}));setError('');}}>Повторить</button>}</div>)}</details></aside>;
 }
 
-async function record(onDone:(text:string)=>void,onError:(text:string)=>void){
+/** True when the native Windows bridge with speech recognition is present on this PC. */
+export function hasVoiceBridge(){return !mobile()&&!!bridge()?.voice_transcribe;}
+/** Speech recognition on the classroom server (for a browser without the native bridge). */
+export const serverTranscribe=(audio:string):Promise<Obj>=>api('/voice/transcribe','POST',{audio});
+/** Records up to 15 s and passes the audio to `transcribe` (the native bridge when omitted). Returns a stop function. */
+export async function record(onDone:(text:string)=>void,onError:(text:string)=>void,transcribe?:(audio:string)=>Promise<Obj>){
  try{
-  if(mobile()||!bridge())throw Error('Живой голос доступен в приложении Windows на этом ПК.');
-  const native=await voiceBridge();
-  // Older voice clients use WebView's own microphone permission prompt.
-  if(typeof native.allow_microphone==='function')await native.allow_microphone();
-  const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+  let convert=transcribe;
+  if(!convert){
+   if(mobile()||!bridge())throw Error('Живой голос доступен в приложении Windows на этом ПК.');
+   const native=await voiceBridge();
+   // Older voice clients use WebView's own microphone permission prompt.
+   if(typeof native.allow_microphone==='function')await native.allow_microphone();
+   convert=(audio:string)=>bridge().voice_transcribe(audio);
+  }else if(typeof bridge()?.allow_microphone==='function')await bridge().allow_microphone();
+  if(!navigator.mediaDevices?.getUserMedia)throw Error('Микрофон в браузере доступен только по HTTPS или на адресе localhost.');
+  let stream:MediaStream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}
+  catch(e:any){throw Error(e?.name==='NotAllowedError'?'Доступ к микрофону запрещён. Разрешите его в настройках браузера.':e?.name==='NotFoundError'?'Микрофон не найден.':'Микрофон недоступен: '+(e?.message||String(e)));}
   let recorder:MediaRecorder;try{recorder=new MediaRecorder(stream);}catch(e){stream.getTracks().forEach(t=>t.stop());throw e;}const chunks:BlobPart[]=[];
   recorder.ondataavailable=e=>chunks.push(e.data);
-  recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());try{const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());let raw='';bytes.forEach(b=>raw+=String.fromCharCode(b));const value=await bridge().voice_transcribe(btoa(raw));onDone(value.text+'');}catch(e:any){onError(e.message||String(e));}};
+  recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());try{const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());let raw='';bytes.forEach(b=>raw+=String.fromCharCode(b));const value=await convert!(btoa(raw));onDone(value.text+'');}catch(e:any){onError(e.message||String(e));}};
   recorder.start();const limit=setTimeout(()=>{if(recorder.state==='recording')recorder.stop();},15000);
   return ()=>{clearTimeout(limit);if(recorder.state==='recording')recorder.stop();};
  }catch(e:any){onError(e.message||String(e));return undefined;}
@@ -66,8 +78,8 @@ export function BrigadeAudio({id,autoPlay=false,playKey=id,hidden=false,onEnded,
  return <audio ref={ref} onEnded={onEnded} onPlaying={onPlaying} controls={!hidden} hidden={hidden} preload="none" src={url}/>;
 }
 
-function MicButton({recording,disabled,onClick}:{recording:boolean,disabled:boolean,onClick:()=>void}){
- const label=recording?'Закончить запись':disabled?'Дождитесь ответа':'Включить микрофон';
+export function MicButton({recording,disabled,onClick,title}:{recording:boolean,disabled:boolean,onClick:()=>void,title?:string}){
+ const label=title||(recording?'Закончить запись':disabled?'Дождитесь ответа':'Включить микрофон');
  return <button className={'voice-mic '+(recording?'recording':disabled?'waiting':'ready')} disabled={disabled} title={label} aria-label={label} aria-pressed={recording} onClick={onClick}>{recording?<Mic size={25}/>:disabled?<MicOff size={24}/>:<MicOff size={25}/>}</button>;
 }
 async function playReply(player:HTMLAudioElement){await new Promise<void>((resolve,reject)=>{player.onended=()=>resolve();player.onerror=()=>reject(Error('Не удалось воспроизвести звук.'));player.onpause=()=>resolve();player.play().catch(reject);});}
