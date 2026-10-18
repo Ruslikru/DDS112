@@ -3,12 +3,13 @@
 No model is involved: frequent commands are parsed with regular expressions,
 students are resolved deterministically on the server, every command is audited.
 """
-import re
+import hmac, hashlib, json, re, secrets, time
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from . import main as m
 from .db import User, Attempt
+from . import assistant_tickets as tickets
 
 router=APIRouter(prefix='/api/assistant')
 
@@ -30,6 +31,8 @@ HELP=('Я выполняю команды текстом. Примеры:\n'
       '• «по студенту Кузнецову есть рекомендации?»\n'
       '• «кто сейчас в классе?», «кто не в сети?»\n'
       '• «где сидит Кузнецов?»\n'
+      '• «создай билет про пожар на 3 звезды для ДДС» — соберу недостающее и попрошу подтвердить\n'
+      '• «в билете 12 поменяй сложность на 4», «переименуй билет про лифт в «Лифт застрял»»\n'
       '• «закрой»')
 STOP={'у','по','о','об','про','с','со','и','а','в','на','за','к','ко','из','для','от','до','ли','же','бы','ну','есть','что','кто','где','какие','какой','какая','каких','какого','кого','чем','сейчас','сидит','находится','работает','сидел','студент','студента','студенту','студентом','студентке','студентки','ученик','ученика','ученику','учеником','ученица','ученицы','ученице','покажи','покажите','найди','найти','открой','открыть','дай','скажи','мне','нам','работу','работа','работы','работ','попытку','попытка','попытки','карточку','карточка','последнюю','последняя','последний','последнее','последние','крайнюю','крайняя','крайний','рекомендации','рекомендация','рекомендаций','ошибки','ошибка','ошибок','профиль','результаты','результат','успеваемость','пк','компьютером','компьютер','компьютера','рабочим','местом','место','места','каким','каком','рабочем','ассистент','нет','его','ее','их','пожалуйста','надо','нужно','все','всё','проверить','провер','проверка','проверку','сдал','сдала','дела','успехи','какую','как','это','ещё','еще','вообще','сегодня','вчера'}
 
@@ -85,6 +88,8 @@ def detect(text):
     if not t or re.search(r'что (ты )?(умеешь|можешь)|помощь|помоги|справка|список команд|\bhelp\b',t):return 'help'
     if re.search(r'\bне (надо|нужно|открывай|показывай|закрывай|делай|ищи|создавай|подключай|сейчас)|пока не\b|\bпотом\b|можно ли|умеешь ли|а можно|получится ли',t):return 'refused'
     if re.search(r'^(закрой|закрыть|отмена|отменить|хватит|спасибо)\b',t):return 'close'
+    if re.search(tickets.CREATE_TICKET,t):return 'create_ticket'
+    if re.search(tickets.EDIT_TICKET,t):return 'edit_ticket'
     if re.search(r'кто (сейчас |уже |еще |из учеников |из студентов )*(в классе|онлайн|в сети|подключ|на месте|на местах|работает|присутств|отсутств|не в сети|не подключ|вошел|зашел)|кого (сейчас )?нет|список (подключ|онлайн)|сколько (учеников|студентов|человек) (сейчас )?(в сети|подключ|онлайн|в классе)',t):return 'who_online'
     if re.search(r'^где\b|\bгде (сидит|находится|сейчас|работает)|за каким (пк|комп|рабочим)|на каком (пк|рабочем|месте|комп)|какой (пк|компьютер) у|номер пк',t):return 'where_student'
     if re.search(r'провер',t) and (re.search(r'нужно|надо|каки[ехм]|ждут|ожида|непровер|требу|осталось|непроверенн|на проверку|^провер(ь|ить) (работы|задания|что)',t)):return 'show_reviews'
@@ -104,9 +109,26 @@ class Interpret(BaseModel):
     dialog:Dialog|None=None
 
 STUDENT_INTENTS={'where_student','find_last_attempt','student_profile'}
+DIALOG_INTENTS={'create_ticket','edit_ticket'}
+TOKEN_KEY=secrets.token_bytes(32)
+TOKEN_TTL=600
 
-def reply(intent,preview,*,slots=None,missing=None,candidates=None,action=None):
-    return {'intent':intent,'slots':slots or {},'missing':missing or [],'candidates':candidates or [],'preview':preview,'confirm_required':False,'action':action}
+def reply(intent,preview,*,slots=None,missing=None,candidates=None,action=None,confirm=None):
+    return {'intent':intent,'slots':slots or {},'missing':missing or [],'candidates':candidates or [],'preview':preview,'confirm_required':bool(confirm),'confirm_token':confirm,'action':action}
+
+def _signature(u,intent,slots,issued):
+    body=json.dumps([u.id,intent,slots,issued],ensure_ascii=False,sort_keys=True).encode()
+    return hmac.new(TOKEN_KEY,body,hashlib.sha256).hexdigest()[:32]
+
+def confirm_token(u,intent,slots):
+    """Stateless proof that this user saw exactly these slots; valid for ten minutes."""
+    issued=int(time.time())
+    return f'{issued}.{_signature(u,intent,slots,issued)}'
+
+def check_token(u,intent,slots,token):
+    issued,_,signature=str(token or '').partition('.')
+    if not issued.isdigit() or not hmac.compare_digest(signature,_signature(u,intent,slots,int(issued))):m.fail('Подтверждение не совпадает с командой. Повторите команду.',403)
+    if time.time()-int(issued)>TOKEN_TTL:m.fail('Подтверждение устарело. Повторите команду.',409)
 
 @router.post('/interpret')
 def interpret(data:Interpret,u=Depends(m.current),db=Depends(m.getdb)):
@@ -115,12 +137,19 @@ def interpret(data:Interpret,u=Depends(m.current),db=Depends(m.getdb)):
     intent=detect(text)
     query=student_query(text)
     dialog=data.dialog
+    if dialog and dialog.slots.get('answer_slot')=='student' and dialog.intent in STUDENT_INTENTS:dialog.slots['student_query']=text
     if dialog and dialog.intent in STUDENT_INTENTS and (dialog.slots.get('student_id') or dialog.slots.get('student_query')):
         intent=dialog.intent
         if dialog.slots.get('student_query'):query=student_query(dialog.slots['student_query']) or words(dialog.slots['student_query'])
-    result=handle(intent,text,query,dialog,u,db)
+    if dialog and dialog.intent in DIALOG_INTENTS and intent not in ('close','refused') and not (intent=='help' and text):
+        step=tickets.create_step if dialog.intent=='create_ticket' else tickets.edit_step
+        result=step(dict(dialog.slots),text,dialog.slots.get('answer_slot'),u,db)
+    elif intent in DIALOG_INTENTS:
+        step=tickets.create_step if intent=='create_ticket' else tickets.edit_step
+        result=step({},text,None,u,db)
+    else:result=handle(intent,text,query,dialog,u,db)
     detail={'text':text[:300],'intent':result['intent'],'page':str(data.context.get('page',''))[:100]}
-    for key in ('student_id','attempt_id'):
+    for key in ('student_id','attempt_id','ticket_id','incident_type','field'):
         if result['slots'].get(key):detail[key]=result['slots'][key]
     m.audit(db,u,'assistant_command',result['intent'],detail);db.commit()
     return result
@@ -193,6 +222,21 @@ def handle(intent,text,query,dialog,u,db):
             if profile.get('comparison'):lines.append(profile['comparison']+'.')
             return reply(intent,'\n'.join(lines),slots=slots)
     return reply('unknown','Не понял команду. Напишите «что умеешь?», чтобы увидеть примеры.')
+
+class Execute(BaseModel):
+    intent:str=Field(max_length=40)
+    slots:dict=Field(default_factory=dict)
+    confirm_token:str=Field(default='',max_length=80)
+
+@router.post('/execute')
+def execute(data:Execute,u=Depends(m.current),db=Depends(m.getdb)):
+    """Runs a confirmed changing command through the ordinary routes under the same user."""
+    m.staff(u)
+    if data.intent not in DIALOG_INTENTS:m.fail('Эту команду нельзя выполнить')
+    check_token(u,data.intent,data.slots,data.confirm_token)
+    result=tickets.execute_create(data.slots,u,db) if data.intent=='create_ticket' else tickets.execute_edit(data.slots,u,db)
+    m.audit(db,u,'assistant_executed',data.intent,{'intent':data.intent,'ticket_id':data.slots.get('ticket_id'),'version_id':result.get('version_id'),'incident_type':data.slots.get('incident_type'),'field':data.slots.get('field')});db.commit()
+    return {'ok':True,'intent':data.intent,'preview':result['preview'],'action':result.get('action')}
 
 def station_rows(u,db):
     from .classroom import stations

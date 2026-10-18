@@ -7,3 +7,4 @@
 .assistant-hints{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px}
 .assistant-input{display:flex;gap:8px}.assistant-input input{flex:1;font-size:15px;padding:8px 10px}.assistant-input button{display:flex;align-items:center;gap:6px;padding:8px 14px;font-weight:bold}
 .assistant-note{display:block;margin-top:8px;color:#5c6d80;font-size:12px}
+.assistant-confirm{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.assistant-confirm button{font-size:13px;padding:6px 12px;border:1px solid #9fb3c0;background:#fff;color:#1b2f44}.assistant-confirm button.primary{background:#2f5f8a;border-color:#2f5f8a;color:#fff}.assistant-confirm button.primary:hover{background:#3a74a8}.assistant-hints .assistant-cancel{margin-left:auto;color:#7a1f16;border-color:#d9a39d}

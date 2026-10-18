@@ -21,7 +21,8 @@ function incidentSigns(title:string, source:string[]=[]):string[]{
   return Array.from(new Set(result));
 }
 
-export function DraftWizard({onClose}:{onClose:()=>void}){
+/** `initial` prefills the form (own_service, services, incident_type, mode, difficulty_stars, victims_state, victims_count). */
+export function DraftWizard({onClose,initial}:{onClose:()=>void,initial?:Obj}){
   const nav=useNavigate();
   const [confirmClose,setConfirmClose]=useState(false);
   const [suggested,setSuggested]=useState<string[]>([]);
@@ -33,13 +34,14 @@ export function DraftWizard({onClose}:{onClose:()=>void}){
   const [error,setError]=useState('');
   const [availableTraits,setAvailableTraits]=useState<string[]>([]);
   const [draft,setDraft]=useState<Obj|null>(null);
-  const [form,setForm]=useState<Obj>({difficulty_stars:3,mode:'dds',incident_type:'',victims_state:'unknown',victims_count:1,animals:false,own_service:'ДДС района',services:['ДДС района'],traits:[]});
+  const [form,setForm]=useState<Obj>({difficulty_stars:3,mode:'dds',incident_type:'',victims_state:'unknown',victims_count:1,animals:false,own_service:'ДДС района',services:['ДДС района'],traits:[],...Object.fromEntries(Object.entries(initial||{}).filter(([,value])=>value!==undefined&&value!==null&&value!==''))});
   const {data:types}=useLoad('/classifier?q='+encodeURIComponent(query));
   const {data:catalog}=useLoad('/learning/services');
   const services=(catalog||[]).filter((item:Obj)=>item.active);
   const selected=services.find((item:Obj)=>item.name===form.own_service);
   const tags=Array.from(new Set((selected?.tags||[]).map((tag:string)=>tag.trim()).filter((tag:string)=>tag.length>=3&&!genericTopics.has(tag.toLocaleLowerCase())))) as string[];
   useEffect(()=>{if(services.length&&!selected)setForm(current=>({...current,own_service:services[0].name,services:[services[0].name],incident_type:''}));},[catalog]);
+  useEffect(()=>{if(initial?.incident_type)setQuery(initial.incident_type);},[]);
   useEffect(()=>{const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'&&!busy)setConfirmClose(true);};document.addEventListener('keydown',escape);return()=>document.removeEventListener('keydown',escape);},[busy,onClose]);
   useEffect(()=>{if(!busy||step!==2){setProgressStep(0);return;}const timer=window.setInterval(()=>setProgressStep(value=>(value+1)%3),4500);return()=>window.clearInterval(timer);},[busy,step]);
   useEffect(()=>{let active=true;api('/learning/services/suggest','POST',{incident_type:form.incident_type,traits:form.traits,victims:form.victims_state}).then(result=>{if(active)setSuggested(result.services);}).catch(()=>{if(active)setError('Не удалось подобрать службы. Проверьте получателей перед созданием.');});return()=>{active=false;};},[form.incident_type,JSON.stringify(form.traits),form.victims_state]);
