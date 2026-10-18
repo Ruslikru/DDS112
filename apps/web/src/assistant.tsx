@@ -9,6 +9,11 @@ import {ArmDialog} from './arm-ui';
 const TOGGLE='training112:assistant-toggle';
 const HINTS=['Что умеешь?','Журнал','Проверить работы','Кто сейчас в классе?','Новый билет'];
 const DIALOG_INTENTS=['create_ticket','edit_ticket'];
+const HISTORY_KEY='training112:assistant-history';
+const HISTORY_SIZE=10;
+/** Last typed commands, newest first; kept per browser only as a convenience. */
+function readHistory():string[]{try{const list=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');return Array.isArray(list)?list.filter(x=>typeof x==='string').slice(0,HISTORY_SIZE):[];}catch{return [];}}
+function remember(list:string[],phrase:string):string[]{const next=[phrase,...list.filter(x=>x!==phrase)].slice(0,HISTORY_SIZE);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next));}catch{}return next;}
 const allowed=(role:string)=>role==='teacher'||role==='admin';
 
 type Message={who:'user'|'assistant',text:string,candidates?:Obj[],options?:{slot:string,options:Obj[]},confirm?:{intent:string,slots:Obj,token:string},error?:boolean};
@@ -39,7 +44,8 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
  const navigate=useNavigate(),location=useLocation();
  const [messages,setMessages]=useState<Message[]>([{who:'assistant',text:'Напишите команду: например, «открой журнал», «покажи, какие работы нужно проверить», «где сидит Кузнецов» или «создай билет про пожар на 3 звезды».'}]);
  const [text,setText]=useState(''),[busy,setBusy]=useState<''|'ask'|'run'>(''),[dialog,setDialog]=useState<Dialog>(null);
- const input=useRef<HTMLInputElement>(null),log=useRef<HTMLDivElement>(null);
+ const [history,setHistory]=useState<string[]>(readHistory),[historyOpen,setHistoryOpen]=useState(false),[cursor,setCursor]=useState(-1);
+ const input=useRef<HTMLTextAreaElement>(null),log=useRef<HTMLDivElement>(null);
  useEffect(()=>{const t=setTimeout(()=>input.current?.focus(),0);return()=>clearTimeout(t);},[]);
  useEffect(()=>{log.current?.scrollTo({top:log.current.scrollHeight});},[messages,busy]);
  const push=(message:Message)=>setMessages(list=>[...list,message]);
@@ -53,7 +59,8 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
  const send=async(command:string,slots?:Obj,shown?:string)=>{
   const phrase=command.trim();
   if(!phrase&&!slots)return;
-  push({who:'user',text:shown||phrase});setText('');setBusy('ask');
+  push({who:'user',text:shown||phrase});setText('');setCursor(-1);setBusy('ask');
+  if(!slots&&phrase&&!dialog?.missing)setHistory(list=>remember(list,phrase));
   try{
    const body:Obj={text:phrase,context:{page:location.pathname}};
    if(dialog)body.dialog={intent:dialog.intent,slots:{...dialog.slots,...(slots||{}),...(slots?{answer_slot:Object.keys(slots)[0]}:dialog.missing?{answer_slot:dialog.missing}:{})}};
@@ -78,6 +85,15 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
   finally{setBusy('');focus();}
  };
  const submit=(e:React.FormEvent)=>{e.preventDefault();if(!busy)send(text);};
+ /** Enter sends, Shift+Enter adds a line; ↑/↓ walk the history when the field holds no edited text. */
+ const keys=(e:React.KeyboardEvent<HTMLTextAreaElement>)=>{
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!busy)send(text);return;}
+  if((e.key==='ArrowUp'||e.key==='ArrowDown')&&history.length&&(cursor>=0||!text.trim())){
+   e.preventDefault();
+   const next=e.key==='ArrowUp'?Math.min(cursor+1,history.length-1):cursor-1;
+   setCursor(next);setText(next<0?'':history[next]);
+  }
+ };
  const choose=(candidate:Obj)=>{if(busy)return;send(candidate.label,{[candidate.slot||'student_id']:candidate.id},candidate.label);};
  const pick=(slot:string,option:Obj)=>{if(busy)return;send(option.label,{[slot]:option.value},option.label);};
  const cancel=()=>{setDialog(null);push({who:'assistant',text:'Отменено. Ничего не изменено.'});focus();};
@@ -100,8 +116,9 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
    {busy&&<div className="assistant-message assistant"><p>{busy==='run'?'Выполняю… Создание черновика занимает до минуты: модель работает локально.':'Разбираю команду…'}</p></div>}
   </div>
   <div className="assistant-hints">{HINTS.map(hint=><button type="button" key={hint} disabled={!!busy} onClick={()=>send(hint)}>{hint}</button>)}{dialog&&<button type="button" className="assistant-cancel" disabled={!!busy} onClick={cancel}>Сбросить диалог</button>}</div>
+  {history.length>0&&<div className="assistant-history"><button type="button" aria-expanded={historyOpen} onClick={()=>setHistoryOpen(v=>!v)}>История команд ({history.length}) {historyOpen?'▴':'▾'}</button>{historyOpen&&<ul>{history.map(item=><li key={item}><button type="button" disabled={!!busy} title="Повторить команду" onClick={()=>{setHistoryOpen(false);send(item);}}>{item}</button></li>)}</ul>}</div>}
   <form className="assistant-input" onSubmit={submit}>
-   <input ref={input} aria-label="Команда ассистенту" value={text} maxLength={500} placeholder={dialog?.missing==='student'?'Фамилия или имя ученика':dialog?.missing?'Ответ на вопрос ассистента':dialog?'Что изменить в команде?':'Команда, например «открой журнал»'} onChange={e=>setText(e.target.value)} disabled={!!busy}/>
+   <textarea ref={input} aria-label="Команда ассистенту" rows={2} value={text} maxLength={500} placeholder={dialog?.missing==='student'?'Фамилия или имя ученика':dialog?.missing?'Ответ на вопрос ассистента':dialog?'Что изменить в команде?':'Команда, например «открой журнал». Enter — отправить, ↑ — предыдущая команда'} onChange={e=>{setText(e.target.value);setCursor(-1);}} onKeyDown={keys} disabled={!!busy}/>
    <button type="submit" disabled={!!busy||!text.trim()} title="Отправить"><Send size={16}/><span>отправить</span></button>
   </form>
   <small className="assistant-note">Чтение и переходы выполняются сразу. Создание и изменение билета выполняются только после кнопки «Выполнить».</small>
