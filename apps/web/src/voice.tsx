@@ -38,7 +38,7 @@ export function hasVoiceBridge(){return !mobile()&&!!bridge()?.voice_transcribe;
 /** Speech recognition on the classroom server (for a browser without the native bridge). */
 export const serverTranscribe=(audio:string):Promise<Obj>=>api('/voice/transcribe','POST',{audio});
 /** Records up to 15 s and passes the audio to `transcribe` (the native bridge when omitted). Returns a stop function. */
-export async function record(onDone:(text:string)=>void,onError:(text:string)=>void,transcribe?:(audio:string)=>Promise<Obj>){
+export async function record(onDone:(text:string)=>void,onError:(text:string)=>void,transcribe?:(audio:string)=>Promise<Obj>):Promise<((cancel?:boolean)=>void)|undefined>{
  try{
   let convert=transcribe;
   if(!convert){
@@ -53,10 +53,12 @@ export async function record(onDone:(text:string)=>void,onError:(text:string)=>v
   try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}
   catch(e:any){throw Error(e?.name==='NotAllowedError'?'Доступ к микрофону запрещён. Разрешите его в настройках браузера.':e?.name==='NotFoundError'?'Микрофон не найден.':'Микрофон недоступен: '+(e?.message||String(e)));}
   let recorder:MediaRecorder;try{recorder=new MediaRecorder(stream);}catch(e){stream.getTracks().forEach(t=>t.stop());throw e;}const chunks:BlobPart[]=[];
+  let cancelled=false;
   recorder.ondataavailable=e=>chunks.push(e.data);
-  recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());try{const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());let raw='';bytes.forEach(b=>raw+=String.fromCharCode(b));const value=await convert!(btoa(raw));onDone(value.text+'');}catch(e:any){onError(e.message||String(e));}};
+  recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());if(cancelled)return;try{const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());let raw='';bytes.forEach(b=>raw+=String.fromCharCode(b));const value=await convert!(btoa(raw));onDone(value.text+'');}catch(e:any){onError(e.message||String(e));}};
   recorder.start();const limit=setTimeout(()=>{if(recorder.state==='recording')recorder.stop();},15000);
-  return ()=>{clearTimeout(limit);if(recorder.state==='recording')recorder.stop();};
+  // stop(true) discards the recording: nothing is transcribed and neither callback fires.
+  return (cancel=false)=>{clearTimeout(limit);cancelled=cancel;if(recorder.state==='recording')recorder.stop();};
  }catch(e:any){onError(e.message||String(e));return undefined;}
 }
 
