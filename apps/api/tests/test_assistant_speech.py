@@ -1,7 +1,7 @@
 """Teacher assistant: mis-heard or mistyped command words are corrected to the command vocabulary before parsing."""
 import pytest
 from test_flows import app, TestClient, login, post
-from apps.api.app.assistant import fix_keywords, SPEECH_PROMPT
+from apps.api.app.assistant import fix_keywords, clean_speech, SPEECH_PROMPT, speech_prompt
 
 @pytest.mark.parametrize('spoken,fixed',[
  ('Белет','Билет'),
@@ -35,3 +35,26 @@ def test_interpret_corrects_mis_heard_command():
         assert r['intent']=='open_page' and r['action']=={'kind':'navigate','to':'/tickets'}
         r=post(c,'/assistant/interpret',{'text':'открой жирнал','context':{'page':'/'}}).json()
         assert r['action']=={'kind':'navigate','to':'/journal'}
+
+@pytest.mark.parametrize('spoken,cleaned',[
+ ('Служба сто два.','Служба 102'),
+ ('Служба с тодва','Служба 102'),
+ ('служба сто один','служба 101'),
+ ('создай билет про пожар на три звезды','создай билет про пожар на 3 звезды'),
+ ('в билете двенадцать поменяй сложность на четыре','в билете 12 поменяй сложность на 4'),
+ ('в двенадцатом билете поменяй сложность','в билете 12 поменяй сложность'),
+ ('сорок два пострадавших','42 пострадавших'),
+ ('двое пострадавших','двое пострадавших'),
+ ('переименуй билет в «Сто бед»','переименуй билет в «Сто бед»'),
+ ('за каким ПК сидит Кузнецов','за каким ПК сидит Кузнецов'),
+ ('Служба 100 один.','Служба 101'),
+ ('Десидит Кузнецов.','Где сидит Кузнецов'),
+ ('ПК 12 2 пострадавших','ПК 12 2 пострадавших'),
+])
+def test_spoken_numbers_become_digits(spoken,cleaned):
+    assert clean_speech(spoken)==cleaned
+
+def test_whisper_prompt_lists_services_and_digits():
+    from test_flows import SessionLocal
+    with SessionLocal() as db:prompt=speech_prompt(db)
+    assert 'Служба 101' in prompt and 'на 3 звезды' in prompt and 'билете 12' in prompt

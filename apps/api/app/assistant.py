@@ -35,10 +35,39 @@ def normalize(text):
     return re.sub(r'\s+',' ',str(text).lower().replace('ё','е')).strip()
 
 GLUE=r'(подключени[ея]|подключись|подключиться|перейди|перейти|открой|открыть|покажи|показать|найди|найти|сидит|работ[аыу]|билет[ыа]?)(к|ко|на|в|во|у|по|за|из)\b'
+"""Cardinal number words Whisper writes out instead of digits; only the plain forms, the inflected ones («двух», «двое») are read by the ticket rules."""
+UNITS={'ноль':0,'один':1,'одна':1,'одно':1,'два':2,'две':2,'три':3,'четыре':4,'пять':5,'шесть':6,'семь':7,'восемь':8,'девять':9,'десять':10,'одиннадцать':11,'двенадцать':12,'тринадцать':13,'четырнадцать':14,'пятнадцать':15,'шестнадцать':16,'семнадцать':17,'восемнадцать':18,'девятнадцать':19}
+TENS={'двадцать':20,'тридцать':30,'сорок':40,'пятьдесят':50,'шестьдесят':60,'семьдесят':70,'восемьдесят':80,'девяносто':90}
+HUNDREDS={'сто':100,'двести':200,'триста':300,'четыреста':400,'пятьсот':500,'шестьсот':600,'семьсот':700,'восемьсот':800,'девятьсот':900}
+ORDINALS={'перв':1,'втор':2,'трет':3,'четверт':4,'пят':5,'шест':6,'седьм':7,'восьм':8,'девят':9,'десят':10,'одиннадцат':11,'двенадцат':12,'тринадцат':13,'четырнадцат':14,'пятнадцат':15,'шестнадцат':16,'семнадцат':17,'восемнадцат':18,'девятнадцат':19,'двадцат':20}
+NUMBER_WORD=r'(?:'+'|'.join(list(HUNDREDS)+list(TENS)+list(UNITS))+r')'
+def spoken_numbers(text):
+    """«сто два» → «102», «на три звезды» → «на 3 звезды», «в двенадцатом билете» → «в билете 12». Quoted text stays as written."""
+    def convert(m):
+        total=0;group=0
+        for word in m.group(0).lower().replace('ё','е').split():
+            if word in HUNDREDS:group+=HUNDREDS[word]
+            elif word in TENS:group+=TENS[word]
+            else:group+=UNITS[word]
+        return str(total+group)
+    def part(chunk):
+        # Whisper splits «сто» from a glued unit: «с тодва», «с то два».
+        chunk=re.sub(r'\bс\s?то\s?(?=(один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)\b)','сто ',chunk,flags=re.I)
+        chunk=re.sub(r'\b'+NUMBER_WORD+r'(?:\s+'+NUMBER_WORD+r'){0,2}\b',convert,chunk,flags=re.I)
+        # A round number already in digits followed by a smaller one («100 1» from «сто один»): one number.
+        chunk=re.sub(r'\b(\d{2,3})\s+(\d{1,2})\b',lambda m:str(int(m.group(1))+int(m.group(2))) if (int(m.group(1))%100==0 and int(m.group(2))<100) or (int(m.group(1))%10==0 and int(m.group(1))<100 and int(m.group(2))<10) else m.group(0),chunk)
+        chunk=re.sub(r'\b('+'|'.join(ORDINALS)+r')(ый|ий|ого|ом|ому|ую|ая|ой|ые|ых|ем|ье|ья|ью|ьем)\s+(билет\w*|пк|компьютер\w*|мест[оеа])\b',lambda m:f'{m.group(3)} {ORDINALS[m.group(1)]}',chunk,flags=re.I)
+        return chunk
+    parts=re.split(r'(«[^»]*»|"[^"]*")',text)
+    return ''.join(chunk if i%2 else part(chunk) for i,chunk in enumerate(parts))
+
+"""Whole phrases Whisper mishears as one word."""
+MISHEARD={'десидит':'где сидит','гдесидит':'где сидит','ктовклассе':'кто в классе'}
 def clean_speech(text):
-    """Recognised speech comes with trailing punctuation and words Whisper glued to a preposition («подключениек»)."""
+    """Recognised speech comes with trailing punctuation, words Whisper glued to a preposition («подключениек») and numbers written in words."""
     text=re.sub(r'\s+',' ',str(text)).strip().strip(' .!?…,;:')
-    return re.sub(GLUE,r'\1 \2',text,flags=re.I)
+    text=re.sub(r'\b('+'|'.join(MISHEARD)+r')\b',lambda m:MISHEARD[m.group(1).lower()].capitalize() if m.group(1)[:1].isupper() else MISHEARD[m.group(1).lower()],text,flags=re.I)
+    return spoken_numbers(re.sub(GLUE,r'\1 \2',text,flags=re.I))
 
 def words(text):
     return re.findall(r'[а-яa-z0-9-]+',normalize(text))
@@ -57,7 +86,12 @@ def levenshtein(a,b):
 
 """Expected-words hint for Whisper: the command vocabulary, so short commands are not heard as look-alikes."""
 SPEECH_PROMPT=('Команды преподавателю тренажёра 112: открой журнал, проверка работ, рабочие места, режимы, студенты, аналитика, билеты, минивопросы, занятия, '
-               'кто сейчас в классе, где сидит ученик, найди последнюю работу, создай билет про пожар на три звезды для ДДС, в билете поменяй сложность, закрой.')
+               'кто сейчас в классе, где сидит ученик, за каким ПК, найди последнюю работу, создай билет про пожар на 3 звезды для ДДС, в билете 12 поменяй сложность на 4, '
+               '2 пострадавших, без пострадавших, закрой.')
+def speech_prompt(db):
+    """The vocabulary hint for Whisper with the names of the active services, so «служба сто два» comes back as «Служба 102»."""
+    names=[s.name for s in tickets.active_services(db)]
+    return SPEECH_PROMPT+(' Службы: '+', '.join(names)+'.' if names else '')
 """Command words a recognised phrase is corrected to when a word is one typo away («белет» → «билет»). Normalized forms, ё as е."""
 VOCAB=set('''журнал журнала журнале проверка проверку проверки проверить проверь работ работы работу работа рабочие рабочих места место месте
 режимы режим режима студенты студентов студента студент ученики учеников ученика ученик аналитика аналитику статистика билет билеты билете билета билетов

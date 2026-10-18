@@ -187,12 +187,12 @@ class TranscribeIn(BaseModel):
     audio:str=Field(min_length=1)
 
 @router.post('/transcribe')
-def transcribe(data:TranscribeIn,u=Depends(m.current)):
+def transcribe(data:TranscribeIn,u=Depends(m.current),db=Depends(m.getdb)):
     """Speech to text on the server for the teacher assistant: a browser without the native bridge, same length limit as the bridge."""
     m.staff(u)
-    from .assistant import SPEECH_PROMPT
-    # The assistant uses the bigger Whisper model when it is installed and a hint with the command vocabulary: short commands like «билет» are otherwise mis-heard.
-    try:value=runtime.transcribe(data.audio,prompt=SPEECH_PROMPT,model='base')
+    from .assistant import speech_prompt
+    # The assistant uses the bigger Whisper model when it is installed and a hint with the command vocabulary and service names: short commands like «билет» or «служба сто два» are otherwise mis-heard.
+    try:value=runtime.transcribe(data.audio,prompt=speech_prompt(db),model='base')
     except ValueError as e:m.fail(str(e))
     except Exception as e:
         # An empty recording is the speaker's problem, not an outage: Whisper reports it as an error string.
