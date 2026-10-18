@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from local_ai.engine import engine as ai, AIUnavailable
+from local_ai.engine import engine as ai, assistant_engine as assistant_ai, AIUnavailable
 from . import main as m
 from .schemas import Command, TicketData
 from .caller import caller_questions, contact_questions
@@ -89,6 +89,13 @@ def contact_question(id:int,data:ContactQuestionIn,u=Depends(m.current),db:Sessi
 
 def complete(*args,**kwargs):
     try: return ai.complete(*args,**kwargs)
+    except AIUnavailable as error: m.fail(str(error),503)
+
+def assistant_complete(*args,**kwargs):
+    """Short command parsing for the teacher assistant: the small assistant model when it differs from the main one."""
+    c=ai.config()
+    engine=assistant_ai if c['assistant_model']!=c['model'] else ai
+    try: return engine.complete(*args,**kwargs)
     except AIUnavailable as error: m.fail(str(error),503)
 
 
@@ -219,6 +226,15 @@ def model(data:ModelIn,u=Depends(m.current),db:Session=Depends(m.getdb)):
     try: ai.set_settings(model=data.model)
     except (ValueError,AIUnavailable) as error: m.fail(str(error))
     m.audit(db,u,'ai_model_changed',detail={'model':data.model});db.commit()
+    return ai.status()
+
+@router.post('/assistant-model')
+def assistant_model(data:ModelIn,u=Depends(m.current),db:Session=Depends(m.getdb)):
+    m.admin(u)
+    try: ai.set_settings(assistant_model=data.model)
+    except (ValueError,AIUnavailable) as error: m.fail(str(error))
+    assistant_ai.stop()
+    m.audit(db,u,'ai_assistant_model_changed',detail={'model':data.model});db.commit()
     return ai.status()
 
 @router.post('/attempts/{id}/question')

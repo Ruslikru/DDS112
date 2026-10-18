@@ -16,7 +16,8 @@ function readHistory():string[]{try{const list=JSON.parse(localStorage.getItem(H
 function remember(list:string[],phrase:string):string[]{const next=[phrase,...list.filter(x=>x!==phrase)].slice(0,HISTORY_SIZE);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next));}catch{}return next;}
 const allowed=(role:string)=>role==='teacher'||role==='admin';
 
-type Message={who:'user'|'assistant',text:string,candidates?:Obj[],options?:{slot:string,options:Obj[]},confirm?:{intent:string,slots:Obj,token:string},error?:boolean};
+type Confirm={intent:string,slots:Obj,token:string};
+type Message={who:'user'|'assistant',text:string,candidates?:Obj[],options?:{slot:string,options:Obj[]},confirm?:Confirm,error?:boolean,retry?:{confirm:Confirm}|{origin:string}};
 /** The open slot form: intent, accumulated slots and the question waiting for an answer. */
 type Dialog={intent:string,slots:Obj,missing?:string}|null;
 
@@ -45,6 +46,8 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
  const [messages,setMessages]=useState<Message[]>([{who:'assistant',text:'Напишите команду: например, «открой журнал», «покажи, какие работы нужно проверить», «где сидит Кузнецов» или «создай билет про пожар на 3 звезды».'}]);
  const [text,setText]=useState(''),[busy,setBusy]=useState<''|'ask'|'run'>(''),[dialog,setDialog]=useState<Dialog>(null);
  const [history,setHistory]=useState<string[]>(readHistory),[historyOpen,setHistoryOpen]=useState(false),[cursor,setCursor]=useState(-1);
+ /** The phrase that opened the current slot form, re-sent by «Составить заново» once a confirmation token expires. */
+ const origin=useRef('');
  const input=useRef<HTMLTextAreaElement>(null),log=useRef<HTMLDivElement>(null);
  useEffect(()=>{const t=setTimeout(()=>input.current?.focus(),0);return()=>clearTimeout(t);},[]);
  useEffect(()=>{log.current?.scrollTo({top:log.current.scrollHeight});},[messages,busy]);
@@ -68,22 +71,27 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
    const question=r.missing?.[0];
    push({who:'assistant',text:r.preview||'Готово.',candidates:r.candidates?.length?r.candidates:undefined,options:question?.options?.length?{slot:question.slot,options:question.options}:undefined,confirm:r.confirm_required?{intent:r.intent,slots:r.slots,token:r.confirm_token}:undefined});
    if(finish(r.action))return;
-   if(r.candidates?.length||question||r.confirm_required)setDialog({intent:r.intent,slots:DIALOG_INTENTS.includes(r.intent)?r.slots:{},missing:question?.slot});
+   if(r.candidates?.length||question||r.confirm_required){if(!dialog)origin.current=phrase;setDialog({intent:r.intent,slots:DIALOG_INTENTS.includes(r.intent)?r.slots:{},missing:question?.slot});}
    else setDialog(null);
   }catch(e:any){push({who:'assistant',text:e.message,error:true});}
   finally{setBusy('');focus();}
  };
- const run=async(confirm:{intent:string,slots:Obj,token:string})=>{
+ const run=async(confirm:Confirm,label='Выполнить')=>{
   if(busy)return;
-  push({who:'user',text:'Выполнить'});setBusy('run');
+  push({who:'user',text:label});setBusy('run');
   try{
    const r:Obj=await api('/assistant/execute','POST',{intent:confirm.intent,slots:confirm.slots,confirm_token:confirm.token});
    push({who:'assistant',text:r.preview||'Выполнено.'});
    setDialog(null);
    finish(r.action);
-  }catch(e:any){push({who:'assistant',text:e.message,error:true});}
+  }catch(e:any){
+   // 409: the token is older than ten minutes, so the command has to be composed again; anything else can simply be retried.
+   const expired=e.status===409;
+   push({who:'assistant',text:e.message,error:true,retry:expired?{origin:origin.current}:{confirm}});
+  }
   finally{setBusy('');focus();}
  };
+ const recompose=(phrase:string)=>{setDialog(null);if(phrase)send(phrase);else focus();};
  const submit=(e:React.FormEvent)=>{e.preventDefault();if(!busy)send(text);};
  /** Enter sends, Shift+Enter adds a line; ↑/↓ walk the history when the field holds no edited text. */
  const keys=(e:React.KeyboardEvent<HTMLTextAreaElement>)=>{
@@ -106,6 +114,11 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
     <p>{message.text}</p>
     {message.candidates&&index===last&&<div className="assistant-candidates">{message.candidates.map((candidate:Obj)=><button type="button" key={candidate.id} disabled={!!busy} onClick={()=>choose(candidate)}>{candidate.label}</button>)}</div>}
     {message.options&&index===last&&<div className="assistant-candidates">{message.options.options.map((option:Obj)=><button type="button" key={String(option.value)} disabled={!!busy} onClick={()=>pick(message.options!.slot,option)}>{option.label}</button>)}</div>}
+    {message.retry&&index===last&&<div className="assistant-confirm" role="group" aria-label="Повтор команды">
+     {'confirm' in message.retry?<button type="button" className="primary" disabled={!!busy} onClick={()=>run((message.retry as {confirm:Confirm}).confirm,'Повторить')}>Повторить</button>
+     :<button type="button" className="primary" disabled={!!busy} onClick={()=>recompose((message.retry as {origin:string}).origin)}>Составить заново</button>}
+     <button type="button" disabled={!!busy} onClick={cancel}>Отмена</button>
+    </div>}
     {message.confirm&&index===last&&dialog&&<div className="assistant-confirm" role="group" aria-label="Подтверждение команды">
      <button type="button" className="primary" disabled={!!busy} onClick={()=>run(message.confirm!)}>Выполнить</button>
      <button type="button" disabled={!!busy} onClick={adjust}>Изменить</button>

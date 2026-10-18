@@ -24,8 +24,14 @@ EDITOR_SECTIONS=[(r'критери|проверк|оценк','criteria'),(r'к�
 FIELD_LABELS={'difficulty_stars':'сложность','title':'название','limit_seconds':'норматив времени','description':'описание','own_service':'своя служба','services':'службы-получатели','victims':'пострадавшие'}
 
 def complete(*args,**kwargs):
-    from .ai_routes import complete as model
+    from .ai_routes import assistant_complete as model
     return model(*args,**kwargs)
+
+TEST_CATALOG_MESSAGE='В тестовом каталоге создание билетов недоступно, включите полный каталог.'
+
+def test_catalog_blocked():
+    from .test_catalog import enabled
+    return enabled()
 
 def normalize(text):return re.sub(r'\s+',' ',str(text).lower().replace('ё','е')).strip()
 
@@ -153,6 +159,7 @@ QUESTIONS={'own_service':'Для какой службы создаём биле
 def create_step(slots,text,answer_slot,u,db):
     """One turn of the create_ticket slot form; returns an assistant reply."""
     from .assistant import reply, confirm_token
+    if test_catalog_blocked():return reply('create_ticket',TEST_CATALOG_MESSAGE)
     services=active_services(db)
     slots={k:v for k,v in slots.items() if k!='answer_slot'}
     if answer_slot and answer_slot in slots:pass  # a button answered the question: the value is already in the slots
@@ -208,6 +215,7 @@ def create_step(slots,text,answer_slot,u,db):
 
 def execute_create(slots,u,db):
     from .scenario_wizard import wizard, WizardIn
+    if test_catalog_blocked():m.fail(TEST_CATALOG_MESSAGE)
     try:data=WizardIn(incident_type=slots['incident_type'],mode=slots['mode'],victims_state=slots['victims'],victims_count=int(slots.get('victims_count') or 0),own_service=slots['own_service'],services=list(slots.get('services') or [slots['own_service']]),difficulty_stars=int(slots['difficulty']))
     except (KeyError,ValueError,TypeError) as error:m.fail('Недостаточно данных для билета: '+str(error))
     draft=wizard(data,u,db)['data']

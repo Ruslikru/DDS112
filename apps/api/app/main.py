@@ -152,6 +152,8 @@ async def lifespan(app):
     from .ai_workers import broker
     local_engine.delegate=broker.dispatch
     local_engine.on_event=diagnostic_event
+    from local_ai.engine import assistant_engine
+    assistant_engine.on_event=diagnostic_event
     diagnostic_event('server_ready')
     from .backups import worker as backup_worker
     backup_job=asyncio.create_task(backup_worker())
@@ -164,8 +166,8 @@ async def lifespan(app):
     broker.stop()
     job.cancel()
     if semantic_job: semantic_job.cancel()
-    from local_ai.engine import engine as local_engine
-    local_engine.stop()
+    from local_ai.engine import engine as local_engine, assistant_engine
+    local_engine.stop();assistant_engine.stop()
     diagnostic_event('server_stopped')
 app=FastAPI(title='112 Учебный контур',lifespan=lifespan)
 @app.middleware('http')
