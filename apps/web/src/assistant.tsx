@@ -3,7 +3,7 @@ import {useLocation,useNavigate} from 'react-router-dom';
 import {Sparkles,Send,Mic,MicOff,History,Trash2} from 'lucide-react';
 import {api,UserContext,type Obj} from './shared';
 import {ArmDialog} from './arm-ui';
-import {record,hasVoiceBridge,serverTranscribe} from './voice';
+import {record,hasVoiceBridge,serverTranscribe,listMicrophones} from './voice';
 
 /** Teacher assistant: text commands parsed by server rules. Reading and navigation run at once,
  *  changing commands (tickets) go through a slot form and confirmation cards with a server token.
@@ -18,7 +18,15 @@ const VOICE_STOP='training112:assistant-voice-stop';
 /** A press shorter than this is treated as a click, not speech: the recording is discarded. */
 const MIN_HOLD_MS=400;
 const VOICE_HINT='Голосовой ввод доступен в приложении Windows или на ПК сервера.';
-const HOLD_HINT='Удерживайте микрофон или Ctrl+Space и говорите, отпустите — фраза отправится.';
+const HOLD_HINT='Удерживайте микрофон или Ctrl+Space и говорите. Отпустите, и фраза отправится.';
+/** Below this input level (RMS) the whole recording counts as silence: the microphone gave no sound. */
+const SILENT_LEVEL=0.004;
+const SILENT_HINT='Микрофон не передал звук. Проверьте, что он включён и не заглушён, или выберите другой микрофон под полем ввода.';
+const MIC_KEY='training112:assistant-mic';
+/** Lines like «Страницы: …» get a bold label; the rest of the text is shown as written. */
+function Text({text}:{text:string}){
+ return <p>{text.split('\n').map((line,i)=>{const m=/^([А-ЯЁ][а-яё]+):\s(.+)$/.exec(line);return <React.Fragment key={i}>{i>0&&<br/>}{m?<><b>{m[1]}:</b> {m[2]}</>:line}</React.Fragment>;})}</p>;
+}
 /** Spoken answers to an open confirmation card are handled on the client, without the server. JS \b ignores Cyrillic, hence the lookahead. */
 const VOICE_YES=/^(да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|сохрани|сохранить|ок|окей|хорошо)(?=[\s.,!?]|$)/i;
 const VOICE_NO=/^(нет|отмена|отмени|отменить|не надо|не нужно|стоп|не выполняй)(?=[\s.,!?]|$)/i;
@@ -89,6 +97,10 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const [text,setText]=useState(''),[busy,setBusy]=useState<''|'ask'|'run'|'generate'>('');
  const [voice,setVoice]=useState<VoiceSource>(()=>hasVoiceBridge()?'bridge':'checking'),[recording,setRecording]=useState(false),[listening,setListening]=useState(''),[heard,setHeard]=useState('');
  const stopRecording=useRef<((cancel?:boolean)=>void)|undefined>(undefined),startedAt=useRef(0);
+ /** Input level while recording and the loudest moment of the last recording (to tell a silent microphone from unclear speech). */
+ const [level,setLevel]=useState(0),peak=useRef(0);
+ const [mics,setMics]=useState<{id:string,label:string}[]>([]),[mic,setMic]=useState(()=>{try{return localStorage.getItem(MIC_KEY)||'';}catch{return '';}});
+ const chooseMic=(id:string)=>{setMic(id);try{if(id)localStorage.setItem(MIC_KEY,id);else localStorage.removeItem(MIC_KEY);}catch{}};
  /** Recognition finishes asynchronously, so spoken answers must look at the current log and slot form, not at the ones captured when recording started. */
  const latest=useRef({messages,dialog});latest.current={messages,dialog};
  useEffect(()=>{
@@ -163,8 +175,12 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const startRecording=async()=>{
   if(recording||stopRecording.current||busy||voice==='none'||voice==='checking'){holding.current=false;return;}
   startedAt.current=Date.now();
-  setHeard('');setListening('Включаем микрофон…');
-  const stop=await record(spoken=>{stopRecording.current=undefined;setRecording(false);heardText(spoken);},problem=>{stopRecording.current=undefined;setRecording(false);setListening('');push({who:'assistant',text:problem,error:true});},voice==='server'?serverTranscribe:undefined);
+  setHeard('');setListening('Включаем микрофон…');peak.current=0;setLevel(0);
+  const stop=await record(spoken=>{stopRecording.current=undefined;setRecording(false);setLevel(0);heardText(spoken);},problem=>{
+   stopRecording.current=undefined;setRecording(false);setLevel(0);setListening('');
+   // «Речь не распознана» after a recording with no input level means the microphone gave nothing, not that the speech was unclear.
+   push({who:'assistant',text:/не распознана/i.test(problem)&&peak.current<SILENT_LEVEL?SILENT_HINT:problem,error:true});
+  },voice==='server'?serverTranscribe:undefined,{deviceId:mic||undefined,onLevel:value=>{if(value>peak.current)peak.current=value;setLevel(value);}});
   if(!stop){holding.current=false;setListening('');return;}
   startedAt.current=Date.now();
   stopRecording.current=stop;setRecording(true);setListening('Говорите. Отпустите кнопку, чтобы отправить.');
@@ -177,7 +193,14 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  useEffect(()=>{if(autoRecord.current&&voice!=='checking'){autoRecord.current=false;if(voice!=='none'&&holding.current)voiceStart.current();else holding.current=false;}},[voice]);
  useEffect(()=>()=>{stopRecording.current?.(true);},[]);
  // Ask for the microphone when the window opens, so the browser's permission prompt does not fall into the first held recording.
- useEffect(()=>{if(voice!=='server'&&voice!=='bridge')return;navigator.mediaDevices?.getUserMedia?.({audio:true}).then(stream=>stream.getTracks().forEach(track=>track.stop())).catch(()=>{});},[voice]);
+ useEffect(()=>{
+  if(voice!=='server'&&voice!=='bridge')return;
+  let alive=true;
+  const refresh=()=>listMicrophones().then(list=>{if(alive)setMics(list);});
+  navigator.mediaDevices?.getUserMedia?.({audio:true}).then(stream=>stream.getTracks().forEach(track=>track.stop())).catch(()=>{}).finally(refresh);
+  navigator.mediaDevices?.addEventListener?.('devicechange',refresh);
+  return()=>{alive=false;navigator.mediaDevices?.removeEventListener?.('devicechange',refresh);};
+ },[voice]);
  const micDisabled=!recording&&(!!busy||voice==='none'||voice==='checking');
  const micTitle=voice==='none'?VOICE_HINT:voice==='checking'?'Проверяем голосовой модуль…':recording?'Отпустите, чтобы отправить':'Удерживайте и говорите (Ctrl+Space)'+(voice==='server'?'. Распознавание на сервере':'');
  /** The line under the log always says what the microphone will do, not only while it is busy. */
@@ -230,7 +253,7 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
     const card=isCard(message),active=card&&index===last&&!message.done&&(!!dialog||!!message.retry);
     return <div key={index} className={'assistant-message '+message.who+(message.error?' error':'')+(card?' card':'')+(card&&!active?' settled':'')}>
     {message.collected&&<div className="assistant-collected" aria-label="Уже собрано">{message.collected.map(item=><span key={item}>{item}</span>)}</div>}
-    <p>{message.text}</p>
+    <Text text={message.text}/>
     {message.links&&<div className="assistant-links">{message.links.map(link=><button type="button" key={link.to+link.label} disabled={!!busy} onClick={()=>go(link.to)}>{link.label} →</button>)}</div>}
     {message.candidates&&active&&<div className="assistant-candidates">{message.candidates.map((candidate:Obj)=><button type="button" key={candidate.id} disabled={!!busy} onClick={()=>choose(candidate)}>{candidate.label}</button>)}{cancelButton}</div>}
     {message.options&&active&&<div className="assistant-candidates">{message.options.options.map((option:Obj)=><button type="button" key={String(option.value)} disabled={!!busy} onClick={()=>pick(message.options!.slot,option)}>{option.label}</button>)}{cancelButton}</div>}
@@ -261,11 +284,15 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
    {messages.length>1&&<button type="button" className="assistant-tool" disabled={!!busy} title="Очистить ленту" aria-label="Очистить ленту" onClick={clear}><Trash2 size={14}/></button>}
   </div>
   {historyOpen&&history.length>0&&<ul className="assistant-history" aria-label="История команд">{history.map(item=><li key={item}><button type="button" disabled={!!busy} title="Повторить команду" onClick={()=>{setHistoryOpen(false);send(item);}}>{item}</button></li>)}</ul>}
-  <div className={'assistant-voice-status'+(listening||heard?' active':'')} role="status" aria-live="polite">{voiceStatus}</div>
+  <div className={'assistant-voice-status'+(listening||heard?' active':'')} role="status" aria-live="polite">
+   {recording&&<span className="assistant-level" aria-hidden="true"><i style={{width:Math.min(100,Math.round(level*400))+'%'}}/></span>}
+   {voiceStatus}
+  </div>
   <form className="assistant-input" onSubmit={submit}>
-   <button type="button" className={'voice-mic assistant-mic '+(recording?'recording':micDisabled?'waiting':'ready')} disabled={micDisabled} title={micTitle} aria-label={micTitle} aria-pressed={recording} onPointerDown={press} onPointerUp={release} onPointerCancel={release} onKeyDown={micKey} onKeyUp={micKey} onContextMenu={e=>e.preventDefault()}>{voice==='none'?<MicOff size={24}/>:<Mic size={24}/>}</button>
-   <textarea ref={input} aria-label="Команда ассистенту" rows={2} value={text} maxLength={500} placeholder={dialog?.missing==='student'?'Фамилия или имя ученика':dialog?.missing?'Ответ на вопрос ассистента':dialog?'Что изменить в команде?':'Команда ассистенту… Enter — отправить, ↑ — повторить'} onChange={e=>{setText(e.target.value);setCursor(-1);}} onKeyDown={keys} disabled={!!busy}/>
+   <button type="button" className={'voice-mic assistant-mic '+(recording?'recording':micDisabled?'waiting':'ready')} style={{['--level' as any]:Math.min(1,level*8)}} disabled={micDisabled} title={micTitle} aria-label={micTitle} aria-pressed={recording} onPointerDown={press} onPointerUp={release} onPointerCancel={release} onKeyDown={micKey} onKeyUp={micKey} onContextMenu={e=>e.preventDefault()}>{voice==='none'?<MicOff size={24}/>:<Mic size={24}/>}</button>
+   <textarea ref={input} aria-label="Команда ассистенту" rows={2} value={text} maxLength={500} placeholder={dialog?.missing==='student'?'Фамилия или имя ученика':dialog?.missing?'Ответ на вопрос ассистента':dialog?'Что изменить в команде?':'Команда ассистенту. Enter отправит, стрелка вверх повторит прошлую'} onChange={e=>{setText(e.target.value);setCursor(-1);}} onKeyDown={keys} disabled={!!busy}/>
    <button type="submit" className="assistant-send" disabled={!!busy||!text.trim()} title="Отправить (Enter)" aria-label="Отправить"><Send size={20}/></button>
   </form>
+  {mics.length>1&&<label className="assistant-mic-choice">Микрофон <select value={mics.some(m=>m.id===mic)?mic:''} disabled={recording} onChange={e=>chooseMic(e.target.value)}><option value="">по умолчанию</option>{mics.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</select></label>}
  </ArmDialog>;
 }

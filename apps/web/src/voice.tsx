@@ -37,8 +37,14 @@ export function VoiceDraft({data}:{data:Obj}){
 export function hasVoiceBridge(){return !mobile()&&!!bridge()?.voice_transcribe;}
 /** Speech recognition on the classroom server (for a browser without the native bridge). */
 export const serverTranscribe=(audio:string):Promise<Obj>=>api('/voice/transcribe','POST',{audio});
-/** Records up to 15 s and passes the audio to `transcribe` (the native bridge when omitted). Returns a stop function. */
-export async function record(onDone:(text:string)=>void,onError:(text:string)=>void,transcribe?:(audio:string)=>Promise<Obj>):Promise<((cancel?:boolean)=>void)|undefined>{
+/** Microphones the browser knows; labels are filled only after a microphone permission was granted. */
+export async function listMicrophones():Promise<{id:string,label:string}[]>{
+ try{const all=await navigator.mediaDevices?.enumerateDevices?.();return (all||[]).filter(d=>d.kind==='audioinput').map((d,i)=>({id:d.deviceId,label:d.label||`Микрофон ${i+1}`}));}
+ catch{return [];}
+}
+/** Records up to 15 s and passes the audio to `transcribe` (the native bridge when omitted). Returns a stop function.
+ *  `deviceId` picks a microphone; `onLevel` receives the input level (RMS, 0..1) about 20 times a second while recording. */
+export async function record(onDone:(text:string)=>void,onError:(text:string)=>void,transcribe?:(audio:string)=>Promise<Obj>,options:{deviceId?:string,onLevel?:(level:number)=>void}={}):Promise<((cancel?:boolean)=>void)|undefined>{
  try{
   let convert=transcribe;
   if(!convert){
@@ -49,13 +55,28 @@ export async function record(onDone:(text:string)=>void,onError:(text:string)=>v
    convert=(audio:string)=>bridge().voice_transcribe(audio);
   }else if(typeof bridge()?.allow_microphone==='function')await bridge().allow_microphone();
   if(!navigator.mediaDevices?.getUserMedia)throw Error('Микрофон в браузере доступен только по HTTPS или на адресе localhost.');
-  let stream:MediaStream;
-  try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}
-  catch(e:any){throw Error(e?.name==='NotAllowedError'?'Доступ к микрофону запрещён. Разрешите его в настройках браузера.':e?.name==='NotFoundError'?'Микрофон не найден.':'Микрофон недоступен: '+(e?.message||String(e)));}
+  let opened:MediaStream|undefined,problem:any;
+  const constraints:MediaStreamConstraints={audio:options.deviceId?{deviceId:{exact:options.deviceId}}:true};
+  try{opened=await navigator.mediaDevices.getUserMedia(constraints);}
+  catch(e:any){
+   problem=e;
+   // A remembered microphone may be unplugged: fall back to the default one.
+   if(options.deviceId&&e?.name!=='NotAllowedError'){try{opened=await navigator.mediaDevices.getUserMedia({audio:true});}catch(e2:any){problem=e2;}}
+  }
+  if(!opened)throw Error(problem?.name==='NotAllowedError'?'Доступ к микрофону запрещён. Разрешите его в настройках браузера.':problem?.name==='NotFoundError'?'Микрофон не найден.':'Микрофон недоступен: '+(problem?.message||String(problem)));
+  const stream:MediaStream=opened;
   let recorder:MediaRecorder;try{recorder=new MediaRecorder(stream);}catch(e){stream.getTracks().forEach(t=>t.stop());throw e;}const chunks:BlobPart[]=[];
   let cancelled=false;
+  // Input level meter, so the speaker can see whether the microphone picks anything up.
+  let meter:{context:AudioContext,timer:any}|undefined;
+  if(options.onLevel){try{
+   const context=new AudioContext(),analyser=context.createAnalyser();analyser.fftSize=1024;context.createMediaStreamSource(stream).connect(analyser);
+   const buffer=new Float32Array(analyser.fftSize);
+   meter={context,timer:setInterval(()=>{analyser.getFloatTimeDomainData(buffer);let sum=0;for(const v of buffer)sum+=v*v;options.onLevel!(Math.sqrt(sum/buffer.length));},50)};
+  }catch{}}
+  const stopMeter=()=>{if(!meter)return;clearInterval(meter.timer);meter.context.close().catch(()=>{});meter=undefined;};
   recorder.ondataavailable=e=>chunks.push(e.data);
-  recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());if(cancelled)return;try{const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());let raw='';bytes.forEach(b=>raw+=String.fromCharCode(b));const value=await convert!(btoa(raw));onDone(value.text+'');}catch(e:any){onError(e.message||String(e));}};
+  recorder.onstop=async()=>{stopMeter();stream.getTracks().forEach(t=>t.stop());if(cancelled)return;try{const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());let raw='';bytes.forEach(b=>raw+=String.fromCharCode(b));const value=await convert!(btoa(raw));onDone(value.text+'');}catch(e:any){onError(e.message||String(e));}};
   recorder.start();const limit=setTimeout(()=>{if(recorder.state==='recording')recorder.stop();},15000);
   // stop(true) discards the recording: nothing is transcribed and neither callback fires.
   return (cancel=false)=>{clearTimeout(limit);cancelled=cancel;if(recorder.state==='recording')recorder.stop();};
