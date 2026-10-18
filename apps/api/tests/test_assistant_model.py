@@ -33,11 +33,11 @@ def test_ask_model_goes_to_assistant_engine(monkeypatch):
     monkeypatch.setattr(scenario_wizard,'complete',lambda *a,**kw:(calls.append('wizard') or ({'description':'Лифт остановился между этажами. Доступ свободен.'},{'model':'main'})))
     with TestClient(app) as c:
         login(c,'teacher')
-        r=post(c,'/assistant/interpret',{'text':'создай билет, кабина застряла между этажами','context':{'page':'/'}}).json()
+        r=post(c,'/assistant/interpret',{'text':'создай билет, лифт застрял между этажами','context':{'page':'/'}}).json()
         assert calls==['assistant'] and r['slots']['incident_type']=='лифт'
         # When both settings name the same model there is no second server: the main engine answers.
         monkeypatch.setattr(ai_routes.ai,'config',lambda:{'model':DEFAULT_MODEL,'assistant_model':DEFAULT_MODEL})
-        post(c,'/assistant/interpret',{'text':'создай билет, кабина застряла между этажами','context':{'page':'/'}})
+        post(c,'/assistant/interpret',{'text':'создай билет, лифт застрял между этажами','context':{'page':'/'}})
         assert calls==['assistant','main']
 
 def test_assistant_model_route_is_admin_only(monkeypatch):

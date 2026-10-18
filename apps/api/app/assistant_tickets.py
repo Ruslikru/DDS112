@@ -103,6 +103,17 @@ def stem(word):
     """Drops up to two inflection letters; at least four letters stay."""
     return word[:max(4,len(word)-2)]
 
+COMMAND_WORDS=re.compile(r'\b(созда\w*|добав\w*|сдела\w*|сгенерир\w*|придума\w*|нужен|нужно|хочу|хотим|давай\w*|нов(ый|ого|ую)|еще|ещё|один|билет\w*|пожалуйста|мне|нам|про|о|об|на тему|по теме|тема|пусть|будет|ка|ну|а|и|что|то)\b')
+
+def command_only(text):
+    """True when the phrase names nothing beyond the command itself: «новый билет», «создай билет про»."""
+    return not re.search(r'[а-яa-z0-9]{2,}',COMMAND_WORDS.sub(' ',normalize(text)))
+
+def confirmed_by_text(incident,text):
+    """The model may only repeat what the teacher said: one word stem of the incident must occur in the phrase."""
+    words=re.findall(r'[а-яa-z0-9]+',normalize(text))
+    return any(x.startswith(stem(w)) or w.startswith(stem(x)) for w in re.findall(r'[а-яa-z0-9]+',normalize(incident)) for x in words if len(w)>=3 and len(x)>=3)
+
 def classifier_search(db,needle):
     """Case-insensitive search in Python: SQLite lower() ignores Cyrillic."""
     needle=normalize(needle)
@@ -163,7 +174,7 @@ def ask_model(text,services,db):
     except (HTTPException,Exception):return {}
     if not isinstance(value,dict):return {}
     out={}
-    if isinstance(value.get('incident'),str) and value['incident'].strip():out['incident_query']=value['incident'].strip()[:120]
+    if isinstance(value.get('incident'),str) and value['incident'].strip() and confirmed_by_text(value['incident'],text):out['incident_query']=value['incident'].strip()[:120]
     if value.get('victims') in ('yes','no','unknown'):out['victims']=value['victims']
     if out.get('victims')=='yes' and isinstance(value.get('victims_count'),int) and value['victims_count']>0:out['victims_count']=value['victims_count']
     if isinstance(value.get('difficulty'),int) and 1<=value['difficulty']<=5:out['difficulty']=value['difficulty']
@@ -193,7 +204,8 @@ def options_for(slot,services,own_service=None):
     if slot=='own_service':return [{'value':s.name,'label':s.name} for s in services]
     if slot=='incident_type':
         service=next((s for s in services if s.name==own_service),None)
-        return [{'value':tag,'label':tag} for tag in service_tags(service)] if service else []
+        tags=service_tags(service) if service else list(dict.fromkeys(tag for s in services for tag in service_tags(s)))
+        return [{'value':tag,'label':tag} for tag in tags]
     if slot=='mode':return [{'value':'dds','label':'Диспетчер службы'},{'value':'112','label':'Оператор 112'}]
     if slot=='difficulty':return [{'value':n,'label':'★'*n+'☆'*(5-n)} for n in range(1,6)]
     if slot=='victims':return [{'value':'unknown','label':'Пока неизвестно'},{'value':'no','label':'Нет'},{'value':'yes','label':'Есть'}]
@@ -218,7 +230,7 @@ def create_step(slots,text,answer_slot,u,db):
         if 'incident_query' in parsed:slots.pop('incident_type',None)
         slots.update(parsed)
     if text and not answer_slot:slots['free_text']=text
-    if not slots.get('incident_type') and not slots.get('incident_query') and text and not answer_slot:
+    if not slots.get('incident_type') and not slots.get('incident_query') and text and not answer_slot and not command_only(text):
         slots.update({k:v for k,v in ask_model(text,services,db).items() if k not in slots})
     if slots.get('incident_query') and not slots.get('incident_type'):
         status=resolve_incident(db,slots['incident_query'],services,slots.get('own_service'))
@@ -250,7 +262,7 @@ def create_step(slots,text,answer_slot,u,db):
         available=classifier_traits(db,slots['incident_type'])
         slots['traits']=list(dict.fromkeys(list(slots.get('traits') or [])+traits_in_text(slots['free_text'],available)))[:12]
         slots.pop('free_text',None)
-    for slot in ('own_service','incident_type','mode','difficulty','victims'):
+    for slot in ('incident_type','own_service','mode','difficulty','victims'):  # the incident comes first: its tag often names the service
         if slot not in slots:
             return reply('create_ticket',QUESTIONS[slot],slots=slots,missing=[{'slot':slot,'question':QUESTIONS[slot],'options':options_for(slot,services,slots.get('own_service'))}])
     if slots['victims']=='yes' and not slots.get('victims_count'):

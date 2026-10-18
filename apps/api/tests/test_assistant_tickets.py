@@ -62,12 +62,13 @@ def test_full_phrase_fills_every_slot_and_creates_a_ticket(teacher):
 
 def test_slot_form_asks_one_question_at_a_time(teacher):
     r=ask(teacher,'давай новый билет сделаем')
-    assert r['intent']=='create_ticket' and r['missing'][0]['slot']=='own_service' and not r['confirm_required']
-    assert {'value':'ДДС района','label':'ДДС района'} in r['missing'][0]['options']
-    r=follow(teacher,r,'ДДС района',own_service='ДДС района')
-    assert r['missing'][0]['slot']=='incident_type' and {'value':'лифт','label':'лифт'} in r['missing'][0]['options']
+    assert r['intent']=='create_ticket' and r['missing'][0]['slot']=='incident_type' and not r['confirm_required'],'the incident is asked first: its tag often names the service'
+    assert {'value':'лифт','label':'лифт'} in r['missing'][0]['options'],'without a service the buttons list the tags of every service'
     r=follow(teacher,r,'лифт')
-    assert r['slots']['incident_type']=='лифт' and r['missing'][0]['slot']=='mode'
+    assert r['slots']['incident_type']=='лифт' and r['missing'][0]['slot']=='own_service'
+    assert {'value':'ДДС района','label':'ДДС района'} in r['missing'][0]['options'],'two services share the tag «лифт», so the teacher picks one'
+    r=follow(teacher,r,'ДДС района',own_service='ДДС района')
+    assert r['slots']['own_service']=='ДДС района' and r['missing'][0]['slot']=='mode'
     r=follow(teacher,r,'оператора 112')
     assert r['slots']['mode']=='112' and r['missing'][0]['slot']=='difficulty'
     r=follow(teacher,r,'четыре')
@@ -140,15 +141,45 @@ def test_model_extracts_incident_when_rules_cannot(monkeypatch):
     monkeypatch.setattr(assistant_tickets,'complete',model)
     with TestClient(app) as c:
         login(c,'teacher')
-        r=ask(c,'создай билет: у нас кабина застряла между этажами, никого не зажало')
-        assert calls==['создай билет: у нас кабина застряла между этажами, никого не зажало']
+        r=ask(c,'создай билет: у нас лифт застрял между этажами, никого не зажало')
+        assert calls==['создай билет: у нас лифт застрял между этажами, никого не зажало']
         assert r['slots']['incident_type']=='лифт' and r['slots']['difficulty']==2 and r['slots']['victims']=='no' and r['slots']['mode']=='dds'
         assert r['missing'][0]['slot']=='own_service' and {'value':'ДДС района','label':'ДДС района'} in r['missing'][0]['options'],'two services share the tag «лифт», so the teacher picks one'
         r=follow(c,r,'ДДС района',own_service='ДДС района')
         assert r['confirm_required'] and r['slots']['own_service']=='ДДС района' and r['slots']['services']==['ДДС района']
         monkeypatch.setattr(assistant_tickets,'complete',lambda *a,**kw:(_ for _ in ()).throw(RuntimeError('нейросеть занята')))
         r=ask(c,'создай билет, что-то случилось во дворе')
-        assert r['intent']=='create_ticket' and r['missing'][0]['slot']=='own_service' and not r['confirm_required'],'a busy model degrades to the ordinary questions'
+        assert r['intent']=='create_ticket' and r['missing'][0]['slot']=='incident_type' and not r['confirm_required'],'a busy model degrades to the ordinary questions'
+
+def test_bare_command_asks_for_the_incident_without_the_model(monkeypatch):
+    from apps.api.app import assistant_tickets
+    calls=[]
+    monkeypatch.setattr(assistant_tickets,'complete',lambda system,prompt,*a,**kw:(calls.append(prompt) or ({'incident':'ДТП','victims':'','victims_count':0,'difficulty':0,'mode':''},{'model':'test'})))
+    with TestClient(app) as c:
+        login(c,'teacher')
+        for phrase in ('Новый билет','создай билет','сделай, пожалуйста, ещё один билет про'):
+            r=ask(c,phrase)
+            assert r['intent']=='create_ticket' and r['missing'][0]['slot']=='incident_type' and not r['confirm_required'],phrase
+            assert 'incident_type' not in r['slots'] and 'incident_query' not in r['slots'] and r['preview']==assistant_tickets.QUESTIONS['incident_type'],phrase
+        assert calls==[],'a phrase made of command words only gives the model nothing to extract'
+
+def test_model_incident_is_rejected_unless_the_phrase_names_it(monkeypatch):
+    from apps.api.app import assistant_tickets
+    answers=[];calls=[]
+    monkeypatch.setattr(assistant_tickets,'complete',lambda system,prompt,*a,**kw:(calls.append(prompt) or ({'incident':answers[-1],'victims':'no','victims_count':0,'difficulty':0,'mode':''},{'model':'test'})))
+    with TestClient(app) as c:
+        login(c,'teacher')
+        answers.append('ДТП')
+        r=ask(c,'создай билет, горит сарай во дворе')
+        assert calls==['создай билет, горит сарай во дворе'] and r['intent']=='create_ticket'
+        assert r['missing'][0]['slot']=='incident_type' and 'incident_type' not in r['slots'] and 'incident_query' not in r['slots'],'«ДТП» is not in the phrase, so the model made it up'
+        assert r['slots']['victims']=='no','the other fields of the answer still count'
+        answers.append('пожар')
+        r=ask(c,'создай билет, пожар в сарае во дворе')
+        assert r['slots']['incident_type']=='пожар' and r['slots']['own_service']=='Служба 101','a word of the phrase confirms the incident'
+        answers.append('ДТП')
+        r=ask(c,'создай билет про пожар')
+        assert r['slots']['incident_type']=='пожар' and len(calls)==2,'the rules found the incident, the model is not asked'
 
 def test_confirm_token_binds_user_slots_and_time(teacher,monkeypatch):
     r=ask(teacher,'создай билет про лифт для ДДС района на 1 звезду без пострадавших')
