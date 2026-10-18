@@ -130,17 +130,19 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   const stop=stopRecording.current;
   if(!stop)return;
   stopRecording.current=undefined;setRecording(false);
-  if(Date.now()-startedAt.current<MIN_HOLD_MS){stop(true);setListening('Удерживайте кнопку, пока говорите.');return;}
+  // Measured from the moment the microphone actually started, not from the press: the permission prompt can eat the first seconds.
+  if(Date.now()-startedAt.current<MIN_HOLD_MS){stop(true);setListening('Запись не успела начаться. Удерживайте кнопку и говорите после слова «Говорите».');return;}
   stop();setListening('Распознаём…');
  };
  /** Press of the button or keys: records until release (or 15 seconds). `holding` is set by the caller before this runs. */
  const startRecording=async()=>{
   if(recording||stopRecording.current||busy||voice==='none'||voice==='checking'){holding.current=false;return;}
   startedAt.current=Date.now();
-  setHeard('');setListening('Говорите. Отпустите кнопку, чтобы отправить.');
+  setHeard('');setListening('Включаем микрофон…');
   const stop=await record(spoken=>{stopRecording.current=undefined;setRecording(false);heardText(spoken);},problem=>{stopRecording.current=undefined;setRecording(false);setListening('');push({who:'assistant',text:problem,error:true});},voice==='server'?serverTranscribe:undefined);
   if(!stop){holding.current=false;setListening('');return;}
-  stopRecording.current=stop;setRecording(true);
+  startedAt.current=Date.now();
+  stopRecording.current=stop;setRecording(true);setListening('Говорите. Отпустите кнопку, чтобы отправить.');
   // The microphone can take a moment to start; if the button was already released, finish at once.
   if(!holding.current)finishRecording();
  };
@@ -149,9 +151,11 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  useEffect(()=>{const start=()=>{voiceStart.current();},stop=()=>{voiceStop.current();};window.addEventListener(VOICE_START,start);window.addEventListener(VOICE_STOP,stop);return()=>{window.removeEventListener(VOICE_START,start);window.removeEventListener(VOICE_STOP,stop);};},[]);
  useEffect(()=>{if(autoRecord.current&&voice!=='checking'){autoRecord.current=false;if(voice!=='none'&&holding.current)voiceStart.current();else holding.current=false;}},[voice]);
  useEffect(()=>()=>{stopRecording.current?.(true);},[]);
+ // Ask for the microphone when the window opens, so the browser's permission prompt does not fall into the first held recording.
+ useEffect(()=>{if(voice!=='server'&&voice!=='bridge')return;navigator.mediaDevices?.getUserMedia?.({audio:true}).then(stream=>stream.getTracks().forEach(track=>track.stop())).catch(()=>{});},[voice]);
  const micDisabled=!recording&&(!!busy||voice==='none'||voice==='checking');
  const micTitle=voice==='none'?VOICE_HINT:voice==='checking'?'Проверяем голосовой модуль…':recording?'Отпустите, чтобы отправить':'Удерживайте и говорите (Ctrl+Space)';
- const press=(e:React.PointerEvent<HTMLButtonElement>)=>{if(micDisabled||e.button!==0)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);holding.current=true;startRecording();};
+ const press=(e:React.PointerEvent<HTMLButtonElement>)=>{if(micDisabled||e.button!==0)return;e.preventDefault();try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}holding.current=true;startRecording();};
  const release=()=>{if(holding.current||stopRecording.current)finishRecording();};
  const micKey=(e:React.KeyboardEvent<HTMLButtonElement>)=>{if(e.key!==' '&&e.key!=='Enter')return;e.preventDefault();if(e.type==='keydown'){if(e.repeat||holding.current||micDisabled)return;holding.current=true;startRecording();}else release();};
  /** Runs a confirmed command. A new ticket answers with its draft and a second confirmation («Сохранить»). */

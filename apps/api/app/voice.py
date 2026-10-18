@@ -192,7 +192,10 @@ def transcribe(data:TranscribeIn,u=Depends(m.current)):
     m.staff(u)
     try:value=runtime.transcribe(data.audio)
     except ValueError as e:m.fail(str(e))
-    except Exception as e:m.fail('Распознавание на сервере недоступно: '+str(e),503)
+    except Exception as e:
+        # An empty recording is the speaker's problem, not an outage: Whisper reports it as an error string.
+        if 'не распознана' in str(e):m.fail('Речь не распознана. Удерживайте кнопку, пока говорите, и проверьте, что микрофон включён.')
+        m.fail('Распознавание на сервере недоступно: '+str(e),503)
     return {**{k:v for k,v in (value or {}).items() if k!='text'},'text':str((value or {}).get('text','')).strip()}
 
 @router.post('/prepare')
