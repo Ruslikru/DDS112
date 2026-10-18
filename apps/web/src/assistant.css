@@ -1,0 +1,9 @@
+.arm-console nav .assistant-button{background:#2f5f8a;border-color:#4d86b7}.arm-console nav .assistant-button:hover{background:#3a74a8}
+.assistant-shade{z-index:2500}.assistant-shade .arm-dialog{width:min(680px,94vw);max-height:84dvh;display:flex;flex-direction:column}.assistant-shade .arm-dialog>header{margin-bottom:12px}
+.assistant-log{flex:1;min-height:240px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px;background:#f4f6f7;border:1px solid #d6dde1}
+.assistant-message{max-width:88%;padding:8px 12px;font-size:14px;line-height:1.45}.assistant-message p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.assistant-message.user{align-self:flex-end;background:#dbe8f5;color:#1b2f44}.assistant-message.assistant{align-self:flex-start;background:#fff;border:1px solid #d6dde1}.assistant-message.error{background:#fdecea;border-color:#f1b3ad;color:#7a1f16}
+.assistant-candidates{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.assistant-candidates button,.assistant-hints button{font-size:13px;padding:5px 11px;border:1px solid #9fb3c0;background:#fff;color:#1b2f44}.assistant-candidates button:hover,.assistant-hints button:hover{background:#e7eff6}
+.assistant-hints{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px}
+.assistant-input{display:flex;gap:8px}.assistant-input input{flex:1;font-size:15px;padding:8px 10px}.assistant-input button{display:flex;align-items:center;gap:6px;padding:8px 14px;font-weight:bold}
+.assistant-note{display:block;margin-top:8px;color:#5c6d80;font-size:12px}

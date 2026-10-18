@@ -670,6 +670,9 @@ app.include_router(management_router)
 from .teacher import router as teacher_router
 app.include_router(teacher_router)
 
+from .assistant import router as assistant_router
+app.include_router(assistant_router)
+
 from .voice import router as voice_router
 app.include_router(voice_router)
 
