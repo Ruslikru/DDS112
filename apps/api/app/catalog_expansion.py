@@ -45,11 +45,12 @@ MINIS=[
  ('Что проверить перед подтверждением оценки?','Карточку, критерии и разговор',['Карточку, критерии и разговор','Только итоговый балл','Только время задания'])]
 
 def seed_expansion(db):
+ from .test_catalog import enabled
  owner=db.scalar(select(User).where(User.role=='admin'))
  if not owner:return
  for name,tags in {'Служба 104':['газ','запах газа'],'ЦОДД':['ДТП'],'Мосводоканал':['водопровод'],'МОСГАЗ':['газопровод']}.items():
   if not db.get(ServiceDefinition,name):db.add(ServiceDefinition(name=name,config={'tags':tags,'questions':[],'rules':[]}))
- for index,(service,title,description,street,house,tags) in enumerate(SCENES):
+ for index,(service,title,description,street,house,tags) in enumerate([] if enabled() else SCENES):
   if not db.get(ServiceDefinition,service):db.add(ServiceDefinition(name=service,config={'tags':tags,'questions':[],'rules':[]}))
   for mode in ('112','dds'):
    marker=f'{"112" if mode=="112" else "ДДС"} · {service}: {title}'

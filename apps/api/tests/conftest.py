@@ -3,6 +3,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def prepared_seed_speech(monkeypatch,tmp_path):
+    monkeypatch.setenv('TRAINING_CATALOG','full')
     from apps.api.app import voice
     from sqlalchemy import select
     original=voice.recover

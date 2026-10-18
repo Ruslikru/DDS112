@@ -181,16 +181,33 @@ def self_test(data):
                     time.sleep(2)
         person = json.loads(request('/api/login', {'login':'admin','password':os.environ['DEMO_PASSWORD']}))
         assert person['role'] == 'admin'
-        tickets = json.loads(request('/api/tickets')); assert len(tickets) >= 6
-        tutorials=json.loads(request('/api/tutorials'));assert len(tutorials)==4
-        practice=json.loads(request('/api/tickets/'+str(tutorials[0]['version_id'])+'/try',{}));assert practice['state']['preview']
-        report['guided_tickets']=4;report['teacher_practice']=True
-        dds=next(t for t in tutorials if t['key']=='dds-1')
+        from apps.api.app.test_catalog import enabled as limited_catalog, TITLES
+        limited=limited_catalog()
+        tickets = json.loads(request('/api/tickets'))
+        tutorials=json.loads(request('/api/tutorials'))
+        if limited:
+            assert len(tickets)==2 and {ticket['data']['title'] for ticket in tickets}==set(TITLES)
+            assert all(task['mode']=='dds' for ticket in tickets for task in ticket['data']['tasks'])
+            assert not tutorials
+            dds={'version_id':next(ticket['id'] for ticket in tickets if ticket['data']['title']==TITLES[0])}
+            contact_id='unit1'
+            for ticket in tickets:
+                practice=json.loads(request('/api/tickets/'+str(ticket['id'])+'/try',{}));assert practice['state']['preview']
+            report['two_dds_catalog']=True
+        else:
+            assert len(tickets)>=6 and len(tutorials)==4
+            practice=json.loads(request('/api/tickets/'+str(tutorials[0]['version_id'])+'/try',{}));assert practice['state']['preview']
+            dds=next(ticket for ticket in tutorials if ticket['key']=='dds-1')
+            contact_id='brigade'
+        report['guided_tickets']=len(tutorials);report['teacher_practice']=True
         call=json.loads(request('/api/tickets/'+str(dds['version_id'])+'/try',{}))
-        call=json.loads(request('/api/attempts/'+str(call['id'])+'/command',{'command_id':secrets.token_hex(16),'revision':call['revision'],'type':'contact','payload':{'id':'brigade','text':'Виден дым, пострадавших нет'}}))
-        recording=call['state']['messages'][-1]['audio'];assert recording
-        assert request('/api/media/'+recording).startswith(b'RIFF')
-        report['dds_prerecorded_answer']=True
+        call=json.loads(request('/api/attempts/'+str(call['id'])+'/command',{'command_id':secrets.token_hex(16),'revision':call['revision'],'type':'contact','payload':{'id':contact_id,'text':'Передаю сведения по карточке.'}}))
+        recording=call['state']['messages'][-1].get('audio')
+        if recording:
+            assert request('/api/media/'+recording).startswith(b'RIFF')
+        else:
+            assert limited
+        report['dds_prerecorded_answer']=bool(recording)
 
         assert isinstance(json.loads(request('/api/teacher/students')),list)
         assert request('/api/teacher/report.xlsx').startswith(b'PK')
@@ -250,7 +267,7 @@ def self_test(data):
         request('/api/logout', {})
         request('/api/login', {'login':'student','password':os.environ['DEMO_PASSWORD']})
         assignments = json.loads(request('/api/assignments'))
-        if ai_status['available']:
+        if ai_status['available'] and not limited:
             source=next(a for a in assignments if 'Задымление' in a['title'])
             call=json.loads(request('/api/assignments/'+str(source['id'])+'/start',{}))
             call=json.loads(request('/api/attempts/'+str(call['id'])+'/command',{'command_id':secrets.token_hex(16),'revision':call['revision'],'type':'accept_call'}))
@@ -258,14 +275,25 @@ def self_test(data):
             assert 'name' in call['state']['asked']
             report['ai_question']=True
         assignment = next(a for a in assignments if 'взаимодействие с бригадой' in a['title'])
-        try:request('/api/assignments/'+str(assignment['id'])+'/start', {})
+        try:
+            student_attempt=json.loads(request('/api/assignments/'+str(assignment['id'])+'/start', {}))
+            report['student_voice_ready']=True
         except urllib.error.HTTPError as error:
             assert error.code==409
             report['voice_readiness_gate']=True
-        attempt = json.loads(request('/api/tutorials/'+str(dds['version_id'])+'/start', {}))
+            report['student_voice_ready']=False
+        if limited:
+            assert assignments and all(task['mode']=='dds' for item in assignments for task in item['tasks'])
+            if report['student_voice_ready']:
+                attempt=student_attempt
+            else:
+                request('/api/login',{'login':'admin','password':os.environ['DEMO_PASSWORD']})
+                attempt=json.loads(request('/api/tickets/'+str(dds['version_id'])+'/try',{}))
+        else:
+            attempt = json.loads(request('/api/tutorials/'+str(dds['version_id'])+'/start', {}))
         attempt = json.loads(request('/api/attempts/'+str(attempt['id'])+'/command', {
             'command_id': secrets.token_hex(16), 'revision':attempt['revision'], 'type':'contact',
-            'payload':{'id':'brigade','text':'Проверочный ввод: передаю заявку на Учебной, дом 12.'}}))
+            'payload':{'id':contact_id,'text':'Проверочный ввод: передаю заявку на Учебной, дом 12.'}}))
         assert attempt['state']['messages'][0]['text'].startswith('Проверочный')
         import tkinter as tk
         root=tk.Tk(); root.withdraw(); root.update(); root.destroy()
