@@ -4,7 +4,7 @@ Rules extract the obvious parameters; the local model is asked only for the inci
 when the rules found none. Entities (service, incident, ticket) are resolved on the
 server, and every change is saved as a new ticket version through the usual routes.
 """
-import re
+import re, secrets, time
 from fastapi import HTTPException
 from sqlalchemy import select
 from . import main as m
@@ -26,6 +26,51 @@ FIELD_LABELS={'difficulty_stars':'сложность','title':'название'
 def complete(*args,**kwargs):
     from .ai_routes import assistant_complete as model
     return model(*args,**kwargs)
+
+def model_status_line():
+    """Which model will generate the draft and whether it is busy right now."""
+    try:
+        from local_ai.engine import engine
+        status=engine.status()
+    except Exception:return ''
+    name=status.get('model','');fast='0.6B' in name
+    where='видеокарта' if status.get('mode')=='gpu' else 'процессор'
+    estimate='несколько секунд' if fast or status.get('mode')=='gpu' else 'обычно 20–60 секунд'
+    line=f'Модель: {name} ({where}), {estimate}.'
+    if not status.get('available'):line+=' Файлы модели не найдены: генерация не запустится.'
+    elif status.get('busy'):line+=' Сейчас нейросеть занята другим запросом, придётся подождать.'
+    return line
+
+# Generated drafts wait here for the second confirmation («Сохранить»); ten minutes, single process.
+DRAFTS={}
+DRAFT_TTL=600
+
+def keep_draft(u,draft):
+    now=time.time()
+    for key in [k for k,v in DRAFTS.items() if v['expires']<now]:DRAFTS.pop(key,None)
+    draft_id=secrets.token_urlsafe(16)
+    DRAFTS[draft_id]={'user':u.id,'draft':draft,'expires':now+DRAFT_TTL}
+    return draft_id
+
+def take_draft(u,draft_id):
+    item=DRAFTS.get(str(draft_id))
+    if not item or item['user']!=u.id or item['expires']<time.time():m.fail('Черновик устарел. Создайте билет заново.',409)
+    DRAFTS.pop(draft_id,None)
+    return item['draft']
+
+def classifier_traits(db,incident):
+    row=db.scalar(select(Classifier).where(Classifier.title==incident).limit(1))
+    traits=[t for t in (row.traits or []) if t] if row else []
+    if 'трамва' in normalize(incident):traits+=['Повреждены провода контактной сети','Вагон перекрыл проезжую часть']
+    return list(dict.fromkeys(traits))
+
+def traits_in_text(text,traits):
+    """Classifier signs whose every meaningful word (4+ letters) appears in the phrase."""
+    t=normalize(text);found=[]
+    for trait in traits:
+        stems=[stem(w) for w in re.findall(r'[а-яa-z]+',normalize(trait)) if len(w)>=4]
+        if stems and all(s in t for s in stems):found.append(trait)
+    return found
 
 TEST_CATALOG_MESSAGE='В тестовом каталоге создание билетов недоступно, включите полный каталог.'
 
@@ -172,6 +217,7 @@ def create_step(slots,text,answer_slot,u,db):
         parsed=parse_create(text,services)
         if 'incident_query' in parsed:slots.pop('incident_type',None)
         slots.update(parsed)
+    if text and not answer_slot:slots['free_text']=text
     if not slots.get('incident_type') and not slots.get('incident_query') and text and not answer_slot:
         slots.update({k:v for k,v in ask_model(text,services,db).items() if k not in slots})
     if slots.get('incident_query') and not slots.get('incident_type'):
@@ -200,6 +246,10 @@ def create_step(slots,text,answer_slot,u,db):
     if slots.get('incident_type') and slots.get('own_service'):
         owners=[s.name for s in services if normalize(slots['incident_type']) in {normalize(t) for t in service_tags(s)}]
         if owners:slots['tag_service']=slots['own_service'] if slots['own_service'] in owners else owners[0]
+    if slots.get('incident_type') and slots.get('free_text'):
+        available=classifier_traits(db,slots['incident_type'])
+        slots['traits']=list(dict.fromkeys(list(slots.get('traits') or [])+traits_in_text(slots['free_text'],available)))[:12]
+        slots.pop('free_text',None)
     for slot in ('own_service','incident_type','mode','difficulty','victims'):
         if slot not in slots:
             return reply('create_ticket',QUESTIONS[slot],slots=slots,missing=[{'slot':slot,'question':QUESTIONS[slot],'options':options_for(slot,services,slots.get('own_service'))}])
@@ -209,18 +259,29 @@ def create_step(slots,text,answer_slot,u,db):
     slots['services']=recipients
     victims=VICTIM_LABELS[slots['victims']]+(f', {slots["victims_count"]} чел.' if slots['victims']=='yes' else '')
     preview=(f'Создам черновик билета:\n• служба: {slots["own_service"]}\n• происшествие: {slots["incident_type"]}\n• режим: {MODE_LABELS[slots["mode"]]}\n'
-             f'• сложность: {"★"*slots["difficulty"]}{"☆"*(5-slots["difficulty"])}\n• пострадавшие: {victims}\n• получатели: {", ".join(recipients)} (службы по фактам сценария добавятся автоматически)\n'
-             'Адрес и описание подберёт мастер. Генерация занимает до минуты, после неё откроется редактор. Выполнить?')
+             f'• сложность: {"★"*slots["difficulty"]}{"☆"*(5-slots["difficulty"])}\n• пострадавшие: {victims}\n'
+             +(f'• признаки: {", ".join(slots["traits"])}\n' if slots.get('traits') else '')
+             +f'• получатели: {", ".join(recipients)} (службы по фактам сценария добавятся автоматически)\n'
+             'Адрес и описание подберёт мастер; черновик покажу перед сохранением. '+model_status_line()+' Выполнить?')
     return reply('create_ticket',preview,slots=slots,confirm=confirm_token(u,'create_ticket',slots))
 
 def execute_create(slots,u,db):
     from .scenario_wizard import wizard, WizardIn
     if test_catalog_blocked():m.fail(TEST_CATALOG_MESSAGE)
-    try:data=WizardIn(incident_type=slots['incident_type'],mode=slots['mode'],victims_state=slots['victims'],victims_count=int(slots.get('victims_count') or 0),own_service=slots['own_service'],services=list(slots.get('services') or [slots['own_service']]),difficulty_stars=int(slots['difficulty']))
+    try:data=WizardIn(incident_type=slots['incident_type'],mode=slots['mode'],victims_state=slots['victims'],victims_count=int(slots.get('victims_count') or 0),own_service=slots['own_service'],services=list(slots.get('services') or [slots['own_service']]),difficulty_stars=int(slots['difficulty']),traits=list(slots.get('traits') or [])[:12])
     except (KeyError,ValueError,TypeError) as error:m.fail('Недостаточно данных для билета: '+str(error))
-    draft=wizard(data,u,db)['data']
+    draft=wizard(data,u,db)['data'];task=draft['tasks'][0]
+    from .assistant import confirm_token
+    slots_out={'draft_id':keep_draft(u,draft),'title':draft['title']}
+    story=task.get('initial_card',{}).get('description') or task.get('intro','')
+    preview=(f'Черновик готов: «{draft["title"]}».\n{story}\nСлужбы: {", ".join(task.get("services",[]))}. Сложность: {"★"*int(draft.get("difficulty_stars") or 1)}. '
+             f'Норматив: {task.get("limit_seconds")} с.\nСохранить и открыть в редакторе?')
+    return {'preview':preview,'intent':'save_ticket','slots':slots_out,'confirm':confirm_token(u,'save_ticket',slots_out)}
+
+def execute_save(slots,u,db):
+    draft=take_draft(u,slots.get('draft_id',''))
     version=m.save_ticket(TicketData.model_validate(draft),None,u,db)
-    return {'preview':f'Черновик «{draft["title"]}» создан. Открываю редактор: проверьте карточку перед публикацией.','action':{'kind':'navigate','to':f'/tickets/{version["id"]}'},'version_id':version['id']}
+    return {'preview':f'Черновик «{draft["title"]}» сохранён. Открываю редактор: проверьте карточку перед публикацией.','action':{'kind':'navigate','to':f'/tickets/{version["id"]}'},'version_id':version['id'],'links':[{'label':'Открыть билет','to':f'/tickets/{version["id"]}'}]}
 
 def latest_tickets(u,db):
     seen={};out=[]
@@ -393,4 +454,4 @@ def execute_edit(slots,u,db):
     version=rows[0];data=apply_edit(version['data'],slots)
     saved=m.save_ticket(TicketData.model_validate(data),version['ticket_id'],u,db)
     section={'difficulty_stars':'story','title':'story','limit_seconds':'story','description':'story','own_service':'story','services':'routing','victims':'card'}[slots['field']]
-    return {'preview':f'Сохранена новая версия билета № {version["ticket_id"]}: {describe_change(version["data"],slots)}. Открываю редактор.','action':{'kind':'navigate','to':f'/tickets/{saved["id"]}?section={section}'},'version_id':saved['id']}
+    return {'preview':f'Сохранена новая версия билета № {version["ticket_id"]}: {describe_change(version["data"],slots)}. Открываю редактор.','action':{'kind':'navigate','to':f'/tickets/{saved["id"]}?section={section}'},'version_id':saved['id'],'links':[{'label':'Открыть билет','to':f'/tickets/{saved["id"]}?section={section}'}]}

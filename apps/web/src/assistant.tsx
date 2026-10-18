@@ -5,21 +5,25 @@ import {api,UserContext,type Obj} from './shared';
 import {ArmDialog} from './arm-ui';
 
 /** Teacher assistant: text commands parsed by server rules. Reading and navigation run at once,
- *  changing commands (tickets) go through a slot form and a confirmation card with a server token. */
+ *  changing commands (tickets) go through a slot form and confirmation cards with a server token.
+ *  The log and the open slot form live in TeacherAssistant, so closing the window keeps them. */
 const TOGGLE='training112:assistant-toggle';
 const HINTS=['Что умеешь?','Журнал','Проверить работы','Кто сейчас в классе?','Новый билет'];
-const DIALOG_INTENTS=['create_ticket','edit_ticket'];
+const DIALOG_INTENTS=['create_ticket','edit_ticket','save_ticket'];
 const HISTORY_KEY='training112:assistant-history';
 const HISTORY_SIZE=10;
+const WELCOME:Message={who:'assistant',text:'Напишите команду: например, «открой журнал», «покажи, какие работы нужно проверить», «где сидит Кузнецов» или «создай билет про пожар на 3 звезды».'};
 /** Last typed commands, newest first; kept per browser only as a convenience. */
 function readHistory():string[]{try{const list=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');return Array.isArray(list)?list.filter(x=>typeof x==='string').slice(0,HISTORY_SIZE):[];}catch{return [];}}
 function remember(list:string[],phrase:string):string[]{const next=[phrase,...list.filter(x=>x!==phrase)].slice(0,HISTORY_SIZE);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next));}catch{}return next;}
 const allowed=(role:string)=>role==='teacher'||role==='admin';
 
 type Confirm={intent:string,slots:Obj,token:string};
-type Message={who:'user'|'assistant',text:string,candidates?:Obj[],options?:{slot:string,options:Obj[]},confirm?:Confirm,error?:boolean,retry?:{confirm:Confirm}|{origin:string}};
+type Link={label:string,to:string};
+type Message={who:'user'|'assistant',text:string,candidates?:Obj[],options?:{slot:string,options:Obj[]},confirm?:Confirm,links?:Link[],error?:boolean,retry?:{confirm:Confirm}|{origin:string}};
 /** The open slot form: intent, accumulated slots and the question waiting for an answer. */
 type Dialog={intent:string,slots:Obj,missing?:string}|null;
+type Store={messages:Message[],setMessages:React.Dispatch<React.SetStateAction<Message[]>>,dialog:Dialog,setDialog:(d:Dialog)=>void,origin:React.MutableRefObject<string>,creation:React.MutableRefObject<Confirm|null>};
 
 /** Header button: the window itself is mounted once in App, so the shortcut is registered once. */
 export function AssistantButton(){
@@ -30,6 +34,9 @@ export function AssistantButton(){
 
 export function TeacherAssistant(){
  const u=useContext(UserContext),[open,setOpen]=useState(false);
+ const [messages,setMessages]=useState<Message[]>([WELCOME]),[dialog,setDialog]=useState<Dialog>(null);
+ /** The phrase that opened the current slot form (for «Составить заново») and the last create confirmation (for «Сгенерировать заново»). */
+ const origin=useRef(''),creation=useRef<Confirm|null>(null);
  useEffect(()=>{
   if(!allowed(u.role))return;
   const toggle=()=>setOpen(value=>!value);
@@ -38,23 +45,22 @@ export function TeacherAssistant(){
   return()=>{window.removeEventListener(TOGGLE,toggle);document.removeEventListener('keydown',key);};
  },[u.role]);
  if(!allowed(u.role)||!open)return null;
- return <AssistantDialog onClose={()=>setOpen(false)}/>;
+ return <AssistantDialog onClose={()=>setOpen(false)} store={{messages,setMessages,dialog,setDialog,origin,creation}}/>;
 }
 
-function AssistantDialog({onClose}:{onClose:()=>void}){
+function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const navigate=useNavigate(),location=useLocation();
- const [messages,setMessages]=useState<Message[]>([{who:'assistant',text:'Напишите команду: например, «открой журнал», «покажи, какие работы нужно проверить», «где сидит Кузнецов» или «создай билет про пожар на 3 звезды».'}]);
- const [text,setText]=useState(''),[busy,setBusy]=useState<''|'ask'|'run'>(''),[dialog,setDialog]=useState<Dialog>(null);
+ const {messages,setMessages,dialog,setDialog,origin,creation}=store;
+ const [text,setText]=useState(''),[busy,setBusy]=useState<''|'ask'|'run'|'generate'>('');
  const [history,setHistory]=useState<string[]>(readHistory),[historyOpen,setHistoryOpen]=useState(false),[cursor,setCursor]=useState(-1);
- /** The phrase that opened the current slot form, re-sent by «Составить заново» once a confirmation token expires. */
- const origin=useRef('');
  const input=useRef<HTMLTextAreaElement>(null),log=useRef<HTMLDivElement>(null);
  useEffect(()=>{const t=setTimeout(()=>input.current?.focus(),0);return()=>clearTimeout(t);},[]);
  useEffect(()=>{log.current?.scrollTo({top:log.current.scrollHeight});},[messages,busy]);
  const push=(message:Message)=>setMessages(list=>[...list,message]);
  const focus=()=>setTimeout(()=>input.current?.focus(),0);
+ const go=(to:string)=>{navigate(to);onClose();};
  const finish=(action:Obj|undefined)=>{
-  if(action?.kind==='navigate'){navigate(action.to);onClose();return true;}
+  if(action?.kind==='navigate'){go(action.to);return true;}
   if(action?.kind==='close'){onClose();return true;}
   return false;
  };
@@ -69,23 +75,26 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
    if(dialog)body.dialog={intent:dialog.intent,slots:{...dialog.slots,...(slots||{}),...(slots?{answer_slot:Object.keys(slots)[0]}:dialog.missing?{answer_slot:dialog.missing}:{})}};
    const r:Obj=await api('/assistant/interpret','POST',body);
    const question=r.missing?.[0];
-   push({who:'assistant',text:r.preview||'Готово.',candidates:r.candidates?.length?r.candidates:undefined,options:question?.options?.length?{slot:question.slot,options:question.options}:undefined,confirm:r.confirm_required?{intent:r.intent,slots:r.slots,token:r.confirm_token}:undefined});
+   push({who:'assistant',text:r.preview||'Готово.',candidates:r.candidates?.length?r.candidates:undefined,options:question?.options?.length?{slot:question.slot,options:question.options}:undefined,confirm:r.confirm_required?{intent:r.intent,slots:r.slots,token:r.confirm_token}:undefined,links:r.links?.length?r.links:undefined});
    if(finish(r.action))return;
    if(r.candidates?.length||question||r.confirm_required){if(!dialog)origin.current=phrase;setDialog({intent:r.intent,slots:DIALOG_INTENTS.includes(r.intent)?r.slots:{},missing:question?.slot});}
    else setDialog(null);
   }catch(e:any){push({who:'assistant',text:e.message,error:true});}
   finally{setBusy('');focus();}
  };
+ /** Runs a confirmed command. A new ticket answers with its draft and a second confirmation («Сохранить»). */
  const run=async(confirm:Confirm,label='Выполнить')=>{
   if(busy)return;
-  push({who:'user',text:label});setBusy('run');
+  push({who:'user',text:label});setBusy(confirm.intent==='create_ticket'?'generate':'run');
+  if(confirm.intent==='create_ticket')creation.current=confirm;
   try{
    const r:Obj=await api('/assistant/execute','POST',{intent:confirm.intent,slots:confirm.slots,confirm_token:confirm.token});
-   push({who:'assistant',text:r.preview||'Выполнено.'});
-   setDialog(null);
-   finish(r.action);
+   const next=r.confirm_required?{intent:r.intent,slots:r.slots,token:r.confirm_token}:undefined;
+   push({who:'assistant',text:r.preview||'Выполнено.',confirm:next,links:r.links?.length?r.links:undefined});
+   if(next)setDialog({intent:r.intent,slots:r.slots});
+   else{setDialog(null);creation.current=null;finish(r.action);}
   }catch(e:any){
-   // 409: the token is older than ten minutes, so the command has to be composed again; anything else can simply be retried.
+   // 409: the token or draft is older than ten minutes, so the command has to be composed again; anything else can simply be retried.
    const expired=e.status===409;
    push({who:'assistant',text:e.message,error:true,retry:expired?{origin:origin.current}:{confirm}});
   }
@@ -104,14 +113,17 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
  };
  const choose=(candidate:Obj)=>{if(busy)return;send(candidate.label,{[candidate.slot||'student_id']:candidate.id},candidate.label);};
  const pick=(slot:string,option:Obj)=>{if(busy)return;send(option.label,{[slot]:option.value},option.label);};
- const cancel=()=>{setDialog(null);push({who:'assistant',text:'Отменено. Ничего не изменено.'});focus();};
+ const cancel=()=>{setDialog(null);creation.current=null;push({who:'assistant',text:'Отменено. Ничего не изменено.'});focus();};
+ const clear=()=>{setMessages([WELCOME]);setDialog(null);creation.current=null;focus();};
  const adjust=()=>{push({who:'assistant',text:'Напишите, что поменять: например «сложность 4», «режим 112» или «без пострадавших».'});focus();};
- const openWizard=(slots:Obj)=>{navigate('/tickets',{state:{wizard:{own_service:slots.own_service,services:slots.services,incident_type:slots.incident_type,mode:slots.mode,difficulty_stars:slots.difficulty,victims_state:slots.victims,victims_count:slots.victims_count||1}}});onClose();};
+ const openWizard=(slots:Obj)=>{navigate('/tickets',{state:{wizard:{own_service:slots.own_service,services:slots.services,incident_type:slots.incident_type,mode:slots.mode,difficulty_stars:slots.difficulty,victims_state:slots.victims,victims_count:slots.victims_count||1,traits:slots.traits||[]}}});onClose();};
  const last=messages.length-1;
+ const busyText=busy==='generate'?'Создаю черновик… Модель работает локально, это может занять до минуты.':busy==='run'?'Выполняю…':'Разбираю команду…';
  return <ArmDialog title="Ассистент" className="assistant-shade" onClose={onClose}>
   <div className="assistant-log" ref={log} aria-live="polite">
    {messages.map((message,index)=><div key={index} className={'assistant-message '+message.who+(message.error?' error':'')}>
     <p>{message.text}</p>
+    {message.links&&<div className="assistant-links">{message.links.map(link=><button type="button" key={link.to+link.label} disabled={!!busy} onClick={()=>go(link.to)}>{link.label} →</button>)}</div>}
     {message.candidates&&index===last&&<div className="assistant-candidates">{message.candidates.map((candidate:Obj)=><button type="button" key={candidate.id} disabled={!!busy} onClick={()=>choose(candidate)}>{candidate.label}</button>)}</div>}
     {message.options&&index===last&&<div className="assistant-candidates">{message.options.options.map((option:Obj)=><button type="button" key={String(option.value)} disabled={!!busy} onClick={()=>pick(message.options!.slot,option)}>{option.label}</button>)}</div>}
     {message.retry&&index===last&&<div className="assistant-confirm" role="group" aria-label="Повтор команды">
@@ -119,21 +131,27 @@ function AssistantDialog({onClose}:{onClose:()=>void}){
      :<button type="button" className="primary" disabled={!!busy} onClick={()=>recompose((message.retry as {origin:string}).origin)}>Составить заново</button>}
      <button type="button" disabled={!!busy} onClick={cancel}>Отмена</button>
     </div>}
-    {message.confirm&&index===last&&dialog&&<div className="assistant-confirm" role="group" aria-label="Подтверждение команды">
-     <button type="button" className="primary" disabled={!!busy} onClick={()=>run(message.confirm!)}>Выполнить</button>
-     <button type="button" disabled={!!busy} onClick={adjust}>Изменить</button>
-     {message.confirm.intent==='create_ticket'&&<button type="button" disabled={!!busy} onClick={()=>openWizard(message.confirm!.slots)}>Открыть в мастере</button>}
-     <button type="button" disabled={!!busy} onClick={cancel}>Отмена</button>
-    </div>}
+    {message.confirm&&index===last&&dialog&&(message.confirm.intent==='save_ticket'
+     ?<div className="assistant-confirm" role="group" aria-label="Сохранение черновика">
+       <button type="button" className="primary" disabled={!!busy} onClick={()=>run(message.confirm!,'Сохранить')}>Сохранить</button>
+       {creation.current&&<button type="button" disabled={!!busy} onClick={()=>run(creation.current!,'Сгенерировать заново')}>Сгенерировать заново</button>}
+       <button type="button" disabled={!!busy} onClick={cancel}>Отмена</button>
+      </div>
+     :<div className="assistant-confirm" role="group" aria-label="Подтверждение команды">
+       <button type="button" className="primary" disabled={!!busy} onClick={()=>run(message.confirm!)}>Выполнить</button>
+       <button type="button" disabled={!!busy} onClick={adjust}>Изменить</button>
+       {message.confirm.intent==='create_ticket'&&<button type="button" disabled={!!busy} onClick={()=>openWizard(message.confirm!.slots)}>Открыть в мастере</button>}
+       <button type="button" disabled={!!busy} onClick={cancel}>Отмена</button>
+      </div>)}
    </div>)}
-   {busy&&<div className="assistant-message assistant"><p>{busy==='run'?'Выполняю… Создание черновика занимает до минуты: модель работает локально.':'Разбираю команду…'}</p></div>}
+   {busy&&<div className="assistant-message assistant"><p>{busyText}</p></div>}
   </div>
-  <div className="assistant-hints">{HINTS.map(hint=><button type="button" key={hint} disabled={!!busy} onClick={()=>send(hint)}>{hint}</button>)}{dialog&&<button type="button" className="assistant-cancel" disabled={!!busy} onClick={cancel}>Сбросить диалог</button>}</div>
+  <div className="assistant-hints">{HINTS.map(hint=><button type="button" key={hint} disabled={!!busy} onClick={()=>send(hint)}>{hint}</button>)}{dialog?<button type="button" className="assistant-cancel" disabled={!!busy} onClick={cancel}>Сбросить диалог</button>:messages.length>1&&<button type="button" className="assistant-cancel" disabled={!!busy} onClick={clear}>Очистить ленту</button>}</div>
   {history.length>0&&<div className="assistant-history"><button type="button" aria-expanded={historyOpen} onClick={()=>setHistoryOpen(v=>!v)}>История команд ({history.length}) {historyOpen?'▴':'▾'}</button>{historyOpen&&<ul>{history.map(item=><li key={item}><button type="button" disabled={!!busy} title="Повторить команду" onClick={()=>{setHistoryOpen(false);send(item);}}>{item}</button></li>)}</ul>}</div>}
   <form className="assistant-input" onSubmit={submit}>
    <textarea ref={input} aria-label="Команда ассистенту" rows={2} value={text} maxLength={500} placeholder={dialog?.missing==='student'?'Фамилия или имя ученика':dialog?.missing?'Ответ на вопрос ассистента':dialog?'Что изменить в команде?':'Команда, например «открой журнал». Enter — отправить, ↑ — предыдущая команда'} onChange={e=>{setText(e.target.value);setCursor(-1);}} onKeyDown={keys} disabled={!!busy}/>
    <button type="submit" disabled={!!busy||!text.trim()} title="Отправить"><Send size={16}/><span>отправить</span></button>
   </form>
-  <small className="assistant-note">Чтение и переходы выполняются сразу. Создание и изменение билета выполняются только после кнопки «Выполнить».</small>
+  <small className="assistant-note">Чтение и переходы выполняются сразу. Создание и изменение билета выполняются только после кнопки «Выполнить», черновик показывается перед сохранением.</small>
  </ArmDialog>;
 }

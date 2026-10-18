@@ -93,6 +93,7 @@ def test_offline_student_and_profile_text(teacher,classroom):
     assert 'нет работ' in r['preview'] and r['action'] is None
     r=ask(teacher,'по студенту Кузнецову есть рекомендации?')
     assert 'Рекомендации' in r['preview'] and 'Артём Кузнецов' in r['preview'] and r['action'] is None
+    assert {'label':'Студенты','to':'/users'} in r['links'] and any(l['to']==f'/reviews?student={classroom["kuz"]}&state=completed' for l in r['links']),'reading answers keep links to open later'
 
 def test_ambiguous_surname_offers_candidates_then_resolves(teacher,classroom):
     r=ask(teacher,'где сидит Иванова')

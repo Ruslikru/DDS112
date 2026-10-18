@@ -110,11 +110,12 @@ class Interpret(BaseModel):
 
 STUDENT_INTENTS={'where_student','find_last_attempt','student_profile'}
 DIALOG_INTENTS={'create_ticket','edit_ticket'}
+EXECUTE_INTENTS={'create_ticket','edit_ticket','save_ticket'}
 TOKEN_KEY=secrets.token_bytes(32)
 TOKEN_TTL=600
 
-def reply(intent,preview,*,slots=None,missing=None,candidates=None,action=None,confirm=None):
-    return {'intent':intent,'slots':slots or {},'missing':missing or [],'candidates':candidates or [],'preview':preview,'confirm_required':bool(confirm),'confirm_token':confirm,'action':action}
+def reply(intent,preview,*,slots=None,missing=None,candidates=None,action=None,confirm=None,links=None):
+    return {'intent':intent,'slots':slots or {},'missing':missing or [],'candidates':candidates or [],'preview':preview,'confirm_required':bool(confirm),'confirm_token':confirm,'action':action,'links':links or []}
 
 def _signature(u,intent,slots,issued):
     body=json.dumps([u.id,intent,slots,issued],ensure_ascii=False,sort_keys=True).encode()
@@ -185,7 +186,7 @@ def handle(intent,text,query,dialog,u,db):
         to='/reviews?state=review'+(f'&student={student.id}' if student else '')
         if not items:preview='Все работы проверены'+(f' у {student.name}' if student else '')+'. Открываю проверку работ.'
         else:preview=f'Нужна проверка: {len(items)} '+plural(len(items),'работа','работы','работ')+'.\n'+'\n'.join(f'• {x["student"]} · {x["title"]}' for x in items[:10])+('\n…' if len(items)>10 else '')+'\nОткрываю проверку работ с фильтром «Нужна проверка».'
-        return reply(intent,preview,slots={'count':len(items),**({'student_id':student.id} if student else {})},action={'kind':'navigate','to':to})
+        return reply(intent,preview,slots={'count':len(items),**({'student_id':student.id} if student else {})},action={'kind':'navigate','to':to},links=[{'label':'Проверка работ','to':to}])
     if intent=='who_online':
         rows=[r for r in station_rows(u,db) if r['role']=='student']
         online=[r for r in rows if r['online']]
@@ -193,18 +194,18 @@ def handle(intent,text,query,dialog,u,db):
             ids={r['user_id'] for r in online}
             absent=[s for s in db.scalars(select(User).where(User.role=='student',User.deleted_at.is_(None),User.active==True).order_by(User.name)) if s.id not in ids and m.visible(db,u,s.id)]
             preview='Все ваши ученики в сети.' if not absent else 'Не в сети: '+', '.join(s.name for s in absent)+'.'
-            return reply(intent,preview,slots={'count':len(absent)})
-        if not online:return reply(intent,'Сейчас никто из учеников не подключён.',slots={'count':0})
+            return reply(intent,preview,slots={'count':len(absent)},links=[{'label':'Рабочие места','to':'/'}])
+        if not online:return reply(intent,'Сейчас никто из учеников не подключён.',slots={'count':0},links=[{'label':'Рабочие места','to':'/'}])
         preview=f'В классе {len(online)} '+plural(len(online),'ученик','ученика','учеников')+':\n'+'\n'.join(f'• ПК {r["number"]} · {r["name"]}'+(f' · {r["page"]}' if r['page'] else '') for r in online)
-        return reply(intent,preview,slots={'count':len(online)})
+        return reply(intent,preview,slots={'count':len(online)},links=[{'label':'Рабочие места','to':'/'}])
     if intent in STUDENT_INTENTS:
         s,answer=pick_student(intent,query,dialog,u,db)
         if answer:return answer
         slots={'student_id':s.id,'student':s.name}
         if intent=='where_student':
             row=next((r for r in station_rows(u,db) if r['user_id']==s.id),None)
-            if not row or not row['online']:return reply(intent,f'{s.name} сейчас не в сети.',slots=slots)
-            return reply(intent,f'{s.name}: ПК №{row["number"]}'+(f', открыта страница {row["page"]}' if row['page'] else '')+'.',slots={**slots,'station':row['number']})
+            if not row or not row['online']:return reply(intent,f'{s.name} сейчас не в сети.',slots=slots,links=[{'label':'Рабочие места','to':'/'}])
+            return reply(intent,f'{s.name}: ПК №{row["number"]}'+(f', открыта страница {row["page"]}' if row['page'] else '')+'.',slots={**slots,'station':row['number']},links=[{'label':'Рабочие места','to':'/'}])
         if intent=='find_last_attempt':
             p=db.scalar(select(Attempt).where(Attempt.student_id==s.id).order_by(Attempt.id.desc()).limit(1))
             if not p:return reply(intent,f'У ученика {s.name} ещё нет работ.',slots=slots)
@@ -212,7 +213,7 @@ def handle(intent,text,query,dialog,u,db):
             score='' if grade.get('score') is None else f', балл {grade["score"]}'
             state={'completed':'завершена','aborted':'прервана','paused':'на паузе','ringing':'входящий вызов','active':'в работе'}.get(p.status,p.status)
             check=' · нужна проверка' if attempt_needs_review({'status':p.status,'assessment':grade}) else ''
-            return reply(intent,f'Последняя работа {s.name}: «{p.snapshot.get("title","Билет")}», {state}{score}{check}. Открываю карточку.',slots={**slots,'attempt_id':p.id},action={'kind':'navigate','to':f'/attempts/{p.id}'})
+            return reply(intent,f'Последняя работа {s.name}: «{p.snapshot.get("title","Билет")}», {state}{score}{check}. Открываю карточку.',slots={**slots,'attempt_id':p.id},action={'kind':'navigate','to':f'/attempts/{p.id}'},links=[{'label':'Карточка работы','to':f'/attempts/{p.id}'},{'label':'Проверка работ','to':f'/reviews?student={s.id}&state=completed'}])
         if intent=='student_profile':
             from .teacher import student_profile
             profile=student_profile(db,s)
@@ -220,7 +221,7 @@ def handle(intent,text,query,dialog,u,db):
             if profile.get('errors'):lines.append('Частые ошибки: '+'; '.join(f'{x["label"]} ({x["errors"]} из {x["total"]})' for x in profile['errors'][:3])+'.')
             lines.append('Рекомендации:\n'+'\n'.join('• '+r for r in profile.get('recommendations',[])))
             if profile.get('comparison'):lines.append(profile['comparison']+'.')
-            return reply(intent,'\n'.join(lines),slots=slots)
+            return reply(intent,'\n'.join(lines),slots=slots,links=[{'label':'Студенты','to':'/users'},{'label':'Работы ученика','to':f'/reviews?student={s.id}&state=completed'}])
     return reply('unknown','Не понял команду. Напишите «что умеешь?», чтобы увидеть примеры.')
 
 class Execute(BaseModel):
@@ -232,11 +233,13 @@ class Execute(BaseModel):
 def execute(data:Execute,u=Depends(m.current),db=Depends(m.getdb)):
     """Runs a confirmed changing command through the ordinary routes under the same user."""
     m.staff(u)
-    if data.intent not in DIALOG_INTENTS:m.fail('Эту команду нельзя выполнить')
+    if data.intent not in EXECUTE_INTENTS:m.fail('Эту команду нельзя выполнить')
     check_token(u,data.intent,data.slots,data.confirm_token)
-    result=tickets.execute_create(data.slots,u,db) if data.intent=='create_ticket' else tickets.execute_edit(data.slots,u,db)
-    m.audit(db,u,'assistant_executed',data.intent,{'intent':data.intent,'ticket_id':data.slots.get('ticket_id'),'version_id':result.get('version_id'),'incident_type':data.slots.get('incident_type'),'field':data.slots.get('field')});db.commit()
-    return {'ok':True,'intent':data.intent,'preview':result['preview'],'action':result.get('action')}
+    runner={'create_ticket':tickets.execute_create,'edit_ticket':tickets.execute_edit,'save_ticket':tickets.execute_save}[data.intent]
+    result=runner(data.slots,u,db)
+    m.audit(db,u,'assistant_executed',data.intent,{'intent':data.intent,'ticket_id':data.slots.get('ticket_id'),'version_id':result.get('version_id'),'draft_id':data.slots.get('draft_id') or result.get('slots',{}).get('draft_id'),'incident_type':data.slots.get('incident_type'),'field':data.slots.get('field')});db.commit()
+    return {'ok':True,'intent':result.get('intent',data.intent),'preview':result['preview'],'action':result.get('action'),'links':result.get('links',[]),
+            'slots':result.get('slots',{}),'confirm_required':bool(result.get('confirm')),'confirm_token':result.get('confirm')}
 
 def station_rows(u,db):
     from .classroom import stations

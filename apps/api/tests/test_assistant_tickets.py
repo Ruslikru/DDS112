@@ -23,6 +23,16 @@ def follow(c,r,text='',**slots):
 def run(c,r):
     return post(c,'/assistant/execute',{'intent':r['intent'],'slots':r['slots'],'confirm_token':r['confirm_token']})
 
+def create_and_save(c,r):
+    """The two confirmations of a new ticket: generate the draft, then save it."""
+    generated=run(c,r);assert generated.status_code==200,generated.text
+    body=generated.json()
+    assert body['intent']=='save_ticket' and body['confirm_required'] and body['confirm_token'] and body['action'] is None,'the draft is shown before anything is saved'
+    assert 'Черновик готов' in body['preview'] and body['slots']['draft_id'] and body['slots']['title']
+    saved=run(c,{'intent':'save_ticket','slots':body['slots'],'confirm_token':body['confirm_token']})
+    assert saved.status_code==200,saved.text
+    return body,saved.json()
+
 @pytest.fixture
 def teacher(monkeypatch):
     from apps.api.app import scenario_wizard, assistant_tickets
@@ -37,16 +47,18 @@ def test_full_phrase_fills_every_slot_and_creates_a_ticket(teacher):
     assert r['intent']=='create_ticket' and r['confirm_required'] and r['confirm_token'] and not r['missing'],r
     assert r['slots']['incident_type']=='пожар' and r['slots']['own_service']=='Служба 101' and r['slots']['mode']=='dds'
     assert r['slots']['difficulty']==3 and r['slots']['victims']=='yes' and r['slots']['victims_count']==2
-    assert 'Служба 101' in r['preview'] and '★★★' in r['preview'] and r['action'] is None
-    done=run(teacher,r);assert done.status_code==200,done.text
-    body=done.json();assert body['ok'] and body['action']['kind']=='navigate' and body['action']['to'].startswith('/tickets/')
+    assert 'Служба 101' in r['preview'] and '★★★' in r['preview'] and r['action'] is None and 'Модель:' in r['preview']
+    draft,body=create_and_save(teacher,r)
+    assert body['ok'] and body['action']['kind']=='navigate' and body['action']['to'].startswith('/tickets/') and body['links'][0]['to']==body['action']['to']
     version_id=int(body['action']['to'].rsplit('/',1)[1])
+    assert post(teacher,'/assistant/execute',{'intent':'save_ticket','slots':draft['slots'],'confirm_token':draft['confirm_token']}).status_code==409,'a draft is saved once'
     saved=next(v for v in teacher.get('/api/tickets').json() if v['id']==version_id)
     assert saved['data']['difficulty_stars']==3 and saved['data']['tasks'][0]['mode']=='dds' and not saved['published']
     assert saved['data']['tasks'][0]['initial_card']['victims_count']=='2' and 'Служба 101' in saved['data']['tasks'][0]['services']
     with SessionLocal() as db:
         rows=list(db.scalars(select(Audit).where(Audit.action=='assistant_executed').order_by(Audit.id.desc())))
-        assert rows and rows[0].detail['version_id']==version_id and rows[0].detail['incident_type']=='пожар'
+        assert rows[0].detail['version_id']==version_id and rows[0].detail['intent']=='save_ticket' and rows[0].detail['draft_id']==draft['slots']['draft_id']
+        assert rows[1].detail['intent']=='create_ticket' and rows[1].detail['incident_type']=='пожар'
 
 def test_slot_form_asks_one_question_at_a_time(teacher):
     r=ask(teacher,'давай новый билет сделаем')
@@ -66,8 +78,8 @@ def test_slot_form_asks_one_question_at_a_time(teacher):
     assert r['missing'][0]['slot']=='victims_count','an unreadable answer repeats the same question'
     r=follow(teacher,r,'трое')
     assert r['confirm_required'] and r['slots']['victims_count']==3 and 'оператор 112' in r['preview']
-    done=run(teacher,r);assert done.status_code==200,done.text
-    version_id=int(done.json()['action']['to'].rsplit('/',1)[1])
+    _,done=create_and_save(teacher,r)
+    version_id=int(done['action']['to'].rsplit('/',1)[1])
     saved=next(v for v in teacher.get('/api/tickets').json() if v['id']==version_id)
     assert saved['data']['tasks'][0]['mode']=='112' and saved['data']['difficulty_stars']==4
 
@@ -78,6 +90,26 @@ def test_option_click_and_correction_before_confirmation(teacher):
     assert r['confirm_required'] and r['slots']['difficulty']==5 and r['slots']['incident_type']=='лифт','a correction keeps the other slots'
     r=follow(teacher,r,'Оператор 112',mode='112')
     assert r['confirm_required'] and r['slots']['mode']=='112'
+
+def test_classifier_signs_from_the_phrase_reach_the_wizard(teacher):
+    r=ask(teacher,'создай билет про пожар: мусор на улице, открытое пламя, для службы 101, режим ДДС, на 2 звезды без пострадавших')
+    assert r['confirm_required'],r
+    assert r['slots']['incident_type']=='пожар: мусор' and set(r['slots']['traits'])>={'на улице','мусор','открытое пламя'} and 'признаки:' in r['preview']
+    draft,saved=create_and_save(teacher,r)
+    version_id=int(saved['action']['to'].rsplit('/',1)[1])
+    task=next(v for v in teacher.get('/api/tickets').json() if v['id']==version_id)['data']['tasks'][0]
+    assert {'на улице','мусор','открытое пламя'}<=set(task['traits'])
+
+def test_draft_belongs_to_its_author(teacher):
+    r=ask(teacher,'создай билет про лифт для ДДС района на 1 звезду без пострадавших')
+    generated=run(teacher,r).json()
+    with TestClient(app) as other:
+        login(other,'admin')
+        from apps.api.app import assistant
+        with SessionLocal() as db:
+            admin=db.scalar(select(User).where(User.login=='admin'))
+            token=assistant.confirm_token(admin,'save_ticket',generated['slots'])
+        assert post(other,'/assistant/execute',{'intent':'save_ticket','slots':generated['slots'],'confirm_token':token}).status_code==409
 
 def test_generic_topic_is_refused_before_the_wizard(teacher):
     r=ask(teacher,'создай билет про пострадавшие')
