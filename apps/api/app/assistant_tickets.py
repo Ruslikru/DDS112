@@ -4,7 +4,7 @@ Rules extract the obvious parameters; the local model is asked only for the inci
 when the rules found none. Entities (service, incident, ticket) are resolved on the
 server, and every change is saved as a new ticket version through the usual routes.
 """
-import re, secrets, time
+import copy, re, secrets, time
 from fastapi import HTTPException
 from sqlalchemy import select
 from . import main as m
@@ -21,7 +21,7 @@ SERVICE_ALIASES=[(r'пожарн|\b101\b','Служба 101'),(r'полици|\b
 MODE_LABELS={'dds':'диспетчер службы (ДДС)','112':'оператор 112'}
 VICTIM_LABELS={'yes':'есть','no':'нет','unknown':'пока неизвестно'}
 EDITOR_SECTIONS=[(r'критери|проверк|оценк','criteria'),(r'контакт|звон|абонент','contacts'),(r'событи|бригад|реагирован','routing'),(r'карточк|адрес|поле','card'),(r'вопрос|диалог|реплик','story')]
-FIELD_LABELS={'difficulty_stars':'сложность','title':'название','limit_seconds':'норматив времени','description':'описание','own_service':'своя служба','services':'службы-получатели','victims':'пострадавшие'}
+FIELD_LABELS={'difficulty_stars':'сложность','title':'название','address':'адрес','limit_seconds':'норматив времени','description':'описание','own_service':'своя служба','services':'службы-получатели','victims':'пострадавшие'}
 
 def complete(*args,**kwargs):
     from .ai_routes import assistant_complete as model
@@ -198,10 +198,12 @@ def ask_model(text,services,db):
     if not isinstance(value,dict):return {}
     out={}
     if isinstance(value.get('incident'),str) and value['incident'].strip() and confirmed_by_text(value['incident'],text):out['incident_query']=value['incident'].strip()[:120]
-    if value.get('victims') in ('yes','no','unknown'):out['victims']=value['victims']
-    if out.get('victims')=='yes' and isinstance(value.get('victims_count'),int) and value['victims_count']>0:out['victims_count']=value['victims_count']
-    if isinstance(value.get('difficulty'),int) and 1<=value['difficulty']<=5:out['difficulty']=value['difficulty']
-    if value.get('mode') in ('112','dds'):out['mode']=value['mode']
+    # A small model fills every field it is given; a value counts only when the phrase has words about it.
+    t=normalize(text)
+    if value.get('victims') in ('yes','no','unknown') and re.search(r'пострада|ранен|жертв|никто|никого|зажал|травм',t):out['victims']=value['victims']
+    if out.get('victims')=='yes' and isinstance(value.get('victims_count'),int) and value['victims_count']>0 and re.search(r'\d|один|одн|дво|тро|два|две|три|четыр|пят|несколько',t):out['victims_count']=value['victims_count']
+    if isinstance(value.get('difficulty'),int) and 1<=value['difficulty']<=5 and re.search(r'звезд|сложн|уровн|прост|легк|средн',t):out['difficulty']=value['difficulty']
+    if value.get('mode') in ('112','dds') and re.search(r'112|ддс|оператор|диспетчер',t):out['mode']=value['mode']
     return out
 
 def answer_value(slot,text,services,db):
@@ -235,6 +237,16 @@ def options_for(slot,services,own_service=None):
     if slot=='victims_count':return [{'value':n,'label':str(n)} for n in (1,2,3,4,5,6,8,10)]
     return []
 
+def story_facts(text):
+    """A described scene in the command («создай билет: пожар в квартире на 14 этаже…, адрес …, звонит …»): the teacher's
+    own words, the place and the caller, read by the rules of the description form. Short commands give nothing."""
+    from .prompt_ticket import scene_from_request, parse_place, rule_facts, victims_note
+    body=re.sub(r'^.*?\bбилет\w*\b(?:\s+(?:про|о|об))?','',text,count=1,flags=re.I).strip(' .,:;—-')
+    if len(re.findall(r'[а-яёa-z]+',body,re.I))<6:return {}
+    facts=rule_facts(body)
+    story={'seed':scene_from_request(body),'place':parse_place(body,parse_address(body)),'caller_name':facts.get('caller_name',''),'object':facts.get('object',''),'victims_note':victims_note(body)}
+    return {k:v for k,v in story.items() if v}
+
 QUESTIONS={'own_service':'Для какой службы создаём билет?','incident_type':'Какое происшествие? Выберите тег службы или напишите тип из классификатора.','mode':'Кого обучаем: диспетчера службы или оператора 112?','difficulty':'Какая сложность билета, от 1 до 5 звёзд?','victims':'Есть ли пострадавшие?','victims_count':'Сколько пострадавших?'}
 
 def create_step(slots,text,answer_slot,u,db):
@@ -249,19 +261,33 @@ def create_step(slots,text,answer_slot,u,db):
     if isinstance(slots.get('victims'),str) and slots['victims'].startswith('yes:'):slots['victims'],slots['victims_count']='yes',int(slots['victims'][4:])
     if answer_slot and answer_slot in slots:pass  # a button answered the question: the value is already in the slots
     elif answer_slot:
-        value=answer_value(answer_slot,text,services,db)
+        # «Пожар. Двое пострадавших» answers the question and tells more: the first clause answers, the rest fills other slots.
+        first=re.split(r'[.,;!?\n]+',text.strip())[0] if answer_slot=='incident_type' else text
+        value=answer_value(answer_slot,first or text,services,db)
         if value is None:return reply('create_ticket','Не понял ответ. '+QUESTIONS[answer_slot],slots=slots,missing=[{'slot':answer_slot,'question':QUESTIONS[answer_slot],'options':options_for(answer_slot,services,slots.get('own_service'))}])
         slots['incident_query' if answer_slot=='incident_type' else answer_slot]=value
         if answer_slot=='incident_type':slots.pop('incident_type',None)
-        if answer_slot=='victims':
-            parsed=parse_create(text,services)
-            if parsed.get('victims')=='yes' and parsed.get('victims_count'):
-                slots['victims_count']=parsed['victims_count']
+        parsed=parse_create(text,services)
+        if answer_slot=='victims' and parsed.get('victims')=='yes' and parsed.get('victims_count'):slots['victims_count']=parsed['victims_count']
+        slots.update({k:v for k,v in parsed.items() if k not in slots and k not in ('incident_query',answer_slot)})
+        if answer_slot=='incident_type' and len(re.split(r'[.,;!?]+',text.strip(' .')))>1:slots['free_text']=text
+        if answer_slot=='incident_type' and not slots.get('story'):
+            # «Пожар в подъезде жилого дома. Двое пострадавших»: the teacher's words become the scene of the draft.
+            story=story_facts('создай билет: '+text)
+            if story:slots['story']=story
     elif text:
         parsed=parse_create(text,services)
         if 'incident_query' in parsed:slots.pop('incident_type',None)
         slots.update(parsed)
-    if text and not answer_slot:slots['free_text']=text
+    if text and not answer_slot:
+        slots['free_text']=text
+        story=story_facts(text)
+        if story:slots['story']=story
+        if story.get('place',{}).get('street'):slots['address']=address_label({k:v for k,v in story['place'].items() if k in ('street','house')})
+    if not slots.get('incident_type') and not slots.get('incident_query') and text and not answer_slot:
+        # «создай билет. Пожар. Двое пострадавших»: the first clause after the command names the incident.
+        lead=re.split(r'[.,;!?:\n]+',re.sub(r'^.*?\bбилет\w*\b','',text,count=1,flags=re.I).strip(' .,:;—-'))[0].strip()
+        if lead and resolve_incident(db,lead,services,slots.get('own_service'))[0]=='ok':slots['incident_query']=lead
     if not slots.get('incident_type') and not slots.get('incident_query') and text and not answer_slot and not command_only(text):
         slots.update({k:v for k,v in ask_model(text,services,db).items() if k not in slots})
     if not allow_112:slots['mode']='dds'
@@ -277,13 +303,20 @@ def create_step(slots,text,answer_slot,u,db):
                     slots.pop('incident_query',None)
                     return reply('create_ticket',f'Происшествие «{status[1]}» есть у нескольких служб. '+QUESTIONS['own_service'],slots=slots,missing=[{'slot':'own_service','question':QUESTIONS['own_service'],'options':[{'value':name,'label':name} for name in owners]}])
         elif status[0]=='candidates':
-            return reply('create_ticket','Нашёл несколько типов происшествий в классификаторе. Выберите подходящий:',slots=slots,candidates=[{'kind':'incident','slot':'incident_type','id':title,'label':title} for title in status[1]])
+            # The first eight titles with the word are a lottery («Аэропорт пожар» for «пожар в подъезде»): rank the whole catalogue by the phrase.
+            from .prompt_ticket import nearest_incidents
+            ranked=nearest_incidents(db,(slots.get('free_text') or '')+' '+slots['incident_query'],services,slots.get('own_service')) or status[1]
+            return reply('create_ticket','Нашёл несколько типов происшествий в классификаторе. Выберите подходящий:',slots=slots,candidates=[{'kind':'incident','slot':'incident_type','id':title,'label':title} for title in ranked])
         elif status[0]=='generic':
             slots.pop('incident_query',None)
             return reply('create_ticket','Выберите конкретное происшествие, например «Трамвай сход с рельс» или «Травма».',slots=slots,missing=[{'slot':'incident_type','question':QUESTIONS['incident_type'],'options':options_for('incident_type',services,slots.get('own_service'))}])
         else:
-            slots.pop('incident_query',None)
-            return reply('create_ticket',f'Не нашёл происшествие «{slots.get("incident_query","")}» ни в классификаторе, ни в тегах служб. '+QUESTIONS['incident_type'],slots=slots,missing=[{'slot':'incident_type','question':QUESTIONS['incident_type'],'options':options_for('incident_type',services,slots.get('own_service'))}])
+            query=slots.pop('incident_query','')
+            from .prompt_ticket import nearest_incidents
+            nearest=nearest_incidents(db,(slots.get('free_text') or '')+' '+query,services,slots.get('own_service'))
+            if nearest:
+                return reply('create_ticket',f'Точного типа «{query}» нет в классификаторе. Выберите ближайший или напишите другой:',slots=slots,candidates=[{'kind':'incident','slot':'incident_type','id':title,'label':title} for title in nearest])
+            return reply('create_ticket',f'Не нашёл происшествие «{query}» ни в классификаторе, ни в тегах служб. '+QUESTIONS['incident_type'],slots=slots,missing=[{'slot':'incident_type','question':QUESTIONS['incident_type'],'options':options_for('incident_type',services,slots.get('own_service'))}])
     if slots.get('incident_type') and slots['incident_type'].casefold() in GENERIC_TOPICS:
         slots.pop('incident_type',None)
         return reply('create_ticket','Выберите конкретное происшествие, например «Трамвай сход с рельс» или «Травма».',slots=slots,missing=[{'slot':'incident_type','question':QUESTIONS['incident_type'],'options':options_for('incident_type',services,slots.get('own_service'))}])
@@ -295,6 +328,18 @@ def create_step(slots,text,answer_slot,u,db):
         available=classifier_traits(db,slots['incident_type'])
         slots['traits']=list(dict.fromkeys(list(slots.get('traits') or [])+traits_in_text(slots['free_text'],available)))[:12]
         slots.pop('free_text',None)
+    if slots.get('incident_type') and not slots.get('own_service'):
+        # «пожар: подъезд» is no service tag: the service of its head word («пожар» → 101), else the one the facts suggest.
+        head=resolve_incident(db,slots['incident_type'].split(':')[0],services)
+        if head[0]=='ok' and len(head[2])==1:slots['own_service']=head[2][0]
+        else:
+            from .learning import automatic_services
+            suggested=automatic_services(db,{'incident_type':slots['incident_type'],'description':slots.get('free_text',''),'traits':slots.get('traits') or [],'victims':slots.get('victims','')})
+            if len(suggested)==1:slots['own_service']=suggested[0]
+    if not slots.get('incident_type') and slots.get('story'):
+        from .prompt_ticket import nearest_incidents
+        nearest=nearest_incidents(db,slots.get('free_text') or '',services,slots.get('own_service'))
+        if nearest:return reply('create_ticket','Не нашёл точный тип происшествия в описании. Выберите ближайший или напишите другой:',slots=slots,candidates=[{'kind':'incident','slot':'incident_type','id':title,'label':title} for title in nearest])
     for slot in ('incident_type','own_service','mode','difficulty','victims'):  # the incident comes first: its tag often names the service
         if slot not in slots:
             return reply('create_ticket',QUESTIONS[slot],slots=slots,missing=[{'slot':slot,'question':QUESTIONS[slot],'options':options_for(slot,services,slots.get('own_service'))}])
@@ -306,7 +351,9 @@ def create_step(slots,text,answer_slot,u,db):
     preview=(f'Проверьте факты перед созданием:\nПроисшествие: {slots["incident_type"]}.\n'
              +f'Служба: {slots["own_service"]}.\nПострадавшие: {victims.rstrip(".")}.\n'
              +f'Сложность: {"★"*slots["difficulty"]}{"☆"*(5-slots["difficulty"])}.\n'
-             +(f'Адрес: {slots["address"]}.\n' if slots.get('address') else '')
+             +(f'Адрес: {address_label(slots["story"]["place"]) if slots.get("story",{}).get("place",{}).get("street") else slots["address"]}.\n' if slots.get('address') else '')
+             +(f'Заявитель: {slots["story"]["caller_name"]}.\n' if slots.get('story',{}).get('caller_name') else '')
+             +(f'Обстановка: {slots["story"]["seed"]}\n' if slots.get('story',{}).get('seed') else '')
              +(f'Особые обстоятельства: {", ".join(slots["traits"])}.\n' if slots.get('traits') else '')
              +'Черновик с описанием и звонками появится примерно через минуту. Создать?')
     return reply('create_ticket',preview,slots=slots,confirm=confirm_token(u,'create_ticket',slots))
@@ -316,7 +363,16 @@ def execute_create(slots,u,db):
     if test_catalog_blocked():m.fail(TEST_CATALOG_MESSAGE)
     try:data=WizardIn(incident_type=slots['incident_type'],mode=slots['mode'],victims_state=slots['victims'],victims_count=int(slots.get('victims_count') or 0),own_service=slots['own_service'],services=list(slots.get('services') or [slots['own_service']]),difficulty_stars=int(slots['difficulty']),traits=list(slots.get('traits') or [])[:12],address=str(slots.get('address') or '')[:160])
     except (KeyError,ValueError,TypeError) as error:m.fail('Недостаточно данных для билета: '+str(error))
-    draft=wizard(data,u,db)['data'];task=draft['tasks'][0]
+    story=slots.get('story') or {}
+    if story:
+        # A described scene: the teacher's words, place, caller and casualty details stay; the model only rewrites the scene.
+        from .scenario_wizard import build_draft
+        fixed={'seed':story.get('seed',''),'place':story.get('place') or {},'caller_name':story.get('caller_name',''),'object':story.get('object',''),
+               'victims_note':story.get('victims_note','') if data.victims_state=='yes' else ''}
+        draft,meta=build_draft(data,db,fixed=fixed)
+        m.audit(db,u,'wizard_draft_generated',detail={'incident':data.incident_type,'source':'assistant_story',**{k:v for k,v in meta.items() if k in ('model','mode','seconds','brigade_reports')}});db.commit()
+    else:draft=wizard(data,u,db)['data']
+    task=draft['tasks'][0]
     from .assistant import confirm_token
     slots_out={'draft_id':keep_draft(u,draft),'title':draft['title']}
     story=task.get('initial_card',{}).get('description') or task.get('intro','')
@@ -350,13 +406,29 @@ def find_tickets(u,db,ticket_id=None,query=''):
 
 def ticket_card(v):return {'kind':'ticket','slot':'ticket_id','id':v['ticket_id'],'label':f'№ {v["ticket_id"]} · {v["data"].get("title","")}'}
 
+STREET_CASES=[(r'^(?:на\s+|по\s+)?улиц[уеыой]+\b','улица'),(r'^(?:на\s+|по\s+)?проспект\w*','проспект'),(r'^(?:на\s+|по\s+)?переул\w*','переулок'),
+              (r'^(?:на\s+|по\s+)?набережн\w*','набережная'),(r'^(?:на\s+|по\s+)?площад\w*','площадь'),(r'^(?:на\s+|по\s+)?шоссе','шоссе'),
+              (r'^(?:на\s+|по\s+)?бульвар\w*','бульвар'),(r'^(?:на\s+|по\s+)?проезд\w*','проезд')]
+
+def new_address(value):
+    """«на улицу Ленина 5, кв. 3» → {'street':'улица Ленина','house':'5','apartment':'3'}; empty when no street is named."""
+    from .prompt_ticket import parse_place
+    value=re.sub(r'^\s*(?:на|:|—|-)\s+','',str(value).strip(' .«»"'))
+    for pattern,word in STREET_CASES:
+        value=re.sub(pattern,word,value,count=1,flags=re.I)
+    place=parse_place('',value)
+    return place if place.get('street') else {}
+
+def address_label(place):
+    return ', '.join(x for x in [place.get('city',''),place.get('street',''),'дом '+place['house'] if place.get('house') else '','кв. '+place['apartment'] if place.get('apartment') else ''] if x)
+
 def parse_edit(text,services):
     t=normalize(text);slots={}
     quoted=re.search(r'[«"„]([^»"“]+)[»"“]',text)
-    numbered=re.search(r'билет[еау]?\s*(?:№|номер)?\s*(\d+)',t)
+    numbered=re.search(r'билет\w*(?:\s+[ук])?\s*(?:№|номер)?\s*(\d+)',t)  # «билету 12» arrives from speech cleanup as «билет у 12»
     if numbered:slots['ticket_id']=int(numbered.group(1))
     else:
-        about=re.search(r'билет\w*\s+(?:про|о|об)\s+(.+?)(?=\s+(?:поменя|измени|переимен|постав|смени|замени|установ|сложност|назван|норматив|описан|служб|в\s+[«"]|на\s+\d)|[,.;!?]|$)',t)
+        about=re.search(r'билет\w*\s+(?:про|о|об)\s+(.+?)(?=\s+(?:поменя|измени|переимен|постав|смени|замени|установ|сложност|назван|норматив|описан|адрес|служб|добав|убер|удал|в\s+[«"]|на\s+\d)|[,.;!?]|$)',t)
         if about:slots['ticket_query']=about.group(1).strip(' «»"')
     if re.search(r'сложност|звезд|звёзд',t):
         slots['field']='difficulty_stars'
@@ -375,13 +447,18 @@ def parse_edit(text,services):
     elif re.search(r'описани',t):
         slots['field']='description'
         if quoted:slots['value']=quoted.group(1).strip()
+    elif re.search(r'\bадрес|\bулиц[аеуы]\b|\bпроспект|\bпереул',t) and not re.search(r'критери|контакт|событи',t):
+        slots['field']='address'
+        found=re.search(r'адрес\w*\s*(.+)$',text,re.I) or re.search(r'((?:на\s+|по\s+)?(?:улиц|проспект|переул|набережн|площад|шоссе|бульвар|проезд)\w*\s.+)$',text,re.I)
+        place=new_address(found.group(1)) if found else {}
+        if place:slots['value']=place
     elif re.search(r'сво(ю|я|ей) служб|своей ддс|свою ддс',t):
         slots['field']='own_service'
         service=match_service(text,services)
         if service:slots['value']=service
-    elif re.search(r'(добав|убер|удал|исключ)\w*\s+(службу|получател|службы)',t) or re.search(r'служб[ауы]\s*[-—:]',t):
+    elif re.search(r'(добав|убер|удал|исключ)\w*\s+(службу|получател|службы)',t) or re.search(r'служб[ауы]\s*[-—:]',t) or re.search(r'\b(добав|убер|удал|исключ)\w*',t) and match_service(re.sub(r'билет\w*\s*(?:№|номер)?\s*\d+','',text),services):
         slots['field']='services'
-        service=match_service(text,services)
+        service=match_service(re.sub(r'билет\w*\s*(?:№|номер)?\s*\d+','',text),services)
         if service:slots['value']=('remove:' if re.search(r'убер|удал|исключ',t) else 'add:')+service
     elif re.search(r'пострадавш',t):
         slots['field']='victims'
@@ -396,18 +473,66 @@ def parse_edit(text,services):
             if re.search(pattern,t):slots['section']=section;break
     return slots
 
-FIELD_QUESTION='Что изменить в билете: сложность, название, норматив, описание, свою службу или службы-получатели? Для критериев, контактов и событий открою редактор.'
+def has_ticket_reference(text):
+    """«в билете 12», «билету 12», «билет № 12»: the phrase is about an existing ticket."""
+    return bool(re.search(r'\bбилет\w*(?:\s+[ук])?\s*(?:№|номер)?\s*\d+',normalize(text)))
+
+FIELD_QUESTION='Что изменить в билете: сложность, название, норматив, описание, адрес, свою службу или службы-получатели? Для критериев, контактов и событий открою редактор.'
+
+def pick_ticket(intent,slots,text,answer_slot,u,db):
+    """(version, reply): the ticket named by number, by words of its title or by the open editor page."""
+    from .assistant import reply
+    ask='Какой билет открыть?' if intent=='open_ticket' else 'Какой билет изменить?'
+    if not slots.get('ticket_id'):
+        if not slots.get('ticket_query'):
+            return None,reply(intent,ask+' Назовите номер или слова из названия.',slots=slots,missing=[{'slot':'ticket','question':ask}])
+        found=find_tickets(u,db,query=slots['ticket_query'])
+        if not found:
+            query=slots.pop('ticket_query');return None,reply(intent,f'Не нашёл билет по словам «{query}». Назовите номер или другие слова из названия.',slots=slots,missing=[{'slot':'ticket','question':ask}])
+        if len(found)>1:return None,reply(intent,'Нашёл несколько билетов. Какой выбрать?',slots=slots,candidates=[ticket_card(v) for v in found])
+        slots['ticket_id']=found[0]['ticket_id']
+    rows=find_tickets(u,db,ticket_id=int(slots['ticket_id']))
+    if not rows:
+        number_=slots.pop('ticket_id');return None,reply(intent,f'Билет № {number_} не найден или в архиве.',slots=slots,missing=[{'slot':'ticket','question':ask}])
+    return rows[0],None
+
+def ticket_answer(slots,text,answer_slot,services=()):
+    """The answer to «Какой билет?». A change said instead («поменяй адрес на …») is kept, and the question stays."""
+    if answer_slot=='ticket':
+        change=parse_edit(text,list(services))
+        if change.get('field') and not change.get('ticket_id') and not change.get('ticket_query'):
+            slots.update({k:v for k,v in change.items() if k in ('field','value')})
+            return
+        slots.pop('ticket_id',None);slots.pop('ticket_query',None)
+        numbered=re.search(r'\d+',text)
+        if numbered:slots['ticket_id']=int(numbered.group())
+        else:slots['ticket_query']=text
+
+def open_step(slots,text,answer_slot,u,db):
+    """«Зайди в билет 12», «редактировать билет про лифт»: opens the ticket editor."""
+    from .assistant import reply
+    slots={k:v for k,v in slots.items() if k!='answer_slot'}
+    if answer_slot and answer_slot in slots:pass
+    elif answer_slot:
+        ticket_answer(slots,text,answer_slot,active_services(db))
+        # A change instead of a ticket name: this is an edit now, the ticket question stays.
+        if slots.get('field'):return edit_step({k:v for k,v in slots.items()},'',None,u,db)
+    elif text:
+        parsed=parse_edit(text,[])
+        if parsed.get('ticket_id') or parsed.get('ticket_query'):slots.pop('ticket_id',None);slots.pop('ticket_query',None)
+        slots.update({k:v for k,v in parsed.items() if k in ('ticket_id','ticket_query')})
+    version,answer=pick_ticket('open_ticket',slots,text,answer_slot,u,db)
+    if answer:return answer
+    to=f'/tickets/{version["id"]}'
+    return reply('open_ticket',f'Открываю билет № {version["ticket_id"]} «{version["data"].get("title","")}» в редакторе. Скажите, что изменить: например «поменяй сложность на 4» или «поменяй адрес на улицу Ленина 5».',
+                 slots={'ticket_id':version['ticket_id'],'version_id':version['id']},action={'kind':'navigate','to':to},links=[{'label':'Открыть билет','to':to}])
 
 def edit_step(slots,text,answer_slot,u,db):
     from .assistant import reply, confirm_token
     services=active_services(db)
     slots={k:v for k,v in slots.items() if k!='answer_slot'}
     if answer_slot and answer_slot in slots:pass  # answered with a button
-    elif answer_slot=='ticket':
-        slots.pop('ticket_id',None);slots.pop('ticket_query',None)
-        numbered=re.search(r'\d+',text)
-        if numbered:slots['ticket_id']=int(numbered.group())
-        else:slots['ticket_query']=text
+    elif answer_slot=='ticket':ticket_answer(slots,text,answer_slot,services)
     elif answer_slot=='field':
         parsed=parse_edit('в билете поменяй '+text,services)
         if parsed.get('field'):slots['field']=parsed['field'];slots.pop('value',None)
@@ -421,38 +546,35 @@ def edit_step(slots,text,answer_slot,u,db):
         parsed=parse_edit(text,services)
         if parsed.get('ticket_id') or parsed.get('ticket_query'):slots.pop('ticket_id',None);slots.pop('ticket_query',None)
         slots.update(parsed)
-    if not slots.get('ticket_id'):
-        if not slots.get('ticket_query'):
-            return reply('edit_ticket','Какой билет изменить? Назовите номер или слова из названия.',slots=slots,missing=[{'slot':'ticket','question':'Какой билет изменить?'}])
-        found=find_tickets(u,db,query=slots['ticket_query'])
-        if not found:
-            slots.pop('ticket_query');return reply('edit_ticket',f'Не нашёл билет по словам «{text}». Назовите номер или другие слова из названия.',slots=slots,missing=[{'slot':'ticket','question':'Какой билет изменить?'}])
-        if len(found)>1:return reply('edit_ticket','Нашёл несколько билетов. Какой изменить?',slots=slots,candidates=[ticket_card(v) for v in found])
-        slots['ticket_id']=found[0]['ticket_id']
-    rows=find_tickets(u,db,ticket_id=int(slots['ticket_id']))
-    if not rows:
-        slots.pop('ticket_id');return reply('edit_ticket',f'Билет № {slots.get("ticket_id","")} не найден или в архиве.',slots=slots,missing=[{'slot':'ticket','question':'Какой билет изменить?'}])
-    version=rows[0];title=version['data'].get('title','');slots['version_id']=version['id'];slots['title']=title
+    version,answer=pick_ticket('edit_ticket',slots,text,answer_slot,u,db)
+    if answer:return answer
+    title=version['data'].get('title','');slots['version_id']=version['id'];slots['title']=title
     if slots.get('section'):
         return reply('edit_ticket',f'Открываю билет № {version["ticket_id"]} «{title}» в редакторе на нужной вкладке: такие правки делаются вручную.',slots=slots,action={'kind':'navigate','to':f'/tickets/{version["id"]}?section={slots["section"]}'})
     if not slots.get('field'):
-        return reply('edit_ticket',f'Билет № {version["ticket_id"]} «{title}». '+FIELD_QUESTION,slots=slots,missing=[{'slot':'field','question':FIELD_QUESTION,'options':[{'value':label,'label':label} for label in ('сложность','название','норматив','описание','своя служба')]}])
+        return reply('edit_ticket',f'Билет № {version["ticket_id"]} «{title}». '+FIELD_QUESTION,slots=slots,missing=[{'slot':'field','question':FIELD_QUESTION,'options':[{'value':label,'label':label} for label in ('сложность','название','норматив','описание','адрес','своя служба')]}])
     if 'value' not in slots:
-        question={'difficulty_stars':'Какую сложность поставить, от 1 до 5?','title':'Какое новое название?','limit_seconds':'Какой норматив в секундах (30–7200)?','description':'Какое новое описание?','own_service':'Какую службу сделать своей?','services':'Какую службу добавить или убрать? Например «добавь службу 103».','victims':'Сколько пострадавших? Например «нет», «неизвестно» или «2».'}[slots['field']]
+        question={'difficulty_stars':'Какую сложность поставить, от 1 до 5?','title':'Какое новое название?','limit_seconds':'Какой норматив в секундах (30–7200)?','description':'Какое новое описание?','address':'Какой новый адрес? Например «улица Ленина, дом 5».','own_service':'Какую службу сделать своей?','services':'Какую службу добавить или убрать? Например «добавь службу 103».','victims':'Сколько пострадавших? Например «нет», «неизвестно» или «2».'}[slots['field']]
         return reply('edit_ticket',question,slots=slots,missing=[{'slot':'value','question':question,'options':options_for('difficulty',services) if slots['field']=='difficulty_stars' else options_for('own_service',services) if slots['field'] in ('own_service','services') else []}])
     change=describe_change(version['data'],slots)
     preview=f'Билет № {version["ticket_id"]} «{title}»: {change}.\nСохраню новую версию и открою редактор. Выполнить?'
     return reply('edit_ticket',preview,slots=slots,confirm=confirm_token(u,'edit_ticket',slots))
 
+def ticket_card_of(task):
+    return task['expected_card'] if task.get('mode')=='112' else task['initial_card']
+
 def describe_change(data,slots):
     field,value=slots['field'],slots['value'];task=data['tasks'][0]
     if field=='difficulty_stars':
-        from .assistant import plural
         current=data.get('difficulty_stars') or {'Базовый':1,'Средний':3,'Сложный':5}.get(data.get('difficulty'),1)
         return f'сложность {"★"*current} → {"★"*int(value)}'
     if field=='title':return f'название → «{value}»'
     if field=='limit_seconds':return f'норматив {task.get("limit_seconds")} с → {value} с'
     if field=='description':return f'описание → «{str(value)[:120]}»'
+    if field=='address':
+        card=ticket_card_of(task)
+        old=address_label({'street':card.get('street',''),'house':card.get('house','')})
+        return f'адрес {old} → {address_label({**{"house":card.get("house","")},**value})}'
     if field=='own_service':return f'своя служба {task.get("own_service")} → {value}'
     if field=='services':
         kind,name=str(value).split(':',1)
@@ -461,6 +583,15 @@ def describe_change(data,slots):
         state=str(value).split(':')[0]
         return 'пострадавшие → '+VICTIM_LABELS.get(state,state)+(f', {value.split(":")[1]} чел.' if ':' in str(value) else '')
     return 'изменение'
+
+def replace_text(value,pairs):
+    """Every string inside a task with the old address replaced: intro, caller answers, contacts, events, rubric."""
+    if isinstance(value,str):
+        for old,new in pairs:value=value.replace(old,new)
+        return value
+    if isinstance(value,list):return [replace_text(v,pairs) for v in value]
+    if isinstance(value,dict):return {k:replace_text(v,pairs) for k,v in value.items()}
+    return value
 
 def apply_edit(data,slots):
     field,value=slots['field'],slots['value'];task=data['tasks'][0]
@@ -476,6 +607,22 @@ def apply_edit(data,slots):
         if not 30<=seconds<=7200:m.fail('Норматив от 30 до 7200 секунд')
         for t in data['tasks']:t['limit_seconds']=seconds
     elif field=='description':data['description']=str(value).strip()[:4000]
+    elif field=='address':
+        if not isinstance(value,dict) or not str(value.get('street','')).strip():m.fail('Назовите улицу нового адреса')
+        for index,t in enumerate(data['tasks']):
+            card=ticket_card_of(t)
+            street,house=card.get('street',''),card.get('house','')
+            new_street=str(value['street']).strip()[:160];new_house=str(value.get('house') or house).strip()[:12]
+            pairs=[]
+            if street:
+                pairs.append((f'{street}, дом {house}',f'{new_street}, дом {new_house}'))
+                pairs.append((street,new_street))
+            if street and index==0:data['title']=replace_text(data.get('title',''),pairs)
+            t=replace_text(t,pairs);data['tasks'][index]=t
+            card=ticket_card_of(t)
+            card.update(street=new_street,house=new_house)
+            for key in ('city','apartment','entrance','floor'):
+                if value.get(key):card[key]=str(value[key])[:160]
     elif field=='own_service':
         for t in data['tasks']:
             t['own_service']=value
@@ -492,14 +639,14 @@ def apply_edit(data,slots):
     elif field=='victims':
         state,_,count=str(value).partition(':')
         for t in data['tasks']:
-            card=t['expected_card'] if t.get('mode')=='112' else t['initial_card']
+            card=ticket_card_of(t)
             card['victims']=state;card['victims_count']=count if state=='yes' else ''
     return data
 
 def execute_edit(slots,u,db):
     rows=find_tickets(u,db,ticket_id=int(slots['ticket_id']))
     if not rows:m.fail('Билет не найден или в архиве',404)
-    version=rows[0];data=apply_edit(version['data'],slots)
+    version=rows[0];data=apply_edit(copy.deepcopy(version['data']),slots)
     saved=m.save_ticket(TicketData.model_validate(data),version['ticket_id'],u,db)
-    section={'difficulty_stars':'story','title':'story','limit_seconds':'story','description':'story','own_service':'story','services':'routing','victims':'card'}[slots['field']]
+    section={'difficulty_stars':'story','title':'story','limit_seconds':'story','description':'story','address':'card','own_service':'story','services':'routing','victims':'card'}[slots['field']]
     return {'preview':f'Сохранена новая версия билета № {version["ticket_id"]}: {describe_change(version["data"],slots)}. Открываю редактор.','action':{'kind':'navigate','to':f'/tickets/{saved["id"]}?section={section}'},'version_id':saved['id'],'links':[{'label':'Открыть билет','to':f'/tickets/{saved["id"]}?section={section}'}]}

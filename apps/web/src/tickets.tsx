@@ -74,6 +74,8 @@ export function Tickets() {
   const wizardInitial = (useLocation().state as Obj|null)?.wizard as Obj|undefined;
   const [assistantOpen, setAssistantOpen] = useState(!!wizardInitial);
   const [promptOpen, setPromptOpen] = useState(false);
+  // «Закрой мастер» from the assistant dismisses the creation windows without the confirmation step.
+  useEffect(()=>{const close=()=>{setAssistantOpen(false);setPromptOpen(false);};window.addEventListener('training112:close-dialogs',close);return()=>window.removeEventListener('training112:close-dialogs',close);},[]);
   // «Уточнить в мастере» from the description form hands its facts to the wizard.
   const [wizardSeed, setWizardSeed] = useState<Obj|undefined>(wizardInitial);
   const [trial,setTrial]=useState<Obj|null>(null);

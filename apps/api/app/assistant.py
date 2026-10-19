@@ -30,11 +30,11 @@ HELP=('Понимаю команды текстом и голосом.\n'
       'Рабочие места: «подключись к рабочему месту Кузнецова», «покажи первый компьютер», «выйди с этого ПК». Если имя неоднозначно, уточню ученика.\n'
       'Ученики: «какие работы нужно проверить», «найди последнюю работу у Кузнецова», «по Кузнецову есть рекомендации?», «кто сейчас в классе?», «где сидит Кузнецов?».\n'
       'Группы и ученики: «создай группу», «открой мне группу», «создай нового ученика». Уточню недостающие сведения.\n'
-      'Билеты: «создай новый билет», «отправь билет Кузнецову на ПК 2», «в билете 12 поменяй сложность на 4».\n'
+      'Билеты: «создай новый билет», «создай билет: пожар в квартире на 14 этаже, двое пострадавших, адрес …», «зайди в билет 12», «в билете 12 поменяй адрес на улицу Ленина 5», «отправь билет Кузнецову на ПК 2».\n'
       'Минивопросы: «создай мини задание: какой ответ? варианты А; Б; В; верный ответ Б», «отредактируй минивопрос 5».\n'
       'Экраны: «открой рабочий стол Кузнецова», «открой рабочий стол 2», «закрой рабочий стол», «выйди из всех ПК».\n'
-      '«Закрой» закрывает окно.')
-STOP={'у','по','о','об','про','с','со','и','а','в','на','за','к','ко','из','для','от','до','ли','же','бы','ну','есть','что','кто','где','какие','какой','какая','каких','какого','кого','чем','сейчас','сидит','находится','работает','сидел','студент','студента','студенту','студентом','студентке','студентки','ученик','ученика','ученику','учеником','ученица','ученицы','ученице','покажи','покажите','найди','найти','открой','открыть','дай','скажи','мне','нам','работу','работа','работы','работ','попытку','попытка','попытки','карточку','карточка','последнюю','последняя','последний','последнее','последние','крайнюю','крайняя','крайний','рекомендации','рекомендация','рекомендаций','ошибки','ошибка','ошибок','профиль','результаты','результат','успеваемость','пк','компьютером','компьютер','компьютера','рабочим','местом','место','места','каким','каком','рабочем','ассистент','нет','его','ее','их','пожалуйста','надо','нужно','все','всё','проверить','провер','проверка','проверку','сдал','сдала','дела','успехи','какую','как','это','ещё','еще','вообще','сегодня','вчера'}
+      '«Закрой» закрывает окно ассистента; «закрой билет», «закрой работу», «закрой мастер» закрывают названное.')
+STOP={'давай','давайте','проверим','проверь','посмотрим','очереди','очередь','очередью','нас','там','тут','здесь','у','по','о','об','про','с','со','и','а','в','на','за','к','ко','из','для','от','до','ли','же','бы','ну','есть','что','кто','где','какие','какой','какая','каких','какого','кого','чем','сейчас','сидит','находится','работает','сидел','студент','студента','студенту','студентом','студентке','студентки','ученик','ученика','ученику','учеником','ученица','ученицы','ученице','покажи','покажите','найди','найти','открой','открыть','дай','скажи','мне','нам','работу','работа','работы','работ','попытку','попытка','попытки','карточку','карточка','последнюю','последняя','последний','последнее','последние','крайнюю','крайняя','крайний','рекомендации','рекомендация','рекомендаций','ошибки','ошибка','ошибок','профиль','результаты','результат','успеваемость','пк','компьютером','компьютер','компьютера','рабочим','местом','место','места','каким','каком','рабочем','ассистент','нет','его','ее','их','пожалуйста','надо','нужно','все','всё','проверить','провер','проверка','проверку','сдал','сдала','дела','успехи','какую','как','это','ещё','еще','вообще','сегодня','вчера'}
 
 def normalize(text):
     return re.sub(r'\s+',' ',str(text).lower().replace('ё','е')).strip()
@@ -107,7 +107,8 @@ VOCAB=set('''журнал журнала журнале проверка про�
 рекомендации ошибки профиль результаты успеваемость классе класс онлайн сети сидит находится работает компьютер компьютером создай создать сделай новый
 сложность сложный сложного простой звезды звезд звезда пожар пожара переименуй поменяй измени назови закрой закрыть отмена отменить выполни выполнить сохрани сохранить
 пострадавших пострадавшие пострадавший служба службы службу служб диспетчер диспетчера оператор оператора норматив описание название признаки признак
-нужно надо какие какой сейчас уровень режиме подключен подключены подключи рабочий мастер версия версию критерии контакты события адрес адресу улица улице проспект переулок'''.split())
+нужно надо какие какой сейчас уровень режиме подключен подключены подключи рабочий мастер версия версию критерии контакты события адрес адресу улица улице проспект переулок
+зайди зайти войди выйди выйти выход выходи редактировать редактируй отредактируй открыть закрой закрыть'''.split())
 def fix_keywords(text,protected=()):
     """Replaces words one typo away from a command word (two for long words). Quoted text and protected words (student names) stay as written."""
     protected={normalize(w) for w in protected}
@@ -167,7 +168,11 @@ def detect(text):
     if re.search(r'\bне (надо|нужно|открывай|показывай|закрывай|делай|ищи|создавай|подключай|сейчас)|пока не\b|\bпотом\b|можно ли|умеешь ли|а можно|получится ли',t):return 'refused'
     if re.search(r'(?:выйди|выходи|выйти).*всех? (?:пк|компьютер|рабочих мест)|до завтра',t):return 'exit_all'
     if re.search(r'(закрой|закрыть|выйди|выйти).*(рабочий стол|рабочего стола|рабочее место|удаленн)',t):return 'close_desktop'
-    if re.search(r'^(закрой|закрыть|отмена|отменить|хватит|спасибо)\b',t):return 'close'
+    if re.search(r'^(закрой|закрыть|закройся)\b',t):
+        rest=re.sub(r'^(закрой|закрыть|закройся)\s*','',t).strip(' .,!?')
+        rest=re.sub(r'\b(пожалуйста|мне|это|этот|эту|это окно|сейчас|уже)\b','',rest).strip(' .,!?')
+        return 'close' if not rest or re.fullmatch(r'(ассистент\w*|помощник\w*|окно( ассистента)?|чат|панель|ai|аи|ии|себя|диалог)',rest) else 'close_target'
+    if re.search(r'^(отмена|отменить|хватит|спасибо)\b',t):return 'close'
     if re.search(r'^(выйди|выйти|выход|разлогинь)\b',t):return 'exit_pc'
     if re.search(r'(созда|сдела|добав|новую|новый).*(групп)',t):return 'create_group'
     if re.search(r'(созда|добав|заведи|зарегистрир).*(ученик|учениц|студент|новичк)',t):return 'create_student'
@@ -179,11 +184,16 @@ def detect(text):
     if re.search(r'(отправ|назнач|выдай|передай).*(билет|задани)',t):return 'assign_ticket'
     if re.search(r'(подключ|покаж|открой|перейд).*(рабоч|компьют|\bпк\b|стол)',t) and not re.search(r'рабочие места|рабочих мест',t):
         return 'connect_station' if re.search(r'\b\d+\b|перв|втор|трет|четвер|пят|шест|седьм|восьм|девят|десят',t) else 'connect_student'
+    if re.search(r'(зайди|зайти|войди|открой|открыть|перейди|покажи|редактир\w*|отредактир\w*|правь|поправь)\b.*\bбилет(?!ы\b|ов\b|ам\b|ах\b)',t) and not re.search(r'созда|нов(ый|ого|ую)\b',t):
+        parsed=tickets.parse_edit(text,[])
+        return 'edit_ticket' if parsed.get('field') or parsed.get('section') else 'open_ticket'
+    # «в билете 12 добавь службу 103»: a numbered ticket is an existing one, even with «добавь» or «сделай».
+    if tickets.has_ticket_reference(text) and not re.search(r'созда|нов(ый|ого|ую)\b',t):return 'edit_ticket'
     if re.search(tickets.CREATE_TICKET,t):return 'create_ticket'
     if re.search(tickets.EDIT_TICKET,t):return 'edit_ticket'
     if re.search(r'кто (сейчас |уже |еще |из учеников |из студентов )*(в классе|онлайн|в сети|подключ|на месте|на местах|работает|присутств|отсутств|не в сети|не подключ|вошел|зашел)|кого (сейчас )?нет|список (подключ|онлайн)|сколько (учеников|студентов|человек) (сейчас )?(в сети|подключ|онлайн|в классе)',t):return 'who_online'
     if re.search(r'^где\b|\bгде (сидит|находится|сейчас|работает)|за каким (пк|комп|рабочим)|на каком (пк|рабочем|месте|комп)|какой (пк|компьютер) у|номер пк',t):return 'where_student'
-    if re.search(r'провер',t) and (re.search(r'нужно|надо|каки[ехм]|ждут|ожида|непровер|требу|осталось|непроверенн|на проверку|^провер(ь|ить) (работы|задания|что)',t)):return 'show_reviews'
+    if re.search(r'провер',t) and (re.search(r'нужно|надо|каки[ехм]|ждут|ожида|непровер|требу|осталось|непроверенн|на проверку|очеред|^провер(ь|ить|им) (работы|задания|что)|давай провер',t)):return 'show_reviews'
     if re.search(r'(последн|крайн)\w* (работ|попыт|карточк)|(работ|попыт)\w* (последн|крайн)|найди (работу|попытку|карточку)',t):return 'find_last_attempt'
     if re.search(r'(открой|открыть|покажи|показать).*\b(студента|ученика)\b',t) and student_query(t):return 'student_profile'
     if re.search(r'рекомендац|ошибк|профил|успеваем|результат|как (дела|успехи)|что (с|у) ',t) and student_query(t):return 'student_profile'
@@ -201,8 +211,15 @@ class Interpret(BaseModel):
     context:dict=Field(default_factory=dict)
     dialog:Dialog|None=None
 
+# «Закрой …» closes what is named: the page goes back to its list, a creation window is dismissed.
+CLOSE_TARGETS=[
+    (r'мастер|форм|окно созда|создани|описани|черновик','dialogs','окно создания билета'),
+    (r'билет|редактор','/tickets','билет и возвращаюсь к списку билетов'),
+    (r'работ|попытк|оценк|провер','/reviews','работу и возвращаюсь к проверке работ'),
+    (r'журнал|аналитик|статистик|мини ?вопрос|студент|ученик|заняти|урок|режим|групп|страниц','/','страницу и возвращаюсь к рабочим местам'),
+]
 STUDENT_INTENTS={'where_student','find_last_attempt','student_profile','connect_student'}
-DIALOG_INTENTS={'create_ticket','edit_ticket','create_group','open_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'}
+DIALOG_INTENTS={'create_ticket','edit_ticket','open_ticket','create_group','open_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'}
 EXECUTE_INTENTS={'create_ticket','edit_ticket','save_ticket','create_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'}
 TOKEN_KEY=secrets.token_bytes(32)
 TOKEN_TTL=7200
@@ -297,13 +314,20 @@ def question_step(intent,slots,text,answer_slot,u,db):
         if not slots.get('value'):return reply(intent,'Продиктуйте новый текст.',slots=slots,missing=[{'slot':'value','question':'Новый текст'}])
         return reply(intent,f'Изменить минивопрос №{q.id}: {key} → «{slots["value"]}»?',slots=slots,confirm=confirm_token(u,intent,slots))
     if not slots and text:
-        body=re.sub(r'^.*?(?:мини\s?(?:вопрос|задани[ея]))\s*[.:—-]?\s*','',text,flags=re.I).strip()
-        parts=re.split(r'\bвариант[ыа]?\b',body,maxsplit=1,flags=re.I)
+        # Quotes and brackets are dictation marks, not part of the question: «"какие клавиши… и варианты (Ctrl+F5; Ctrl+F2) верный ответ Ctrl+F5"».
+        body=re.sub(r'^.*?(?:мини[\s-]?(?:вопрос|задани[ея]))\s*[.:—-]?\s*','',text,flags=re.I).strip()
+        body=re.sub(r'[«»"“”„]','',body).strip()
+        parts=re.split(r'\bвариант[ыа]?(?:\s+ответ\w*)?\b',body,maxsplit=1,flags=re.I)
         if len(parts)==2:
-            slots['prompt']=parts[0].strip(' ,.:;')
-            choices=re.split(r'\bверн(?:ый|ого)\s+ответ\b',parts[1],maxsplit=1,flags=re.I)
-            slots['options']=[v.strip(' ,.:;') for v in re.split(r'[;,]',choices[0]) if v.strip(' ,.:;')]
-            if len(choices)==2:slots['answer']=choices[1].strip(' ,.:;.!?')
+            slots['prompt']=re.sub(r'(?:[,;]?\s+(?:и|а также))?[\s,.:;—-]*$','',parts[0].strip()).strip(' ,.:;')
+            choices=re.split(r'\b(?:верн(?:ый|ого)|правильн(?:ый|ого))\s+ответ\w*\b',parts[1],maxsplit=1,flags=re.I)
+            clean=lambda v:v.strip(' ,.:;!?()[]—-')
+            slots['options']=[clean(v) for v in re.split(r'[;,]',choices[0].replace('(',' ').replace(')',' ')) if clean(v)]
+            if len(choices)==2:
+                answer=clean(re.sub(r'^\s*(?:—|-|:|это)\s*','',choices[1]))
+                # The spoken answer may differ in case or spaces from the option it names: take the option.
+                key=lambda v:re.sub(r'\s+','',v).casefold()
+                slots['answer']=next((o for o in slots['options'] if key(o)==key(answer)),answer)
             slots['audio_answered']=True
     if answer_slot=='prompt':slots['prompt']=text.strip()
     elif answer_slot=='answer':slots['answer']=text.strip()
@@ -352,7 +376,7 @@ def assignment_step(slots,text,answer_slot,u,db):
     elif answer_slot=='ticket' and text:
         found=re.search(r'\d+',text)
         slots['ticket_id']=int(found.group()) if found else None
-    elif text and not slots:
+    elif text and set(slots)<={'version_id'}:  # the first phrase; a ticket from the page may already be chosen
         found=re.search(r'билет(?:\s*№)?\s*(\d+)',normalize(text))
         if found:slots['ticket_id']=int(found.group(1))
         name=re.search(r'(?:ученику|студенту|для)\s+([А-ЯЁа-яё][А-ЯЁа-яё-]+)',text)
@@ -360,9 +384,22 @@ def assignment_step(slots,text,answer_slot,u,db):
         station=re.search(r'(?:рабоч(?:ее|ем) место|пк|компьютер)\s*(\d+)',normalize(text))
         if station:slots['station']=station.group(1)
     rows=tickets.latest_tickets(u,db)
+    if slots.get('version_id') and not slots.get('ticket_id'):
+        chosen=db.get(m.TicketVersion,int(slots['version_id']))
+        if chosen:slots['ticket_id']=chosen.ticket_id
     version=next((v for v in rows if v['ticket_id']==slots.get('ticket_id')),None) if slots.get('ticket_id') else next((v for v in rows if v['published']),None)
     if not version:return reply('assign_ticket','Какой билет отправить? Назовите его номер.',slots=slots,missing=[{'slot':'ticket','question':'Номер билета'}])
     slots['ticket_id']=version['ticket_id'];slots['version_id']=version['id']
+    # A draft is published on the same confirmation: «создай билет» → «отправь билет Кузнецову» works in one go.
+    slots['publish_first']=not version['published']
+    draft_note=' Билет ещё черновик: сначала опубликую его.' if slots['publish_first'] else ''
+    sound=version.get('voice') or {}
+    if sound and not sound.get('ready'):
+        # Publication waits for every spoken line; saying so now beats a failed confirmation.
+        ready=next((v for v in rows if v['published'] and v['ticket_id']!=version['ticket_id'] and (v.get('voice') or {}).get('ready',True)),None)
+        hint=f' Пока можно отправить опубликованный билет, например «отправь билет {ready["ticket_id"]} …».' if ready else ''
+        return reply('assign_ticket',f'Билет №{version["ticket_id"]} «{version["data"]["title"]}» ещё озвучивается: готово {sound.get("generated",0)} из {sound.get("total",0)} записей. '
+                     +('Опубликовать и отправить' if slots['publish_first'] else 'Отправить')+' его можно, когда озвучка закончится; повторите команду позже.'+hint,slots={'ticket_id':version['ticket_id']})
     recipient_text=str(slots.get('student_query') or text)
     chunks=re.split(r'\s+и\s+|[,;]',recipient_text)
     if len(chunks)>1 or slots.get('student_ids'):
@@ -383,7 +420,7 @@ def assignment_step(slots,text,answer_slot,u,db):
         members=[db.get(User,sid) for sid in dict.fromkeys(ids)]
         if members and all(s and s.role=='student' and m.visible(db,u,s.id) for s in members):
             slots['student_ids']=[s.id for s in members]
-            return reply('assign_ticket',f'Отправить билет №{version["ticket_id"]} «{version["data"]["title"]}»: '+', '.join(s.name for s in members)+'?',slots=slots,confirm=confirm_token(u,'assign_ticket',slots))
+            return reply('assign_ticket',f'Отправить билет №{version["ticket_id"]} «{version["data"]["title"]}»: '+', '.join(s.name for s in members)+'?'+draft_note,slots=slots,confirm=confirm_token(u,'assign_ticket',slots))
     student=None
     if slots.get('student_id'):
         candidate=db.get(User,int(slots['student_id']))
@@ -403,7 +440,7 @@ def assignment_step(slots,text,answer_slot,u,db):
         row=next((r for r in station_rows(u,db) if str(r['number'])==str(slots['station']) and r['online']),None)
         if not row or row['user_id']!=student.id:return reply('assign_ticket',f'{student.name} сейчас не работает за ПК №{slots["station"]}. Уточните ученика или рабочее место.',slots={k:v for k,v in slots.items() if k not in ('student_id','student_query','station')},missing=[{'slot':'student','question':'Ученик'}])
     slots['student_id']=student.id
-    return reply('assign_ticket',f'Отправить билет №{version["ticket_id"]} «{version["data"]["title"]}» ученику {student.name}'+(f' на ПК №{slots["station"]}' if slots.get('station') else '')+'?',slots=slots,confirm=confirm_token(u,'assign_ticket',slots))
+    return reply('assign_ticket',f'Отправить билет №{version["ticket_id"]} «{version["data"]["title"]}» ученику {student.name}'+(f' на ПК №{slots["station"]}' if slots.get('station') else '')+'?'+draft_note,slots=slots,confirm=confirm_token(u,'assign_ticket',slots))
 
 @router.post('/interpret')
 def interpret(data:Interpret,u=Depends(m.current),db=Depends(m.getdb)):
@@ -415,19 +452,43 @@ def interpret(data:Interpret,u=Depends(m.current),db=Depends(m.getdb)):
     intent=detect(text)
     query=student_query(text)
     dialog=data.dialog
+    if intent=='assign_ticket' and not (dialog and dialog.intent=='assign_ticket') and not re.search(r'билет\w*(?:\s+[ук])?\s*(?:№|номер)?\s*\d+',normalize(text)):
+        # «Отправь билет Кузнецову» right after «создай билет»: the ticket on screen or the one the assistant just saved.
+        target=re.search(r'/tickets/(\d+)',str(data.context.get('page','')))
+        context_version=int(target.group(1)) if target else data.context.get('version_id')
+        if context_version:dialog=Dialog(intent=intent,slots={'version_id':int(context_version)})
     if intent=='publish_ticket':
         target=re.search(r'/tickets/(\d+)',str(data.context.get('page','')))
         context_version=int(target.group(1)) if target else data.context.get('version_id')
         dialog=Dialog(intent=intent,slots={**(dict(dialog.slots) if dialog and dialog.intent==intent else {}),**({'version_id':context_version} if context_version else {})})
+    # Another command starts over: «зайди в билет 2» during the creation questions is not the answer «2 звезды».
+    if dialog and intent!=dialog.intent and dialog.intent!='save_ticket' and intent in DIALOG_INTENTS and not dialog.slots.get('answer_slot') in ('ticket',):
+        dialog=None
     if dialog and intent!=dialog.intent and (intent.startswith('open_page:') or intent in {'show_reviews','find_last_attempt','close_desktop','exit_all','exit_pc','who_online','where_student','student_profile','connect_station','connect_student','demo_mode'}):
         dialog=None
     if dialog and dialog.slots.get('answer_slot')=='student' and dialog.intent in STUDENT_INTENTS:dialog.slots['student_query']=text
     if dialog and dialog.intent in STUDENT_INTENTS and (dialog.slots.get('student_id') or dialog.slots.get('student_query')):
         intent=dialog.intent
         if dialog.slots.get('student_query'):query=student_query(dialog.slots['student_query']) or words(dialog.slots['student_query'])
+    # On an open ticket page «поменяй адрес на …», «поставь сложность 4» refer to that ticket.
+    page_version=re.search(r'^/tickets/(\d+)',str(data.context.get('page','')))
+    page_ticket=None
+    if page_version:
+        row=db.get(m.TicketVersion,int(page_version.group(1)))
+        page_ticket=row.ticket_id if row else None
+    if page_ticket and not dialog and intent in ('unknown','open_page:tickets','edit_ticket','open_ticket'):
+        parsed=tickets.parse_edit('в билете поменяй '+text,[]) if intent=='unknown' else {}
+        if intent=='unknown' and (parsed.get('field') or parsed.get('section')):intent='edit_ticket'
+        if intent in ('edit_ticket','open_ticket') and not tickets.parse_edit(text,[]).get('ticket_id') and not tickets.parse_edit(text,[]).get('ticket_query'):
+            dialog=Dialog(intent=intent,slots={'ticket_id':page_ticket})
+            if intent=='open_ticket':
+                result=reply('open_ticket','Этот билет уже открыт. Скажите, что изменить: например «поменяй сложность на 4» или «поменяй адрес на улицу Ленина 5».',slots={'ticket_id':page_ticket})
+                detail={'text':text[:300],'intent':'open_ticket','page':str(data.context.get('page',''))[:100],'ticket_id':page_ticket}
+                m.audit(db,u,'assistant_command','open_ticket',detail);db.commit()
+                return result
     if dialog and dialog.intent in DIALOG_INTENTS and intent not in ('close','refused') and not (intent=='help' and text):
-        if dialog.intent in ('create_ticket','edit_ticket'):
-            step=tickets.create_step if dialog.intent=='create_ticket' else tickets.edit_step
+        if dialog.intent in ('create_ticket','edit_ticket','open_ticket'):
+            step={'create_ticket':tickets.create_step,'edit_ticket':tickets.edit_step,'open_ticket':tickets.open_step}[dialog.intent]
             result=step(dict(dialog.slots),text,dialog.slots.get('answer_slot'),u,db)
         elif dialog.intent=='create_group':result=group_step(dict(dialog.slots),text,dialog.slots.get('answer_slot'),u,db)
         elif dialog.intent=='open_group':result=open_group_step(dict(dialog.slots),text,dialog.slots.get('answer_slot'),u,db)
@@ -436,8 +497,8 @@ def interpret(data:Interpret,u=Depends(m.current),db=Depends(m.getdb)):
         elif dialog.intent=='assign_ticket':result=assignment_step(dict(dialog.slots),text,dialog.slots.get('answer_slot'),u,db)
         else:result=question_step(dialog.intent,dict(dialog.slots),text,dialog.slots.get('answer_slot'),u,db)
     elif intent in DIALOG_INTENTS:
-        if intent in ('create_ticket','edit_ticket'):
-            step=tickets.create_step if intent=='create_ticket' else tickets.edit_step
+        if intent in ('create_ticket','edit_ticket','open_ticket'):
+            step={'create_ticket':tickets.create_step,'edit_ticket':tickets.edit_step,'open_ticket':tickets.open_step}[intent]
             result=step({},text,None,u,db)
         elif intent=='create_group':result=group_step({},text,None,u,db)
         elif intent=='open_group':result=open_group_step({},text,None,u,db)
@@ -466,10 +527,26 @@ def pick_student(intent,query,dialog,u,db):
     return found[0],None
 
 def handle(intent,text,query,dialog,u,db):
-    if intent=='demo_mode':return reply(intent,'Открываю «Делай как я». Выберите учеников и нажмите «Начать трансляцию».',action={'kind':'navigate','to':'/classroom/modes?mode=demo'})
+    if intent=='demo_mode':
+        named=re.search(r'(?:\bдля|\bученик\w*|\bученице|\bстудент\w*)\s+(.+)$',text,flags=re.I)
+        found=resolve_students(db,u,student_query(named.group(1))) if named and student_query(named.group(1)) else []
+        if len(found)==1:
+            s=found[0];row=next((r for r in station_rows(u,db) if r['user_id']==s.id and r['online']),None)
+            to=f'/classroom/modes?mode=demo&students={s.id}'
+            if not row:return reply(intent,f'Открываю «Делай как я» с учеником {s.name}. Он сейчас не в сети: когда войдёт на рабочее место, он уже будет отмечен — останется нажать «Начать трансляцию».',slots={'student_id':s.id},action={'kind':'navigate','to':to})
+            return reply(intent,f'Открываю «Делай как я»: выбран {s.name} (ПК №{row["number"]}). Нажмите «Начать трансляцию».',slots={'student_id':s.id},action={'kind':'navigate','to':to})
+        if len(found)>1:return reply(intent,'Нашёл нескольких учеников. Кому показать экран?',candidates=[student_card(s) for s in found])
+        return reply(intent,'Открываю «Делай как я». Выберите учеников и нажмите «Начать трансляцию».',action={'kind':'navigate','to':'/classroom/modes?mode=demo'})
     if intent=='help':return reply('help',HELP)
     if intent=='refused':return reply('unknown','Понял, ничего не делаю.')
     if intent=='close':return reply('close','Закрываю.',action={'kind':'close'})
+    if intent=='close_target':
+        t=normalize(text)
+        for pattern,to,label in CLOSE_TARGETS:
+            if re.search(pattern,t):
+                if to=='dialogs':return reply(intent,f'Закрываю {label}.',action={'kind':'event','name':'training112:close-dialogs'})
+                return reply(intent,f'Закрываю {label}.',action={'kind':'navigate','to':to})
+        return reply(intent,'Не понял, что закрыть. «Закрой» — закрою ассистента; «закрой билет», «закрой работу», «закрой мастер», «закрой рабочий стол» — закрою названное.')
     if intent=='close_desktop':return reply(intent,'Закрываю просмотр рабочего стола.',action={'kind':'navigate','to':'/?close_remote=1'})
     if intent=='exit_all':
         from .management import remote, lock, enqueue, state, can_manage, server_id
@@ -485,7 +562,7 @@ def handle(intent,text,query,dialog,u,db):
                 enqueue(db,station.id,'logout');queued+=1
             db.commit()
         if 'до завтра' in normalize(text):return reply(intent,'До завтра! Выходим из учётной записи.',action={'kind':'logout'})
-        return reply(intent,f'Просмотр закрыт. Команда выхода отправлена на {queued} рабочих мест.',action={'kind':'navigate','to':'/?close_remote=1'})
+        return reply(intent,f'Просмотр закрыт. Команда выхода отправлена на {queued} '+plural(queued,'рабочее место','рабочих места','рабочих мест')+'.',action={'kind':'navigate','to':'/?close_remote=1'})
     if intent=='exit_pc':return reply(intent,'Выхожу из учётной записи на этом ПК.',action={'kind':'logout'})
     if intent=='unknown':return reply('unknown','Не понял команду. Напишите «что умеешь?», чтобы увидеть примеры.')
     if intent=='connect_station':
@@ -508,7 +585,8 @@ def handle(intent,text,query,dialog,u,db):
             found=resolve_students(db,u,query)
             if len(found)==1:student=found[0];items=[x for x in items if x['student_id']==student.id]
             elif len(found)>1:return reply(intent,'Нашёл несколько учеников. Кого вы имели в виду?',slots={'student_query':' '.join(query)},candidates=[student_card(s) for s in found])
-            elif found==[] and query:return reply(intent,f'Не нашёл ученика «{" ".join(query)}» среди ваших студентов.')
+            # «давай проверим, что у нас там в очереди»: words that name nobody do not narrow the list.
+            elif found==[] and query and any(w[:1].isupper() for w in re.findall(r'[А-ЯЁA-Zа-яёa-z]+',text) if normalize(w) in query):return reply(intent,f'Не нашёл ученика «{" ".join(query)}» среди ваших студентов.')
         to='/reviews?state=review'+(f'&student={student.id}' if student else '')
         if not items:preview='Все работы проверены'+(f' у {student.name}' if student else '')+'. Открываю проверку работ.'
         else:preview=f'Нужна проверка: {len(items)} '+plural(len(items),'работа','работы','работ')+'.\n'+'\n'.join(f'• {x["student"]} · {x["title"]}' for x in items[:10])+('\n…' if len(items)>10 else '')+'\nОткрываю проверку работ с фильтром «Нужна проверка».'
@@ -608,6 +686,7 @@ def execute(data:Execute,u=Depends(m.current),db=Depends(m.getdb)):
         ids=data.slots.get('student_ids') or [data.slots.get('student_id')]
         students=[db.get(User,int(sid or 0)) for sid in dict.fromkeys(ids)]
         if not version or not students or any(not student or student.role!='student' or not m.visible(db,u,student.id) for student in students):m.fail('Билет или ученик недоступен',403)
+        if data.slots.get('publish_first') and not version.published:m.publish(version.id,u,db);db.refresh(version)
         m.assign(AssignmentIn(version_id=version.id,students=[s.id for s in students],start_mode='self',training=True),u,db)
         result={'preview':f'Билет «{version.data["title"]}» отправлен: '+', '.join(s.name for s in students)+'.','slots':{'student_ids':[s.id for s in students],'version_id':version.id},'links':[{'label':'Назначения','to':'/assignments'}]}
     else:

@@ -122,7 +122,8 @@ def test_classifier_candidates_are_offered_for_ambiguous_incident(teacher):
     assert any('трамва' in c['label'].lower() for c in r['candidates']) and not r['confirm_required']
     pick=next(c for c in r['candidates'] if c['label']=='Трамвай сход с рельс')
     r=follow(teacher,r,pick['label'],incident_type=pick['id'])
-    assert r['slots']['incident_type']=='Трамвай сход с рельс' and r['missing'][0]['slot']=='own_service'
+    assert r['slots']['incident_type']=='Трамвай сход с рельс' and r['slots']['own_service']=='Служба 102','a derailed tram is a police matter: the facts suggest the service'
+    assert r['missing'][0]['slot']=='difficulty'
 
 def test_unknown_incident_asks_again(teacher):
     r=ask(teacher,'создай билет про единорога для ДДС района')
@@ -141,9 +142,12 @@ def test_model_extracts_incident_when_rules_cannot(monkeypatch):
         login(c,'teacher')
         r=ask(c,'создай билет: у нас лифт застрял между этажами, никого не зажало')
         assert calls==['создай билет: у нас лифт застрял между этажами, никого не зажало']
-        assert r['slots']['incident_type']=='лифт' and r['slots']['difficulty']==2 and r['slots']['victims']=='no' and r['slots']['mode']=='dds'
+        assert r['slots']['incident_type']=='лифт' and r['slots']['victims']=='no','«никого не зажало» speaks about casualties'
+        assert 'difficulty' not in r['slots'],'the phrase names no stars, so the model may not fill them'
         assert r['missing'][0]['slot']=='own_service' and {'value':'ДДС района','label':'ДДС района'} in r['missing'][0]['options'],'two services share the tag «лифт», so the teacher picks one'
         r=follow(c,r,'ДДС района',own_service='ДДС района')
+        assert r['missing'][0]['slot']=='difficulty'
+        r=follow(c,r,'2',difficulty=2)
         assert r['confirm_required'] and r['slots']['own_service']=='ДДС района' and r['slots']['services']==['ДДС района']
         monkeypatch.setattr(assistant_tickets,'complete',lambda *a,**kw:(_ for _ in ()).throw(RuntimeError('нейросеть занята')))
         r=ask(c,'создай билет, что-то случилось во дворе')
@@ -171,7 +175,7 @@ def test_model_incident_is_rejected_unless_the_phrase_names_it(monkeypatch):
         r=ask(c,'создай билет, горит сарай во дворе')
         assert calls==['создай билет, горит сарай во дворе'] and r['intent']=='create_ticket'
         assert r['missing'][0]['slot']=='incident_type' and 'incident_type' not in r['slots'] and 'incident_query' not in r['slots'],'«ДТП» is not in the phrase, so the model made it up'
-        assert r['slots']['victims']=='no','the other fields of the answer still count'
+        assert 'victims' not in r['slots'],'the phrase says nothing about casualties, so the model may not fill them'
         answers.append('пожар')
         r=ask(c,'создай билет, пожар в сарае во дворе')
         assert r['slots']['incident_type']=='пожар' and r['slots']['own_service']=='Служба 101','a word of the phrase confirms the incident'

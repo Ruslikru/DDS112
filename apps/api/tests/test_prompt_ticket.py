@@ -21,8 +21,12 @@ def author(monkeypatch):
         return REPORTS,{'model':'test'}
     monkeypatch.setattr(scenario_wizard,'complete',wizard_model)
     with TestClient(app) as c:
+        login(c,'admin')
+        before=c.get('/api/management/training-modes').json()['operator112']
+        assert post(c,'/management/training-modes',{'operator112':True}).status_code==200  # 112 drafts need the mode switched on
         login(c,'teacher')
         yield c
+        login(c,'admin');post(c,'/management/training-modes',{'operator112':before})
 
 def model(monkeypatch,value):
     from apps.api.app import prompt_ticket

@@ -14,6 +14,9 @@ export function TeacherModes(){
  const [group,setGroup]=useState(saved.group||'');
  const [mode,setMode]=useState(saved.mode||'adaptive'),[selected,setSelected]=useState<number[]>(saved.selected||[]),[versions,setVersions]=useState<number[]>(saved.versions||[]),[categories,setCategories]=useState<string[]>(saved.categories||[]),[roles,setRoles]=useState<Obj>(saved.roles||{}),[minutes,setMinutes]=useState(saved.minutes||30),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[editGroups,setEditGroups]=useState(false);
  useEffect(()=>{if(requestedMode&&modes.some(([id])=>id===requestedMode))setMode(requestedMode);},[requestedMode]);
+ // The assistant opens «Делай как я» with a named student already ticked: ?students=12,15.
+ const requestedStudents=params.get('students');
+ useEffect(()=>{const ids=(requestedStudents||'').split(',').map(Number).filter(Boolean);if(ids.length)setSelected(ids);},[requestedStudents]);
  useEffect(()=>{if(!operator112&&mode==='cooperative')setMode('adaptive');},[operator112,mode]);
  useEffect(()=>{sessionStorage.setItem(cacheKey,JSON.stringify({mode,group,selected,versions,categories,roles,minutes}));},[mode,group,selected,versions,categories,roles,minutes,cacheKey]);
  const automatic=['adaptive','sprint'].includes(mode);
