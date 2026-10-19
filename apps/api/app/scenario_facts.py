@@ -72,7 +72,7 @@ def semantic_services(services, card):
     medical=card.get('victims')=='yes' or 'Есть пострадавшие' in traits or bool(re.search(r'травм|ранен|нужна скорая',text))
     gas=bool(re.search(r'\bгаз\w*|запах газа',text))
     fire=bool(re.search(r'пожар|задым|\bдым\b|горит|пламя',text))
-    police=bool(re.search(r'\bдтп\b|столкнов|трамва|сход с рельс|драка|краж|угроз|правонаруш|нападен',text))
+    police=bool(re.search(r'\bдтп\b|столкнов|трамва|сход с рельс|драка|краж|угроз|правонаруш|нападен|поджог|подозреваем',text))
     result=[]
     for service in services:
         if (service.config or {}).get('rules'):
@@ -106,3 +106,10 @@ def enrich_facts(facts, config):
         facts.update(entrance=str(secrets.randbelow(4)+1),floor=str(secrets.randbelow(8)+1),code=str(secrets.randbelow(80)+10))
         if 'квартир' in text:facts['apartment']=str(secrets.randbelow(80)+1)
     return facts
+
+def clean_story(text):
+    """A model's scene without what the card holds elsewhere: invented district or okrug names
+    («в районе Северный, округе Боровицкий») and sentences about casualties, which come from the victims field."""
+    text=re.sub(r',?\s*(?:\bв\s+)?\b(?:район|округ)\w*\s+[А-ЯЁ][\w-]*(?:\s+[А-ЯЁ][\w-]*)*','',str(text))
+    text=' '.join(s for s in re.split(r'(?<=[.!?])\s+',text) if not re.search(r'пострада|ранен',s.casefold()))
+    return re.sub(r'\s+([.,!?])',r'\1',re.sub(r'\s+',' ',text)).strip()

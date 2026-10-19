@@ -12,7 +12,7 @@ const EXAMPLES=[
   'Запах газа в подъезде, жильцы жалуются на головную боль.',
 ];
 const SOURCES:Record<string,[string,string]>={
-  prompt:['из описания','green'],chosen:['выбрано вами','blue'],nearest:['ближайший тип','amber'],random:['случайно','amber'],default:['по умолчанию','light'],
+  prompt:['из описания','green'],chosen:['выбрано вами','blue'],nearest:['ближайший тип','amber'],random:['случайно','amber'],default:['по умолчанию',''],
   computed:['подобрано','blue'],generated:['написано моделью','blue'],template:['шаблон','amber'],
 };
 const MODES:Record<string,string>={dds:'Диспетчер службы',112:'Оператор 112'};

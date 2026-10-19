@@ -118,7 +118,7 @@ def test_without_model_rules_and_template_still_give_a_draft(author,monkeypatch)
     assert meta['model']=='rules' and meta['warnings'] and meta['sources']['description']=='prompt'
     assert meta['slots']['incident_type']=='лифт' and meta['sources']['incident_type']=='prompt'
     assert body['data']['difficulty_stars']==2 and meta['brigade_reports']=='fallback'
-    assert 'лифт. застряли двое' in task['initial_card']['description'].casefold() and 'звезд' not in task['initial_card']['description']
+    assert 'лифт, застряли двое' in task['initial_card']['description'].casefold() and 'звезд' not in task['initial_card']['description']
     template=generate(author,'Нужен билет, 3 звезды')['meta']
     assert template['sources']['description']=='template' and template['sources']['incident_type']=='random'
 
@@ -142,3 +142,40 @@ def test_model_enums_count_only_when_the_request_mentions_them(author,monkeypatc
     assert meta['sources']['own_service']=='computed' and task['own_service']=='Служба 104'
     assert meta['sources']['mode']=='default' and meta['sources']['victims']=='default' and meta['sources']['difficulty']=='computed'
     assert not meta['slots']['animals'] and meta['sources']['object']=='computed'
+
+FIRE='''Пожар в квартире 21 этажного здания. Пожар на 14 этаже. Переходит на этажи выше. Есть пострадавшие 2 человека: мужчина Иван Петров Ильдарович 2006 года рождения и Анна Глубко Юрьевна 1965 года рождения. Тяжелые ожоги. В доме есть газ. Подозреваемый в поджоге найден. Адрес: Барселона, улица Лионелли Месси 21 А, квартира 10. По телефону обращается очевидец: Игорь Иванов Владимирович, мужчина.'''
+
+def test_long_description_without_model_keeps_place_people_and_scene(author,monkeypatch):
+    from apps.api.app import prompt_ticket
+    def unavailable(*a,**kw):raise RuntimeError('Локальная модель не установлена. Нужна папка local_ai с моделью и runtime.')
+    monkeypatch.setattr(prompt_ticket.runtime,'complete_pre',unavailable)
+    body=generate(author,FIRE)
+    ticket,meta=body['data'],body['meta'];task=ticket['tasks'][0];card=task['initial_card']
+    assert meta['slots']['incident_type']=='пожар: квартира',meta['candidates']
+    assert 'не установлена' in meta['warnings'][0] and any('Барселона' in w for w in meta['warnings'])
+    assert card['city']=='Барселона' and card['street']=='улица Лионелли Месси' and card['house']=='21А'
+    assert card['apartment']=='10' and card['floor']=='14' and not card['area']
+    assert card['name']=='Игорь Иванов Владимирович' and meta['sources']['caller_name']=='prompt' and meta['sources']['address']=='prompt'
+    story=card['description']
+    assert story.startswith('Пожар в квартире 21 этажного здания. Пожар на 14 этаже') and 'Тяжелые ожоги' in story
+    assert not any(word in story for word in ('Барселона','Месси','Игорь','мужчина.','квартира 10','Адрес'))
+    assert 'Пострадавших людей: 2.' in story and 'Иван Петров Ильдарович 2006 года рождения' in story
+    assert {'Служба 101','Служба 102','Служба 103','Служба 104'}<=set(task['services'])
+    assert 'Барселона' not in ticket['title'] and 'квартира' not in ticket['title'].split('—')[-1]
+    assert 'Москва' not in task['intro']
+    assert post(author,'/tickets',ticket).status_code==200
+
+def test_place_parsing():
+    from apps.api.app.prompt_ticket import parse_place, scene_from_request
+    assert parse_place('Адрес: г. Москва, проспект Мира, д. 10, подъезд 2. Дым на 5 этаже.')=={'city':'Москва','street':'проспект Мира','house':'10','entrance':'2','floor':'5'}
+    assert parse_place('Пожар','улица Ленина 5, кв. 3')=={'street':'улица Ленина','house':'5','apartment':'3'}
+    assert parse_place('Пожар','улица Садовой, дом 3')=={'street':'улица Садовой','house':'3'}
+    assert scene_from_request('Пожар в школе на улице Хачатуряна, дом 7. Из окон идёт дым, двое пострадавших. Для оператора 112, сложность 4.')=='Пожар в школе. Из окон идёт дым.'
+    assert scene_from_request('Горит бар на первом этаже, очевидец: Пётр Сидоров, мужчина.')=='Горит бар на первом этаже.'
+
+def test_model_story_loses_invented_districts_and_casualty_sentences(author,monkeypatch):
+    from apps.api.app.scenario_facts import clean_story
+    assert clean_story('Пожар в квартире на 14 этаже 21-этажного здания в районе Северный, округе Боровицкий. Огонь перешёл выше. В результате пострадали двое.')=='Пожар в квартире на 14 этаже 21-этажного здания. Огонь перешёл выше.'
+    model(monkeypatch,empty(incident='пожар',description='Горит квартира в районе Северный, округе Боровицкий. Из окон идёт дым. Есть пострадавшие.'))
+    card=generate(author,'Пожар в квартире, из окон идёт дым, двое пострадавших')['data']['tasks'][0]['initial_card']
+    assert card['description'].startswith('Горит квартира. Из окон идёт дым. Пострадавших людей: 2.'),card['description']
