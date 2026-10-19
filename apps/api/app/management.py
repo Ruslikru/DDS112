@@ -14,6 +14,7 @@ from .db import DATA
 from .classroom import station
 from .classroom_models import Workstation
 from .management_models import DeviceCommand, UpdatePackage, ManagementSetting
+from .training_modes import operator_112_enabled
 from . import backups
 from device_runtime.updates import validate_package
 
@@ -22,6 +23,23 @@ state={}
 remote={}
 previews={}
 lock=threading.RLock()
+
+class TrainingModesIn(BaseModel):
+    operator112:bool=False
+
+@router.get('/training-modes')
+def training_modes(u=Depends(m.current),db=Depends(m.getdb)):
+    return {'operator112':operator_112_enabled(db)}
+
+@router.post('/training-modes')
+def save_training_modes(data:TrainingModesIn,u=Depends(m.current),db=Depends(m.getdb)):
+    m.admin(u)
+    row=db.get(ManagementSetting,'training_modes')
+    if not row:row=ManagementSetting(key='training_modes');db.add(row)
+    row.value=data.model_dump()
+    m.audit(db,u,'training_modes_changed',detail=row.value)
+    db.commit()
+    return row.value
 
 def server_id():return __import__('os').getenv('CLASSROOM_SERVER_STATION_ID') or __import__('os').getenv('DEMO_SERVER_STATION_ID')
 

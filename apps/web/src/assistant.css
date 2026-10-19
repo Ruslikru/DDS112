@@ -1,4 +1,4 @@
-.arm-console nav .assistant-button{background:#2f5f8a;border-color:#4d86b7}.arm-console nav .assistant-button:hover{background:#3a74a8}
+.assistant-button{position:fixed;right:20px;bottom:20px;z-index:2400;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;width:68px;height:68px;padding:0;border:2px solid #fff;border-radius:50%;background:#ef682f;color:#fff;box-shadow:0 6px 20px #66301466;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer}.assistant-button:hover{background:#d9511c;transform:translateY(-2px)}.assistant-button:focus-visible{outline:3px solid #ffe126;outline-offset:3px}
 /* Docked panel: no shade, the page behind stays clickable; only the panel itself takes pointer events. */
 .assistant-shade{z-index:2500;background:transparent;pointer-events:none;align-items:flex-end;justify-content:flex-end;padding:0 16px 16px 0}
 .assistant-shade .arm-dialog{pointer-events:auto;width:min(460px,calc(100vw - 32px));height:min(78dvh,760px);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;padding:14px 16px 12px;border:1px solid #9fb3c0;box-shadow:0 8px 32px #0005}
@@ -8,9 +8,10 @@
 .assistant-message{max-width:88%;padding:9px 13px;font-size:14px;line-height:1.5;border-radius:10px}.assistant-message p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.assistant-message p b{color:#1f4d7a}
 .assistant-message.user{align-self:flex-end;background:#dbe8f5;color:#1b2f44;border-bottom-right-radius:3px}.assistant-message.assistant{align-self:flex-start;background:#fff;border:1px solid #d6dde1;border-bottom-left-radius:3px}.assistant-message.error{background:#fdecea;border-color:#f1b3ad;color:#7a1f16;padding-left:34px;position:relative}.assistant-message.error::before{content:'!';position:absolute;left:11px;top:10px;width:16px;height:16px;border-radius:50%;background:#c4473b;color:#fff;font-size:12px;font-weight:bold;line-height:16px;text-align:center}
 .assistant-message.busy{color:#5c6d80;font-style:italic}
+.assistant-progress{height:5px;margin-top:8px;overflow:hidden;border-radius:4px;background:#d9e5ef}.assistant-progress span{display:block;width:36%;height:100%;border-radius:4px;background:#2f5f8a;animation:assistant-progress 1.6s ease-in-out infinite alternate}@keyframes assistant-progress{from{transform:translateX(0)}to{transform:translateX(175%)}}
 /* Cards (question, candidates, confirmation) stand out from plain answers; an answered card is muted and labelled with the outcome. */
-.assistant-message.card{max-width:100%;background:#eef4fa;border-color:#9fb3c0;border-left:4px solid #2f5f8a;border-radius:6px}.assistant-message.card.error{background:#fdecea;border-color:#f1b3ad;border-left-color:#c4473b}
-.assistant-message.card.settled{background:#f8fafb;border-color:#d6dde1;border-left-color:#b7c3cc;color:#5c6d80}
+.assistant-message.card{max-width:100%;background:#eef4fa;border-color:#9fb3c0;border-radius:6px}.assistant-message.card.error{background:#fdecea;border-color:#f1b3ad}
+.assistant-message.card.settled{background:#f8fafb;border-color:#d6dde1;color:#5c6d80}
 .assistant-done{display:block;margin-top:6px;font-size:12px;color:#7a8794}.assistant-done::before{content:'✓ '}
 .assistant-collected{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}.assistant-collected span{font-size:12px;padding:2px 8px;background:#fff;border:1px solid #b9cad8;color:#1f4d7a;border-radius:10px}.settled .assistant-collected span{color:#7a8794;border-color:#d6dde1}
 .assistant-candidates{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.assistant-candidates button,.assistant-hints button{font-size:13px;padding:5px 11px;border:1px solid #9fb3c0;background:#fff;color:#1b2f44}.assistant-candidates button:hover,.assistant-hints button:hover{background:#e7eff6}

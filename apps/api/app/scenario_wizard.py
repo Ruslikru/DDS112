@@ -44,6 +44,8 @@ def split_address(value):
 @router.post('/ai/wizard')
 def wizard(data:WizardIn,u=Depends(m.current),db=Depends(m.getdb)):
     m.staff(u)
+    from .training_modes import operator_112_enabled
+    if data.mode=='112' and not operator_112_enabled(db):m.fail('Режим 112 отключён администратором')
     validated,meta=build_draft(data,db)
     m.audit(db,u,'wizard_draft_generated',detail={'incident':data.incident_type,**meta});db.commit()
     return {'data':validated,'meta':meta}
@@ -90,8 +92,7 @@ def build_draft(data,db,fixed=None,meta=None):
     facts.update(victims=victims,victims_state=data.victims_state)
     enrich_facts(facts,data)
     if fixed.get('object'):facts['object']=fixed['object']
-    first=facts['description'].split('.')[0].strip()
-    facts['title']=f"{first[:110]} — {facts['street']}"[:200]
+    facts['title']=f"{data.incident_type}: {facts['street']}, дом {facts['house']}"[:200]
     from .learning import automatic_services
     data.services=list(dict.fromkeys(data.services+automatic_services(db,{'incident_type':data.incident_type,'description':facts['description'],'traits':facts['traits'],'victims':data.victims_state,'object':facts['object']})))
     stars,reason=assess_wizard(data,facts,data.services)

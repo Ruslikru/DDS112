@@ -12,7 +12,7 @@ import {LearningEditor,IntroGate} from './training-tools';
 import {TeacherJournal} from './teacher-journal';
 import {MiniQuestions} from './mini-questions';
 import {ArmConsole} from './arm-journal';
-import {TeacherAssistant} from './assistant';
+import {AssistantButton,TeacherAssistant} from './assistant';
 const demoLaunchExample = new URL('./demo-launch-exe.png', import.meta.url).href;
 import { Library, Registry } from './library';
 import { Lessons } from './lessons';
@@ -105,6 +105,7 @@ function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
     [welcome, setWelcome] = useState(sessionStorage.getItem('training112:demo-welcome') || ''),
     [hintVisible, setHintVisible] = useState(false);
   const loginInput = useRef<HTMLInputElement>(null);
+  const passwordInput = useRef<HTMLInputElement>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleHint = () => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -191,6 +192,7 @@ function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
         </Field>
         <Field label="пароль:">
           <div className="login-password"><input
+            ref={passwordInput}
             name="password"
             type={showPassword ? 'text' : 'password'}
             autoComplete="current-password"
@@ -203,15 +205,14 @@ function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
           {busy ? "Вход…" : "ВОЙТИ"}
         </button>
         <div className="login-note">
-          112/ДДС - Учебный контур
+          ДДС — учебный контур
         </div>
         {deviceBadgeText() && <div className="device-role-login" role="status">{deviceBadgeText()}</div>}
         {serverMode&&serverReady===false&&<p className="server-setup-login-note">Сначала войдите администратором и задайте название сервера.</p>}
-        {demoRole && hintVisible && !welcome && <aside className="demo-hint" aria-label="Подсказка для демонстрационного режима">
+        {demoRole && hintVisible && !welcome && <aside className="demo-hint" aria-label="Подсказка для входа">
           <button type="button" className="demo-hint-close" aria-label="Закрыть подсказку" onClick={() => { setHintVisible(false); scheduleHint(); }}><X size={18}/></button>
           <p>{demoRole === 'server' ? serverReady===false ? 'Это эмуляция ПК сервера. Сначала войдите администратором и задайте название сервера.' : 'Это эмуляция ПК сервера. На нём можно войти в учётную запись преподавателя или администратора.' : !stationConfigured ? 'Это новое рабочее место. Сначала войдите администратором и назначьте номер рабочего места.' : 'Это эмуляция рабочего места. На нём можно войти в учётную запись администратора или одного из студентов.'}</p>
-          <div><span>Логины</span><div className="demo-accounts">{(demoRole === 'server' ? serverReady===false ? ['admin'] : ['teacher','admin'] : !stationConfigured ? ['admin'] : ['admin','student1','student2','student3','student4','student5']).map(account=><button type="button" className={account.startsWith('student')?'demo-account-student':''} key={account} onClick={() => { if(loginInput.current){loginInput.current.value=account;loginInput.current.focus();scheduleHint();} }}><b>{account}</b>{account.startsWith('student')&&<small>{({student1:'Новичок · изучение интерфейса',student2:'Начальный · ★★☆☆☆',student3:'Средний · ★★★☆☆',student4:'Продвинутый · ★★★★☆',student5:'Опытный · ★★★★★'})[account]}</small>}</button>)}</div></div>
-          <div><span>Пароль</span><strong>{demoPassword || 'Заданный при первом запуске'}</strong></div>
+          <div><span>Быстрый вход</span><div className="demo-accounts">{(demoRole === 'server' ? serverReady===false ? ['admin'] : ['teacher','admin'] : !stationConfigured ? ['admin'] : ['admin','student1','student2','student3','student4','student5']).map(account=><button type="button" key={account} onClick={() => { if(loginInput.current && passwordInput.current){loginInput.current.value=account;passwordInput.current.value=demoPassword;loginInput.current.focus();scheduleHint();} }}><b>{account==='admin'?'Администратор':account==='teacher'?'Преподаватель':`Студент ${account.replace('student','')}`}</b></button>)}</div></div>
         </aside>}
       </form>
       {welcome && <div className="demo-welcome-backdrop" role="presentation"><div className="demo-welcome" role="dialog" aria-modal="true" aria-labelledby="demo-welcome-title">
@@ -321,7 +322,7 @@ export function App() {
     ...(user.role === "admin" ? [["/system", "Система", Settings]] : []),
   ];
   return (
-    <UserContext.Provider value={user}><NetworkStatus key={user.id} user={user.id}/><ClassroomClient>{user.role!=='student'&&<VoiceQueue/>}{user.role!=='student'&&<TeacherAssistant/>}{!location.pathname.startsWith('/attempts/')&&<IntroGate/>}{user.role==='admin'&&<ServerNameSetup/>}{user.role==='admin'&&<DemoStationSetup user={user}/>}<DemoTeacherWelcome user={user}/>
+    <UserContext.Provider value={user}><NetworkStatus key={user.id} user={user.id}/><ClassroomClient>{user.role!=='student'&&<VoiceQueue/>}{user.role!=='student'&&<><AssistantButton/><TeacherAssistant/></>}{!location.pathname.startsWith('/attempts/')&&<IntroGate/>}{user.role==='admin'&&<ServerNameSetup/>}{user.role==='admin'&&<DemoStationSetup user={user}/>}<DemoTeacherWelcome user={user}/>
       <div
         className={
           "app " + (user.role!=="student"?"staff-app ":"") +

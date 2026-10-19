@@ -23,6 +23,7 @@ class Criterion(BaseModel):
     skill: str = 'Полнота карточки'
 
 class Contact(BaseModel):
+    call_audio: dict = Field(default_factory=dict)
     voice_gender: Literal["male","female"] = "male"
     voice_lines: list[dict] = Field(default_factory=list,max_length=60)
     id: str = Field(min_length=1, max_length=80)

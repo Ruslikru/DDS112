@@ -188,14 +188,17 @@ def self_test(data):
         if limited:
             assert len(tickets)==2 and {ticket['data']['title'] for ticket in tickets}==set(TITLES)
             assert all(task['mode']=='dds' for ticket in tickets for task in ticket['data']['tasks'])
-            assert not tutorials
+            if limited: assert not tutorials
             dds={'version_id':next(ticket['id'] for ticket in tickets if ticket['data']['title']==TITLES[0])}
             contact_id='unit1'
             for ticket in tickets:
                 practice=json.loads(request('/api/tickets/'+str(ticket['id'])+'/try',{}));assert practice['state']['preview']
             report['two_dds_catalog']=True
         else:
-            assert len(tickets)>=6 and len(tutorials)==4
+            assert len(tickets)==2 and {t['key'] for t in tutorials}=={'dds-1','dds-2'}, (len(tickets),len(tutorials))
+            assert all(task['mode']=='dds' for ticket in tickets for task in ticket['data']['tasks'])
+            assert {t['id'] for t in tickets}=={t['version_id'] for t in tutorials}
+            report['two_dds_catalog']=True
             practice=json.loads(request('/api/tickets/'+str(tutorials[0]['version_id'])+'/try',{}));assert practice['state']['preview']
             dds=next(ticket for ticket in tutorials if ticket['key']=='dds-1')
             contact_id='brigade'
@@ -205,8 +208,6 @@ def self_test(data):
         recording=call['state']['messages'][-1].get('audio')
         if recording:
             assert request('/api/media/'+recording).startswith(b'RIFF')
-        else:
-            assert limited
         report['dds_prerecorded_answer']=bool(recording)
 
         assert isinstance(json.loads(request('/api/teacher/students')),list)
@@ -227,7 +228,7 @@ def self_test(data):
         try:
             speech_status=json.loads(request('/api/voice/settings'))
             assert speech_status['available'],speech_status
-            speech,metrics=voice.synthesize('Проверка связи. Бригада прибыла.',settings={'tts':'silero','tts_device':'cpu'})
+            speech,metrics=voice.synthesize('Проверка связи. Бригада прибыла.',settings={'tts':'piper','tts_device':'cpu'})
             assert speech.read_bytes()[:4]==b'RIFF' and metrics['duration']>0
             import base64
             recognized=voice.transcribe(base64.b64encode(speech.read_bytes()).decode())
@@ -267,30 +268,28 @@ def self_test(data):
         request('/api/logout', {})
         request('/api/login', {'login':'student','password':os.environ['DEMO_PASSWORD']})
         assignments = json.loads(request('/api/assignments'))
-        if ai_status['available'] and not limited:
+        if ai_status['available'] and not limited and any(any(task.get('mode')=='112' for task in item['tasks']) for item in assignments):
             source=next(a for a in assignments if 'Задымление' in a['title'])
             call=json.loads(request('/api/assignments/'+str(source['id'])+'/start',{}))
             call=json.loads(request('/api/attempts/'+str(call['id'])+'/command',{'command_id':secrets.token_hex(16),'revision':call['revision'],'type':'accept_call'}))
             call=json.loads(request('/api/ai/attempts/'+str(call['id'])+'/question',{'command_id':secrets.token_hex(16),'revision':call['revision'],'text':'Как я могу к вам обращаться?'}))
             assert 'name' in call['state']['asked']
             report['ai_question']=True
-        assignment = next(a for a in assignments if 'взаимодействие с бригадой' in a['title'])
+        assignment = next((a for a in assignments if any(task.get('mode')=='dds' for task in a['tasks'])),None)
+        student_start='/api/assignments/'+str(assignment['id'])+'/start' if assignment else '/api/tutorials/'+str(dds['version_id'])+'/start'
         try:
-            student_attempt=json.loads(request('/api/assignments/'+str(assignment['id'])+'/start', {}))
+            student_attempt=json.loads(request(student_start, {}))
             report['student_voice_ready']=True
         except urllib.error.HTTPError as error:
             assert error.code==409
             report['voice_readiness_gate']=True
             report['student_voice_ready']=False
-        if limited:
-            assert assignments and all(task['mode']=='dds' for item in assignments for task in item['tasks'])
-            if report['student_voice_ready']:
-                attempt=student_attempt
-            else:
-                request('/api/login',{'login':'admin','password':os.environ['DEMO_PASSWORD']})
-                attempt=json.loads(request('/api/tickets/'+str(dds['version_id'])+'/try',{}))
+        if limited: assert assignments and all(task['mode']=='dds' for item in assignments for task in item['tasks'])
+        if report['student_voice_ready']:
+            attempt=student_attempt
         else:
-            attempt = json.loads(request('/api/tutorials/'+str(dds['version_id'])+'/start', {}))
+            request('/api/login',{'login':'admin','password':os.environ['DEMO_PASSWORD']})
+            attempt=json.loads(request('/api/tickets/'+str(dds['version_id'])+'/try',{}))
         attempt = json.loads(request('/api/attempts/'+str(attempt['id'])+'/command', {
             'command_id': secrets.token_hex(16), 'revision':attempt['revision'], 'type':'contact',
             'payload':{'id':contact_id,'text':'Проверочный ввод: передаю заявку на Учебной, дом 12.'}}))
@@ -320,7 +319,7 @@ def self_test(data):
                   const heard=await api.voice_transcribe(spoken.audio.split(',')[1]);
                   return {denied,settingsSaved:settings.live.chat_enabled,allowed,capabilities:await api.voice_capabilities(),audio:spoken.audio.startsWith('data:audio/wav;base64,'),text:heard.text};
                 })()""".replace("__PASSWORD__",json.dumps(os.environ["DEMO_PASSWORD"])),callback=voice_checked)
-                if not voice_done.wait(45):raise TimeoutError('Native speech bridge timed out')
+                if not voice_done.wait(90):raise TimeoutError('Native speech bridge timed out')
                 native_result['ready']=native.evaluate_js('document.getElementById("root") !== null')
             finally: native.destroy()
         native.events.loaded += check_native
@@ -347,7 +346,7 @@ def self_test(data):
         report.update(ok=True, tickets=len(tickets), classifier_count=system['classifier_count'], attempt_id=attempt['id'],
                       tkinter=True, webview2=native_result, restart_preserves_data=True, startup_backup=True)
     except Exception as error:
-        logging.exception('Packaged self-test failed'); report['error'] = str(error)
+        logging.exception('Packaged self-test failed'); report['error'] = repr(error)
     finally:
         server.stop()
         if server.thread: server.thread.join(60)

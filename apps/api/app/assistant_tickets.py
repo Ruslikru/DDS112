@@ -41,9 +41,9 @@ def model_status_line():
     elif status.get('busy'):line+=' Сейчас нейросеть занята другим запросом, придётся подождать.'
     return line
 
-# Generated drafts wait here for the second confirmation («Сохранить»); ten minutes, single process.
+# Generated drafts wait here for the second confirmation («Сохранить»); two hours, single process.
 DRAFTS={}
-DRAFT_TTL=600
+DRAFT_TTL=7200
 
 def keep_draft(u,draft):
     now=time.time()
@@ -79,6 +79,12 @@ def test_catalog_blocked():
     return enabled()
 
 def normalize(text):return re.sub(r'\s+',' ',str(text).lower().replace('ё','е')).strip()
+
+def incident_phrase(text):
+    """Remove conversational lead-ins before looking up a classifier entry."""
+    value=normalize(text).strip(' .,!?«»"')
+    value=re.sub(r'^(?:(?:ну|давай|давайте|сделай|создай|возьми|выбери|пусть будет|это будет|тип происшествия|происшествие)\s+)+','',value)
+    return value.strip(' .,!?«»"')
 
 def number(token):
     token=normalize(token)
@@ -121,7 +127,7 @@ def classifier_search(db,needle):
 
 def resolve_incident(db,query,services,own_service=None):
     """('ok', title, services_owning_tag) | ('candidates', titles) | ('generic',) | ('none',)."""
-    q=normalize(query).strip(' .,!?«»"')
+    q=incident_phrase(query)
     if not q:return ('none',)
     if q in GENERIC_TOPICS:return ('generic',)
     ordered=sorted(services,key=lambda s:s.name!=own_service)
@@ -214,7 +220,7 @@ def answer_value(slot,text,services,db):
     if slot=='victims_count':
         value=next((number(w) for w in re.findall(r'[а-я0-9]+',t) if number(w)),None)
         return value if value and value>=1 else None
-    if slot=='incident_type':return text.strip()
+    if slot=='incident_type':return incident_phrase(text)
     return text.strip()
 
 def options_for(slot,services,own_service=None):
@@ -236,6 +242,8 @@ def create_step(slots,text,answer_slot,u,db):
     from .assistant import reply, confirm_token
     if test_catalog_blocked():return reply('create_ticket',TEST_CATALOG_MESSAGE)
     services=active_services(db)
+    from .training_modes import operator_112_enabled
+    allow_112=operator_112_enabled(db)
     slots={k:v for k,v in slots.items() if k!='answer_slot'}
     # A button «Один», «Двое», «Трое» answers both questions about victims at once.
     if isinstance(slots.get('victims'),str) and slots['victims'].startswith('yes:'):slots['victims'],slots['victims_count']='yes',int(slots['victims'][4:])
@@ -245,6 +253,10 @@ def create_step(slots,text,answer_slot,u,db):
         if value is None:return reply('create_ticket','Не понял ответ. '+QUESTIONS[answer_slot],slots=slots,missing=[{'slot':answer_slot,'question':QUESTIONS[answer_slot],'options':options_for(answer_slot,services,slots.get('own_service'))}])
         slots['incident_query' if answer_slot=='incident_type' else answer_slot]=value
         if answer_slot=='incident_type':slots.pop('incident_type',None)
+        if answer_slot=='victims':
+            parsed=parse_create(text,services)
+            if parsed.get('victims')=='yes' and parsed.get('victims_count'):
+                slots['victims_count']=parsed['victims_count']
     elif text:
         parsed=parse_create(text,services)
         if 'incident_query' in parsed:slots.pop('incident_type',None)
@@ -252,6 +264,7 @@ def create_step(slots,text,answer_slot,u,db):
     if text and not answer_slot:slots['free_text']=text
     if not slots.get('incident_type') and not slots.get('incident_query') and text and not answer_slot and not command_only(text):
         slots.update({k:v for k,v in ask_model(text,services,db).items() if k not in slots})
+    if not allow_112:slots['mode']='dds'
     if slots.get('incident_query') and not slots.get('incident_type'):
         status=resolve_incident(db,slots['incident_query'],services,slots.get('own_service'))
         if status[0]=='ok':
@@ -290,12 +303,12 @@ def create_step(slots,text,answer_slot,u,db):
     recipients=list(dict.fromkeys([slots['own_service']]+([slots['tag_service']] if slots.get('tag_service') else [])))
     slots['services']=recipients
     victims=VICTIM_LABELS[slots['victims']]+(f', {slots["victims_count"]} чел.' if slots['victims']=='yes' else '')
-    preview=(f'Создам черновик билета:\n• служба: {slots["own_service"]}\n• происшествие: {slots["incident_type"]}\n• режим: {MODE_LABELS[slots["mode"]]}\n'
-             f'• сложность: {"★"*slots["difficulty"]}{"☆"*(5-slots["difficulty"])}\n• пострадавшие: {victims}\n'
-             +(f'• признаки: {", ".join(slots["traits"])}\n' if slots.get('traits') else '')
-             +(f'• адрес: {slots["address"]}\n' if slots.get('address') else '')
-             +f'• получатели: {", ".join(recipients)} (службы по фактам сценария добавятся автоматически)\n'
-             +('Описание подберёт мастер' if slots.get('address') else 'Адрес и описание подберёт мастер')+'; черновик покажу перед сохранением. '+model_status_line()+' Выполнить?')
+    preview=(f'Проверьте факты перед созданием:\nПроисшествие: {slots["incident_type"]}.\n'
+             +f'Служба: {slots["own_service"]}.\nПострадавшие: {victims.rstrip(".")}.\n'
+             +f'Сложность: {"★"*slots["difficulty"]}{"☆"*(5-slots["difficulty"])}.\n'
+             +(f'Адрес: {slots["address"]}.\n' if slots.get('address') else '')
+             +(f'Особые обстоятельства: {", ".join(slots["traits"])}.\n' if slots.get('traits') else '')
+             +'Черновик с описанием и звонками появится примерно через минуту. Создать?')
     return reply('create_ticket',preview,slots=slots,confirm=confirm_token(u,'create_ticket',slots))
 
 def execute_create(slots,u,db):
@@ -307,8 +320,10 @@ def execute_create(slots,u,db):
     from .assistant import confirm_token
     slots_out={'draft_id':keep_draft(u,draft),'title':draft['title']}
     story=task.get('initial_card',{}).get('description') or task.get('intro','')
-    preview=(f'Черновик готов: «{draft["title"]}».\n{story}\nСлужбы: {", ".join(task.get("services",[]))}. Сложность: {"★"*int(draft.get("difficulty_stars") or 1)}. '
-             f'Норматив: {task.get("limit_seconds")} с.\nСохранить и открыть в редакторе?')
+    preview=(f'Черновик готов:\nНазвание: {draft["title"]}\n\nИстория: {story}\n\n'
+             f'Службы: {", ".join(task.get("services",[]))}.\n'
+             f'Сложность: {"★"*int(draft.get("difficulty_stars") or 1)}. '
+             'Сохранить и открыть в редакторе?')
     return {'preview':preview,'intent':'save_ticket','slots':slots_out,'confirm':confirm_token(u,'save_ticket',slots_out)}
 
 def execute_save(slots,u,db):

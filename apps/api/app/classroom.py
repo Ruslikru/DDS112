@@ -70,7 +70,7 @@ def admission(request:Request,db=Depends(m.getdb)):
 
 @router.post('/demo-pending')
 def demo_pending(request:Request,db=Depends(m.getdb)):
-    if os.getenv('DEMO_CLASSROOM')!='1':m.fail('Доступно только в демонстрации',403)
+    if os.getenv('DEMO_CLASSROOM')!='1':m.fail('Доступно только в учебном режиме',403)
     w=station(request,db,False)
     if not w or w.id==os.getenv('DEMO_SERVER_STATION_ID'):m.fail('Недоступно',403)
     w.number='Демо слот '+w.id[:12];w.user_id=None;w.approved=False

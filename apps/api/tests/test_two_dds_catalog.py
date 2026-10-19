@@ -10,11 +10,10 @@ from apps.api.app.test_catalog import TITLES, available, enabled, versions
 
 def test_default_catalog_and_full_switch(monkeypatch):
     monkeypatch.delenv('TRAINING_CATALOG', raising=False)
-    assert enabled()
+    assert not enabled()
     assert available({'tasks': [{'mode': 'dds', 'title': TITLES[0]}]})
-    assert not available({'tasks': [{'mode': '112', 'title': TITLES[0]}]})
-    assert not available({'tasks': [{'mode': 'dds', 'title': 'Другой билет'}]})
-    assert not available({'tasks': []})
+    assert available({'tasks': [{'mode': '112', 'title': TITLES[0]}]})
+    assert available({'tasks': [{'mode': 'dds', 'title': 'Другой билет'}]})
     monkeypatch.setenv('TRAINING_CATALOG', 'full')
     assert not enabled()
     assert available({'tasks': [{'mode': '112', 'title': 'Другой билет'}]})

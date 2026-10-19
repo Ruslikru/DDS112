@@ -39,7 +39,8 @@ def student_profile(db, user):
     frequent=[{'label':k,'errors':v,'total':totals[k],'percent':round(v/totals[k]*100)} for k,v in errors.most_common(8)]
     recommendations=[f'Повторить: {x["label"]}. Ошибок: {x["errors"]} из {x["total"]} проверок.' for x in frequent[:3]]
     if not recommendations:recommendations=['Продолжить самостоятельные задания, чтобы уточнить уровень.' if info['confirmed']<3 else 'Стабильный результат. Можно попробовать следующий уровень под наблюдением преподавателя.']
-    result={'id':user.id,'name':user.name,'group_id':user.group_id,'active':user.active,**info,'mastered_stars':mastered,'recommended_stars':min(5,mastered+1) if mastered else 1,'errors':frequent,'recommendations':recommendations,'history':history}
+    skills=[{'label':label,'errors':errors[label],'total':total,'percent':round(errors[label]/total*100)} for label,total in totals.items()]
+    result={'id':user.id,'name':user.name,'group_id':user.group_id,'active':user.active,**info,'mastered_stars':mastered,'recommended_stars':min(5,mastered+1) if mastered else 1,'errors':frequent,'skills':skills,'recommendations':recommendations,'history':history}
     if os.getenv('DEMO_CLASSROOM')=='1' and not attempts and user.login in {'student1','student2','student3','student4','student5'}:
         index=int(user.login[-1])-1
         scores=[None,72,83,91,97];levels=[0,1,2,3,4]

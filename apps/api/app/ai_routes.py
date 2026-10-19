@@ -112,6 +112,8 @@ def ticket_from_json(data:JsonTicketIn,u=Depends(m.current),db:Session=Depends(m
     if isinstance(data.content,dict) and 'tasks' in data.content:
         try:
             ticket=TicketData.model_validate(data.content)
+            from .training_modes import operator_112_enabled
+            if not operator_112_enabled(db) and any(task.mode!='dds' for task in ticket.tasks):m.fail('Режим 112 отключён администратором')
             return {'data':ticket.model_dump(),'meta':{'mode':'direct'}}
         except ValueError:
             pass
@@ -190,7 +192,8 @@ def ticket_from_json(data:JsonTicketIn,u=Depends(m.current),db:Session=Depends(m
     ticket=generated_dds(config,facts,meta).model_dump()
     ticket['difficulty']=result['difficulty']
     task=ticket['tasks'][0]
-    chosen_mode='112' if explicit_mode=='112' or not explicit_mode and caller else 'dds' if explicit_mode in ('dds','ддс') else result['mode']
+    from .training_modes import operator_112_enabled
+    chosen_mode=('112' if explicit_mode=='112' or not explicit_mode and caller else 'dds' if explicit_mode in ('dds','ддс') else result['mode']) if operator_112_enabled(db) else 'dds'
     if chosen_mode=='112':
         expected=task['initial_card'].copy()
         task.update(mode='112',intro=facts['description'],initial_card={},expected_card=expected,
@@ -264,6 +267,8 @@ def question(id:int,data:QuestionIn,u=Depends(m.current),db:Session=Depends(m.ge
 
 @router.post('/generate')
 def generate(data:GenerateIn,u=Depends(m.current),db:Session=Depends(m.getdb)):
+    from .training_modes import operator_112_enabled
+    if data.mode=='112' and not operator_112_enabled(db):m.fail('Режим 112 отключён администратором')
     m.staff(u)
     if data.mode=='dds':
         if not db.scalar(m.select(m.Classifier).where(m.Classifier.title==data.incident_type)):

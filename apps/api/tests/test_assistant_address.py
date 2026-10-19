@@ -36,10 +36,10 @@ def test_address_reaches_the_card_and_the_draft(monkeypatch):
     with TestClient(app) as c:
         login(c,'teacher')
         r=ask(c,'создай билет про пожар для службы 101 на 3 звезды в режиме ДДС без пострадавших')
-        assert r['confirm_required'] and 'Адрес и описание подберёт мастер' in r['preview']
+        assert r['confirm_required'] and 'Черновик с описанием и звонками' in r['preview']
         # An edit after the confirmation card is accepted and the card is rebuilt.
         r=follow(c,r,'адрес улица Ленина 5')
-        assert r['confirm_required'] and r['slots']['address']=='улица Ленина 5' and '• адрес: улица Ленина 5' in r['preview'] and 'Адрес и описание' not in r['preview']
+        assert r['confirm_required'] and r['slots']['address']=='улица Ленина 5' and 'Адрес: улица Ленина 5' in r['preview']
         r=follow(c,r,'сложность 4')
         assert r['slots']['difficulty']==4 and r['slots']['address']=='улица Ленина 5','later edits keep the address'
         generated=run(c,r);assert generated.status_code==200,generated.text

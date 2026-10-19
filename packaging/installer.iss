@@ -1,4 +1,4 @@
-#define AppVersion "0.8.20"
+#define AppVersion "0.8.25"
 [Setup]
 AppId={{A6F6F021-37DD-48BB-B651-76B37DD31A12}
 AppName=Тренажёр 112
@@ -23,7 +23,6 @@ DisableDirPage=no
 AlwaysShowDirOnReadyPage=yes
 UninstallDisplayIcon={app}\Dispetcher112.exe
 DisableProgramGroupPage=yes
-InfoAfterFile=QUICKSTART.txt
 CloseApplications=yes
 RestartApplications=no
 
@@ -34,7 +33,7 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; Flags: unchecked
 
 [Files]
-Source: "..\build\desktop-dist\Dispetcher112\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build\desktop-dist-0.8.25\Dispetcher112\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\local_ai\config.json"; DestDir: "{app}\local_ai"; Flags: ignoreversion
 Source: "..\local_ai\manifest.json"; DestDir: "{app}\local_ai"; Flags: ignoreversion
 Source: "..\local_ai\README.md"; DestDir: "{app}\local_ai"; Flags: ignoreversion
@@ -48,8 +47,11 @@ Source: "..\local_ai\downloads\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; De
 ; Speech runs in its own bundled Python environment, independent of host Python.
 Source: "..\local_ai\voice_worker.py"; DestDir: "{app}\local_ai"; Flags: ignoreversion
 Source: "..\local_ai\speech_text.py"; DestDir: "{app}\local_ai"; Flags: ignoreversion
-Source: "..\local_ai\voice\runtime\*"; DestDir: "{app}\local_ai\voice\runtime"; Excludes: "__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\local_ai\voice\models\*"; DestDir: "{app}\local_ai\voice\models"; Flags: ignoreversion recursesubdirs createallsubdirs nocompression
+Source: "..\local_ai\voice\runtime-0.8.24b\*"; DestDir: "{app}\local_ai\voice\runtime"; Excludes: "__pycache__\*,*.pyc,Lib\site-packages\torch\include\*,Lib\site-packages\torch\lib\*.lib,Lib\site-packages\pandas\tests\*,Lib\site-packages\sklearn\tests\*,Lib\site-packages\mpmath\tests\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\local_ai\voice\models\whisper-tiny\*"; DestDir: "{app}\local_ai\voice\models\whisper-tiny"; Flags: ignoreversion recursesubdirs createallsubdirs nocompression
+Source: "..\local_ai\voice\models\whisper-base\*"; DestDir: "{app}\local_ai\voice\models\whisper-base"; Flags: ignoreversion recursesubdirs createallsubdirs nocompression
+Source: "..\local_ai\voice\models\gigaam\*"; DestDir: "{app}\local_ai\voice\models\gigaam"; Flags: ignoreversion recursesubdirs createallsubdirs nocompression
+Source: "..\local_ai\voice\piper\FINAL_MODELS_29800\*"; DestDir: "{app}\local_ai\voice\piper\FINAL_MODELS_29800"; Flags: ignoreversion nocompression
 Source: "..\local_ai\voice\builtin\*"; DestDir: "{app}\local_ai\voice\builtin"; Excludes: "*.build.json"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\local_ai\voice\fillers\*"; DestDir: "{app}\local_ai\voice\fillers"; Flags: ignoreversion recursesubdirs createallsubdirs
 

@@ -201,9 +201,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .demo-hint span, .demo-hint strong { display: block; }
 .demo-hint span { text-decoration: underline; margin-bottom: 3px; }
 .demo-hint strong { font-weight: 500; }
-.demo-accounts { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.login-box .demo-accounts button { display: block; padding: 1px 6px; border: 0; background: transparent; color: #242019; font: inherit; text-decoration: underline; cursor: pointer; }
-.login-box .demo-accounts button:hover { background: #fff7a3; }
+.demo-accounts { display: flex; flex-direction: column; align-items: stretch; gap: 7px; width: min(100%, 220px); margin: 6px auto 0; }
+.login-box .demo-accounts button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 11px; border: 1px solid #181818; border-radius: 3px; background: #1d1d1d; color: #fff; font: inherit; font-size: 13px; text-decoration: none; cursor: pointer; }
+.login-box .demo-accounts button:hover { background: #343434; }
+.login-box .demo-accounts button:focus-visible { outline: 2px solid #1d1d1d; outline-offset: 2px; }
 .login-box .demo-hint-close { position: absolute; right: 6px; top: 5px; border: 0; background: transparent; color: #4e4715; padding: 4px; cursor: pointer; }
 .demo-welcome-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: #173c5680; }
 .demo-welcome { width: min(530px, 100%); padding: 30px 34px; color: #203444; background: white; box-shadow: 0 20px 65px #09283b66; border-radius: 8px; animation: demo-hint-in .45s cubic-bezier(.2,.8,.2,1) both; }

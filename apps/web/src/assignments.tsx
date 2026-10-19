@@ -44,6 +44,7 @@ import {
   services,
   labels,
   useLoad,
+  useOperator112,
   Notice,
   Badge,
   Field,
@@ -51,6 +52,7 @@ import {
   Heading,
 } from "./shared";
 export function Assignments() {
+  const operator112=useOperator112();
   const u = React.useContext(UserContext),
     { data, error, load } = useLoad("/assignments", 5000),
     [show, setShow] = useState(false),
@@ -90,7 +92,7 @@ export function Assignments() {
           }}
         />
       )}
-      <div className="toolbar"><button className={mode==='dds'?'primary':''} onClick={()=>setMode(mode==='dds'?'':'dds')}>Обучение ДДС</button><button className={mode==='112'?'primary':''} onClick={()=>setMode(mode==='112'?'':'112')}>Обучение 112</button>
+      <div className="toolbar">{operator112&&<><button className={mode==='dds'?'primary':''} onClick={()=>setMode(mode==='dds'?'':'dds')}>Обучение ДДС</button><button className={mode==='112'?'primary':''} onClick={()=>setMode(mode==='112'?'':'112')}>Обучение 112</button></>}
         <div className="search">
           <Search size={17} />
           <input
@@ -105,7 +107,7 @@ export function Assignments() {
       <div className="assignment-list">
         {data
           ?.filter((a: Obj) =>
-            (a.title + a.student).toLowerCase().includes(filter.toLowerCase())&&(!mode||a.tasks.some((t:Obj)=>t.mode===mode)),
+            (a.title + a.student).toLowerCase().includes(filter.toLowerCase())&&(!operator112||!mode||a.tasks.some((t:Obj)=>t.mode===mode)),
           )
           .map((a: Obj) => (
             <div className="panel assignment" key={a.id}>
@@ -134,12 +136,13 @@ export function Assignments() {
                     const p = a.attempts.find((x: Obj) => x.task_index === i);
                     const inProgress=p&&!["completed", "aborted"].includes(p.status);
                     const waitingForAudio=t.voice?.ready===false&&!inProgress;
-                    if(mode&&t.mode!==mode)return null;
+                    if(!operator112&&t.mode!=='dds')return null;
+                    if(operator112&&mode&&t.mode!==mode)return null;
                     return (
                       <div key={i}>
-                        <span className="task-mode">
+                        {operator112&&<span className="task-mode">
                           {t.mode === "112" ? "112" : "ДДС"}
-                        </span>
+                        </span>}
                         <span>{t.title}{waitingForAudio&&<small role="status">{t.voice.failed?'Ошибка генерации звука — сообщите преподавателю':`Генерируется звук: ${t.voice.generated}/${t.voice.total}`}</small>}</span>
                         {u.role === "student" ? (
                           <button

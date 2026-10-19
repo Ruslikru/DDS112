@@ -9,7 +9,8 @@ import threading
 import uuid
 from pathlib import Path
 
-DEFAULT={'pre':{'llm':'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','llm_device':'cpu','tts':'qwen','tts_device':'cpu'},'live':{'llm':'models/Qwen3-0.6B-Q4_K_M.gguf','llm_device':'cpu','tts':'silero','tts_device':'cpu','stt':'tiny','stt_device':'cpu','fillers':True,'delay':1.5,'chat_enabled':False}}
+DEFAULT={'pre':{'llm':'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','llm_device':'cpu','tts':'piper','tts_device':'cpu'},'live':{'llm':'models/Qwen3-0.6B-Q4_K_M.gguf','llm_device':'cpu','tts':'piper','tts_device':'cpu','stt':'gigaam','stt_device':'cpu','fillers':True,'delay':1.5,'chat_enabled':False}}
+PIPER_MODELS=('piper','piper-denis','piper-irina','piper-ruslan')
 
 class VoiceRuntime:
     def __init__(self,data):
@@ -21,7 +22,12 @@ class VoiceRuntime:
     def settings(self):
         file=self.data/'voice-settings.json'
         saved=json.loads(file.read_text('utf-8')) if file.exists() else {}
-        return {k:{**v,**saved.get(k,{})} for k,v in DEFAULT.items()}
+        result={k:{**v,**saved.get(k,{})} for k,v in DEFAULT.items()}
+        if saved.get('_version',0)<2 and result['live']['stt']=='tiny':result['live']['stt']='gigaam'
+        for group in result.values():
+            if group['tts'] in ('silero','qwen'):group['tts']='piper'
+            if group['tts'].startswith('piper'):group['tts_device']='cpu'
+        return result
     def save(self,value):
         from .engine import MODELS
         result=self.settings()
@@ -30,19 +36,20 @@ class VoiceRuntime:
                 valid=key in result[group]
                 if key.endswith('device'):valid=val in ('cpu','gpu')
                 elif key=='llm':valid=val in MODELS
-                elif key=='tts':valid=val in ('silero','qwen')
-                elif key=='stt':valid=val in ('tiny','base')
+                elif key=='tts':valid=val in PIPER_MODELS
+                elif key=='stt':valid=val in ('tiny','base','gigaam')
                 elif key=='delay':valid=isinstance(val,(float,int)) and .3<=val<=10
                 elif key in ('fillers','chat_enabled'):valid=isinstance(val,bool)
                 if not valid:raise ValueError('Некорректная настройка звука: '+key)
                 result[group][key]=val
         file=self.data/'voice-settings.json';tmp=file.with_suffix('.tmp')
-        tmp.write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8');tmp.replace(file)
+        tmp.write_text(json.dumps({**result,'_version':2},ensure_ascii=False),encoding='utf-8');tmp.replace(file)
         return result
     def call(self,request):
         with self.lock:
             if not self.process or self.process.poll() is not None:
-                python=self.bundle/'runtime'/'python.exe'
+                updated=self.bundle/'runtime-0.8.24b'/'python.exe'
+                python=updated if updated.exists() else self.bundle/'runtime'/'python.exe'
                 if not python.exists():raise RuntimeError('Голосовой модуль не установлен рядом с приложением (local_ai/voice).')
                 log=open(self.data/'voice-runtime.log','a',encoding='utf-8')
                 self.process=subprocess.Popen([str(python),'-u',str(self.root/'voice_worker.py'),str(self.bundle/'models')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=log,text=True,encoding='utf-8',creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -58,8 +65,13 @@ class VoiceRuntime:
         try:
             if not self.lock.acquire(blocking=False):
                 models={key:(self.bundle/'models'/file).exists() for key,file in {
+                    'piper':'../piper/FINAL_MODELS_29800/denis_29800.onnx',
+                    'piper-denis':'../piper/FINAL_MODELS_29800/denis_29800.onnx',
+                    'piper-irina':'../piper/FINAL_MODELS_29800/irina_29800.onnx',
+                    'piper-ruslan':'../piper/FINAL_MODELS_29800/ruslan_29800.onnx',
                     'silero':'silero-v5-ru.pt','qwen':'qwen-tts/config.json',
-                    'tiny':'whisper-tiny/model.bin','base':'whisper-base/model.bin'}.items()}
+                    'tiny':'whisper-tiny/model.bin','base':'whisper-base/model.bin',
+                    'gigaam':'gigaam/config.json'}.items()}
                 status={'gpu':False,'models':models,**self.last.get('status',{}),'busy':True,'available':True}
             else:
                 try:status=self.call({'op':'status'});status['available']=True
@@ -68,6 +80,16 @@ class VoiceRuntime:
         from .engine import LocalEngine
         probe=LocalEngine(self.root,self.data/'voice-llm')
         return {**status,'llm_gpu':bool(probe.gpu_devices()),'settings':self.settings(),'last':{k:v for k,v in self.last.items() if k!='status'}}
+    def warm(self):
+        cfg=self.settings()['live']
+        return self.call({'op':'warm','model':cfg['stt'],'device':cfg['stt_device'],'voice':'denis'})
+    def warm_pre(self):
+        from .engine import LocalEngine
+        with self.lock:
+            if not self.llm:self.llm=LocalEngine(self.root,self.data/'voice-llm')
+            cfg=self.settings()['pre']
+            self.llm.set_settings(model=cfg['llm'],mode=cfg['llm_device'])
+            with self.llm.lock:self.llm.start()
     def synthesize(self,text,gender='male',group='live',settings=None):
         from .speech_text import spoken_text
         text=spoken_text(text)
@@ -88,7 +110,9 @@ class VoiceRuntime:
         path=self.data/(uuid.uuid4().hex+'.webm')
         try:
             path.write_bytes(base64.b64decode(content,validate=True));cfg=self.settings()['live']
-            if model and not (self.bundle/'models'/('whisper-'+model)/'model.bin').exists():model=None
+            if model:
+                model_file='gigaam/config.json' if model=='gigaam' else 'whisper-'+model+'/model.bin'
+                if not (self.bundle/'models'/model_file).exists():model=None
             return self.call({'op':'transcribe','input':str(path),'model':model or cfg['stt'],'device':cfg['stt_device'],'prompt':prompt,'beam':beam})
         finally:path.unlink(missing_ok=True)
     def speak(self,text,gender='female'):

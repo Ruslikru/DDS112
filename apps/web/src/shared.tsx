@@ -142,6 +142,10 @@ export function useLoad(path: string, interval = 0) {
   useEffect(() => {setData(null);load();const id=interval?setInterval(load,interval):undefined;return()=>{serial.current++;if(id)clearInterval(id);};},[path,interval]);
   return { data, error, load, setData };
 }
+export function useOperator112() {
+  const {data}=useLoad('/management/training-modes',5000);
+  return data?.operator112===true;
+}
 export function Notice({ children }: { children: any }) {
   return children ? (
     <div className="notice" role="alert">
