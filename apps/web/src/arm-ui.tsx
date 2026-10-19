@@ -3,7 +3,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {X} from 'lucide-react';
 
 /** Keyboard focus stays inside an open ARM dialog, then returns to its trigger. */
-export function ArmDialog({title,onClose,children,className='',modal=true,dismissible=true}:React.PropsWithChildren<{title:string,onClose:()=>void,className?:string,modal?:boolean,dismissible?:boolean}>){
+export function ArmDialog({title,onClose,children,className='',modal=true,dismissible=true,headerActions}:React.PropsWithChildren<{title:string,onClose:()=>void,className?:string,modal?:boolean,dismissible?:boolean,headerActions?:React.ReactNode}>){
  const sidebar=['Учебный телефон ДДС','Учебный телефон 112','Управление обучением'].includes(title);
  const [side,setSide]=useState<HTMLElement|null>(()=>sidebar?document.getElementById('student-side-panels'):null);
  useEffect(()=>{setSide(sidebar?document.getElementById('student-side-panels'):null);},[sidebar]);
@@ -17,7 +17,8 @@ export function ArmDialog({title,onClose,children,className='',modal=true,dismis
   el.addEventListener('keydown',key);return()=>{el.removeEventListener('keydown',key);previous?.focus();};
  },[side]);
  if(sidebar&&!side)return null;
- const content=<div className={(side?'side-dialog ':'arm-shade ')+className}><div ref={ref} className="arm-dialog" role="dialog" aria-modal={modal} aria-label={title} tabIndex={-1}><header><h2>{title}</h2>{dismissible&&<button title="Закрыть окно" onClick={onClose}><X size={20}/></button>}</header>{children}</div></div>;
+ const closeButton=dismissible&&<button title="Закрыть окно" onClick={onClose}><X size={20}/></button>;
+ const content=<div className={(side?'side-dialog ':'arm-shade ')+className}><div ref={ref} className="arm-dialog" role="dialog" aria-modal={modal} aria-label={title} tabIndex={-1}><header><h2>{title}</h2>{headerActions?<div className="arm-dialog-actions">{headerActions}{closeButton}</div>:closeButton}</header>{children}</div></div>;
  return createPortal(content,side||document.body);
 }
 export function TraitButtons({traits,value,onChange,disabled=false}:{traits:string[],value:string[],onChange:(v:string[])=>void,disabled?:boolean}){

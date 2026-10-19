@@ -3,7 +3,8 @@ import {useLocation,useNavigate} from 'react-router-dom';
 import {Sparkles,Send,Mic,MicOff,History,Trash2} from 'lucide-react';
 import {api,UserContext,type Obj} from './shared';
 import {ArmDialog} from './arm-ui';
-import {record,hasVoiceBridge,serverTranscribe,listMicrophones} from './voice';
+import {record,hasVoiceBridge,serverTranscribe} from './voice';
+import {AssistantMicrophoneSettings} from './assistant-microphone-settings';
 
 /** Teacher assistant: text commands parsed by server rules. Reading and navigation run at once,
  *  changing commands (tickets) go through a slot form and confirmation cards with a server token.
@@ -21,7 +22,7 @@ const VOICE_HINT='Голосовой ввод доступен в приложе
 const HOLD_HINT='Удерживайте микрофон или Ctrl+Space и говорите. Отпустите, и фраза отправится.';
 /** Below this input level (RMS) the whole recording counts as silence: the microphone gave no sound. */
 const SILENT_LEVEL=0.004;
-const SILENT_HINT='Микрофон не передал звук. Проверьте, что он включён и не заглушён, или выберите другой микрофон под полем ввода.';
+const SILENT_HINT='Микрофон не передал звук. Проверьте, что он включён и не заглушён, или выберите другой микрофон через шестерёнку вверху ассистента.';
 const MIC_KEY='training112:assistant-mic';
 /** Lines like «Страницы: …» get a bold label; the rest of the text is shown as written. */
 function Text({text}:{text:string}){
@@ -100,7 +101,7 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const stopRecording=useRef<((cancel?:boolean)=>void)|undefined>(undefined),startedAt=useRef(0);
  /** Input level while recording and the loudest moment of the last recording (to tell a silent microphone from unclear speech). */
  const [level,setLevel]=useState(0),peak=useRef(0);
- const [mics,setMics]=useState<{id:string,label:string}[]>([]),[mic,setMic]=useState(()=>{try{return localStorage.getItem(MIC_KEY)||'';}catch{return '';}});
+ const [mic,setMic]=useState(()=>{try{return localStorage.getItem(MIC_KEY)||'';}catch{return '';}});
  const chooseMic=(id:string)=>{setMic(id);try{if(id)localStorage.setItem(MIC_KEY,id);else localStorage.removeItem(MIC_KEY);}catch{}};
  /** Recognition finishes asynchronously, so spoken answers must look at the current log and slot form, not at the ones captured when recording started. */
  const latest=useRef({messages,dialog});latest.current={messages,dialog};
@@ -226,15 +227,6 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  useEffect(()=>{const start=()=>{voiceStart.current();},stop=()=>{voiceStop.current();};window.addEventListener(VOICE_START,start);window.addEventListener(VOICE_STOP,stop);return()=>{window.removeEventListener(VOICE_START,start);window.removeEventListener(VOICE_STOP,stop);};},[]);
  useEffect(()=>{if(autoRecord.current&&voice!=='checking'){autoRecord.current=false;if(voice!=='none'&&holding.current)voiceStart.current();else holding.current=false;}},[voice]);
  useEffect(()=>()=>{stopRecording.current?.(true);},[]);
- // Ask for the microphone when the window opens, so the browser's permission prompt does not fall into the first held recording.
- useEffect(()=>{
-  if(voice!=='server'&&voice!=='bridge')return;
-  let alive=true;
-  const refresh=()=>listMicrophones().then(list=>{if(alive)setMics(list);});
-  navigator.mediaDevices?.getUserMedia?.({audio:true}).then(stream=>stream.getTracks().forEach(track=>track.stop())).catch(()=>{}).finally(refresh);
-  navigator.mediaDevices?.addEventListener?.('devicechange',refresh);
-  return()=>{alive=false;navigator.mediaDevices?.removeEventListener?.('devicechange',refresh);};
- },[voice]);
  const micDisabled=!recording&&(!!busy||voice==='none'||voice==='checking');
  const micTitle=voice==='none'?VOICE_HINT:voice==='checking'?'Проверяем голосовой модуль…':recording?'Отпустите, чтобы отправить':'Удерживайте и говорите (Ctrl+Space)'+(voice==='server'?'. Распознавание на сервере':'');
  /** The line under the log always says what the microphone will do, not only while it is busy. */
@@ -283,7 +275,7 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const last=messages.length-1;
   const busyText=busy==='generate'?'Создаю черновик: собираю историю, звонки и проверочные факты. Обычно это занимает около минуты.':busy==='run'?'Сохраняю изменения…':'Разбираю команду…';
  const cancelButton=<button type="button" disabled={!!busy} onClick={cancel}>Отмена</button>;
- return <ArmDialog title="Ассистент" className="assistant-shade" modal={false} onClose={onClose}>
+ return <ArmDialog title="Ассистент" className="assistant-shade" modal={false} onClose={onClose} headerActions={<AssistantMicrophoneSettings value={mic} onChange={chooseMic} disabled={recording||!!stopRecording.current}/> }>
   <div className="assistant-log" ref={log} aria-live="polite">
    {messages.map((message,index)=>{
     const card=isCard(message),active=card&&index===last&&!message.done&&(!!dialog||!!message.retry);
@@ -329,6 +321,5 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
    <textarea ref={input} aria-label="Команда ассистенту" rows={2} value={text} maxLength={500} placeholder={dialog?.missing==='student'?'Фамилия или имя ученика':dialog?.missing?'Ответ на вопрос ассистента':dialog?'Что изменить в команде?':'Команда ассистенту. Enter отправит, стрелка вверх повторит прошлую'} onChange={e=>{setText(e.target.value);setCursor(-1);}} onKeyDown={keys} disabled={!!busy}/>
    <button type="submit" className="assistant-send" disabled={!!busy||!text.trim()} title="Отправить (Enter)" aria-label="Отправить"><Send size={20}/></button>
   </form>
-  {mics.length>1&&<label className="assistant-mic-choice">Микрофон <select value={mics.some(m=>m.id===mic)?mic:''} disabled={recording} onChange={e=>chooseMic(e.target.value)}><option value="">по умолчанию</option>{mics.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</select></label>}
  </ArmDialog>;
 }
