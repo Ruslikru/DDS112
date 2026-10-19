@@ -5,10 +5,11 @@ import hashlib
 import json
 import shutil
 import threading
+import time
 from fastapi import APIRouter,Depends,Request
 from pydantic import BaseModel,Field
 from fastapi.responses import FileResponse
-from sqlalchemy import String,JSON,Text,select,update
+from sqlalchemy import Float,String,JSON,Text,select,update
 from sqlalchemy.orm import Mapped,mapped_column
 from .db import Base,DATA,SessionLocal,TicketVersion,Media
 from . import main as m
@@ -18,6 +19,10 @@ from local_ai.voice import VoiceRuntime
 
 runtime=VoiceRuntime(DATA)
 stopping=threading.Event()
+# Lines a teacher is waiting for right now (a publication or an assignment refused for missing sound):
+# kept in memory because the refused request rolls its own transaction back.
+urgent=set()
+urgent_lock=threading.Lock()
 router=APIRouter(prefix='/api/voice')
 
 class VoiceJob(Base):
@@ -27,8 +32,17 @@ class VoiceJob(Base):
     data:Mapped[dict]=mapped_column(JSON)
     audio_id:Mapped[str|None]=mapped_column(String(64),nullable=True)
     error:Mapped[str]=mapped_column(Text,default='')
+    # When a teacher last asked for these lines; the worker takes the newest request first, so a ticket
+    # saved in front of the class is voiced before the backlog of built-in tickets (0 = background order).
+    priority:Mapped[float]=mapped_column(Float,default=0,server_default='0',index=True)
 
-def prepare(data,db,owner,preserve=False):
+def prioritize(db,ids):
+    """Moves pending lines to the front of the queue (newest request first)."""
+    ids=list(ids)
+    if ids:db.execute(update(VoiceJob).where(VoiceJob.id.in_(ids),VoiceJob.status=='pending').values(priority=time.time()))
+
+def prepare(data,db,owner,preserve=False,soon=False):
+    """`soon`: the teacher is authoring this ticket now, its lines jump the background queue."""
     result=copy.deepcopy(data);cfg=runtime.settings()['pre']
     from .caller import enrich_task
     result['tasks']=[enrich_task(t) for t in result['tasks']]
@@ -57,6 +71,7 @@ def prepare(data,db,owner,preserve=False):
             event['voice_key']=key
             if not db.get(VoiceJob,key):db.add(VoiceJob(id=key,data={**spec,'owner':owner},status='pending'))
     db.flush()
+    if soon:prioritize(db,keys(result))
     return result
 
 def speech_items(task):
@@ -153,13 +168,24 @@ def ensure_ready(data,db):
     except (OSError,ValueError,KeyError):m.fail('Не удалось подготовить звуковое окружение звонка. Проверьте файлы программы.',409)
     status=readiness(data,db)
     if not status['ready']:
+        with urgent_lock:urgent.update(keys(data))
         label='Ошибка генерации звука. Попросите преподавателя проверить очередь.' if status['failed'] else 'Звук для билета ещё генерируется.'
         m.fail(f"{label} Готово {status['generated']} из {status['total']} записей.",409)
 
+def next_job(db):
+    """Lines a teacher is waiting for, then the most recently requested ticket, then the background backlog."""
+    with urgent_lock:waiting=list(urgent)
+    if waiting:
+        job=db.scalar(select(VoiceJob).where(VoiceJob.id.in_(waiting),VoiceJob.status=='pending').limit(1))
+        if job:return job
+        with urgent_lock:urgent.difference_update(waiting)
+    return db.scalar(select(VoiceJob).where(VoiceJob.status=='pending').order_by(VoiceJob.priority.desc()).limit(1))
+
 def generate_one():
     with SessionLocal() as db:
-        job=db.scalar(select(VoiceJob).where(VoiceJob.status=='pending'))
+        job=next_job(db)
         if not job:return
+        with urgent_lock:urgent.discard(job.id)
         job.status='running';db.commit()
         try:
             path,meta=runtime.synthesize(job.data['text'],job.data['gender'],'pre',job.data['settings'])
@@ -210,7 +236,7 @@ def transcribe(data:TranscribeIn,u=Depends(m.current),db=Depends(m.getdb)):
 
 @router.post('/prepare')
 def prepare_draft(data:TicketData,u=Depends(m.current),db=Depends(m.getdb)):
-    m.staff(u);result=prepare(data.model_dump(),db,u.id);db.commit()
+    m.staff(u);result=prepare(data.model_dump(),db,u.id,soon=True);db.commit()
     return {'data':result,'keys':list(keys(result))}
 
 @router.post('/jobs')

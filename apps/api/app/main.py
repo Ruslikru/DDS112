@@ -334,7 +334,7 @@ def save_ticket(data:TicketData,ticket_id:int|None=None,u=Depends(current),db:Se
     if not t: fail('Билет не найден',404)
     db.add(t); db.flush(); number=(db.scalar(select(func.max(TicketVersion.number)).where(TicketVersion.ticket_id==t.id)) or 0)+1
     from .voice import prepare
-    v=TicketVersion(ticket_id=t.id,number=number,data=prepare(data.model_dump(),db,u.id)); db.add(v); db.flush(); audit(db,u,'ticket_version_created',v.id); db.commit(); return {'id':v.id}
+    v=TicketVersion(ticket_id=t.id,number=number,data=prepare(data.model_dump(),db,u.id,soon=True)); db.add(v); db.flush(); audit(db,u,'ticket_version_created',v.id); db.commit(); return {'id':v.id}
 @app.post('/api/tickets/{id}/publish')
 def publish(id:int,u=Depends(current),db:Session=Depends(getdb)):
     staff(u); v=db.get(TicketVersion,id)

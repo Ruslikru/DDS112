@@ -178,7 +178,7 @@ def save_question(data:MiniIn,id:int|None=None,u=Depends(m.current),db=Depends(m
     saved=data.model_dump(exclude={'active'})
     if data.audio_text.strip():
         from .voice import prepare
-        prepared=prepare({'tasks':[{'contacts':[{'id':'mini','response':data.audio_text,'voice_gender':data.voice_gender}]}]},db,u.id)
+        prepared=prepare({'tasks':[{'contacts':[{'id':'mini','response':data.audio_text,'voice_gender':data.voice_gender}]}]},db,u.id,soon=True)
         saved['voice_key']=prepared['tasks'][0]['contacts'][0]['voice_lines'][0]['voice_key']
     row.data=saved;row.active=data.active;db.add(row);db.commit();return question_view(row,db)
 
