@@ -366,7 +366,10 @@ def main():
     parser.add_argument('--self-test',action='store_true')
     parser.add_argument('--configure-classroom',action='store_true')
     parser.add_argument('--resume-profile',type=Path)
+    from launch_options import add_launch_arguments, launch_mode
+    add_launch_arguments(parser)
     args=parser.parse_args()
+    os.environ['DESKTOP_LAUNCH_MODE']=launch_mode(args)
     if args.resume_profile:os.environ['RESUME_CLASSROOM_PROFILE']=str(args.resume_profile.resolve())
     data=(args.data_dir or Path(os.environ['LOCALAPPDATA'])/'Dispetcher112').resolve()
     log=configure(data)

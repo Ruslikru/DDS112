@@ -70,7 +70,8 @@ def run(data, launcher):
     import webview
     from desktop_style import decorate, icon_path
     webview.settings['ALLOW_DOWNLOADS'] = True
-    from classroom_setup import choose_launch_mode,setup,ClientProxy,enroll
+    from classroom_setup import setup,ClientProxy,enroll
+    from launch_options import startup_config
     base_data=data
     resume=os.getenv('RESUME_CLASSROOM_PROFILE')
     from demo_profiles import DEMO_PASSWORD,reserve
@@ -79,9 +80,8 @@ def run(data, launcher):
         config=json.loads((data/'classroom.json').read_text('utf-8'))
         launcher.configure(data)
     else:
-        launch_mode=choose_launch_mode()
-        if not launch_mode:return
-        config={'demo':True} if launch_mode=='demo' else setup(data,force=os.getenv('CONFIGURE_CLASSROOM')=='1')
+        config=startup_config(data,os.getenv('DESKTOP_LAUNCH_MODE','demo'),setup,
+                              force=os.getenv('CONFIGURE_CLASSROOM')=='1')
     import gc
     gc.collect()  # Dispose Tk variables on the UI thread before starting workers.
     if not config:return

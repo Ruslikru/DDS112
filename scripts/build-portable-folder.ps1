@@ -50,24 +50,28 @@ foreach ($name in @('Qwen3-4B-Instruct-2507-Q4_K_M.gguf', 'Qwen3-0.6B-Q4_K_M.ggu
 
 $target = Join-Path $destination 'Dispetcher112.exe'
 $shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut((Join-Path $destination 'Запустить тренажёр.lnk'))
-$shortcut.TargetPath = $target
-$shortcut.WorkingDirectory = $destination
-$shortcut.IconLocation = "$target,0"
-$shortcut.Save()
+foreach ($mode in @(@('На одном ПК', '--local'), @('В локальной сети', '--lan'))) {
+    $shortcut = $shell.CreateShortcut((Join-Path $destination ($mode[0] + '.lnk')))
+    $shortcut.TargetPath = $target
+    $shortcut.Arguments = $mode[1]
+    $shortcut.WorkingDirectory = $destination
+    $shortcut.IconLocation = "$target,0"
+    $shortcut.Save()
+    ('@echo off' + "`r`n" + 'start "" "%~dp0Dispetcher112.exe" ' + $mode[1]) |
+        Set-Content -LiteralPath (Join-Path $destination ($mode[0] + '.cmd')) -Encoding ASCII
+}
 @'
-@echo off
-start "" "%~dp0Dispetcher112.exe"
-'@ | Set-Content -LiteralPath (Join-Path $destination 'Запустить тренажёр.cmd') -Encoding ASCII
-@'
-Двойным щелчком откройте «Запустить тренажёр» или Dispetcher112.exe.
-Если перенесли папку на другой компьютер, используйте «Запустить тренажёр.cmd».
+Для работы на одном компьютере откройте ярлык «На одном ПК».
+Первое окно — сервер. Повторный запуск этого же ярлыка открывает рабочее место студента.
+Для работы на нескольких компьютерах откройте ярлык «В локальной сети» и настройте сервер или рабочее место.
+Если перенесли папку, используйте соответствующий файл .cmd: «На одном ПК.cmd» или «В локальной сети.cmd».
+Сам Dispetcher112.exe запускает режим одного ПК без выбора режима.
 Переносите папку целиком: нейросети находятся в local_ai.
 Перед запуском закройте ранее открытые окна тренажёра.
 Для входа выберите учётную запись на экране входа.
 '@ | Set-Content -LiteralPath (Join-Path $destination 'КАК ЗАПУСТИТЬ.txt') -Encoding UTF8
 
-foreach ($relative in @('Dispetcher112.exe','_internal/dist/index.html','local_ai/voice/runtime/python.exe','local_ai/voice/models/gigaam/config.json','local_ai/voice/piper/FINAL_MODELS_29800/denis_29800.onnx','local_ai/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','Запустить тренажёр.lnk')) {
+foreach ($relative in @('Dispetcher112.exe','_internal/dist/index.html','local_ai/voice/runtime/python.exe','local_ai/voice/models/gigaam/config.json','local_ai/voice/piper/FINAL_MODELS_29800/denis_29800.onnx','local_ai/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','На одном ПК.lnk','В локальной сети.lnk')) {
     if (!(Test-Path -LiteralPath (Join-Path $destination $relative))) { throw "Неполная папка: $relative" }
 }
 Write-Output $destination
