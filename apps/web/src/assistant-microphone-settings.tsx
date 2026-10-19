@@ -3,10 +3,10 @@ import {Check,ChevronDown,Mic,RefreshCw,Settings} from 'lucide-react';
 import './assistant-microphone-settings.css';
 
 type Microphone={id:string,label:string};
-type Props={value:string,onChange:(id:string)=>void,disabled?:boolean};
+type Props={value:string,onChange:(id:string)=>void,disabled?:boolean,inline?:boolean};
 
-export function AssistantMicrophoneSettings({value,onChange,disabled=false}:Props){
- const [open,setOpen]=useState(false),[expanded,setExpanded]=useState(false);
+export function AssistantMicrophoneSettings({value,onChange,disabled=false,inline=false}:Props){
+ const [open,setOpen]=useState(inline),[expanded,setExpanded]=useState(false);
  const [devices,setDevices]=useState<Microphone[]>([]),[loading,setLoading]=useState(false);
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[active,setActive]=useState(0);
  const container=useRef<HTMLDivElement>(null),gear=useRef<HTMLButtonElement>(null),field=useRef<HTMLButtonElement>(null);
@@ -37,7 +37,7 @@ export function AssistantMicrophoneSettings({value,onChange,disabled=false}:Prop
    const list=all.filter(device=>device.kind==='audioinput'&&device.deviceId&&!['default','communications'].includes(device.deviceId)&&!seen.has(device.deviceId)&&!!seen.add(device.deviceId))
     .map((device,index)=>({id:device.deviceId,label:device.label||`Микрофон ${index+1}`}));
    setDevices(list);setExpanded(false);
-   if(current.current.value&&!list.some(device=>device.id===current.current.value)){
+   if(current.current.value&&(requestPermission||all.some(device=>device.kind==='audioinput'&&device.deviceId))&&!list.some(device=>device.id===current.current.value)){
     current.current.onChange('');setNotice('Выбранный микрофон отключён. Используется системный.');
    }
    if(!all.some(device=>device.kind==='audioinput'))setError('Микрофоны не найдены. Подключите устройство и обновите список.');
@@ -49,12 +49,12 @@ export function AssistantMicrophoneSettings({value,onChange,disabled=false}:Prop
 
  useEffect(()=>{
   if(!open)return;
-  void refresh(true);field.current?.focus();
+  void refresh(!inline);if(!inline)field.current?.focus();
   const changed=()=>void refresh();
-  const outside=(event:PointerEvent)=>{if(!container.current?.contains(event.target as Node)){setExpanded(false);setOpen(false);}};
+  const outside=(event:PointerEvent)=>{if(!container.current?.contains(event.target as Node)){setExpanded(false);if(!inline)setOpen(false);}};
   navigator.mediaDevices?.addEventListener?.('devicechange',changed);document.addEventListener('pointerdown',outside);
   return()=>{generation.current++;navigator.mediaDevices?.removeEventListener?.('devicechange',changed);document.removeEventListener('pointerdown',outside);};
- },[open]);
+ },[open,inline]);
  useEffect(()=>{if(disabled)setExpanded(false);},[disabled]);
  // ArmDialog listens for Escape on its native DOM node. Handle it here before
  // that listener, so closing a dropdown never also closes the assistant.
@@ -64,11 +64,11 @@ export function AssistantMicrophoneSettings({value,onChange,disabled=false}:Prop
    if(event.key!=='Escape'||!popup.current.open)return;
    event.preventDefault();event.stopPropagation();
    if(popup.current.expanded){setExpanded(false);field.current?.focus();}
-   else{setOpen(false);gear.current?.focus();}
+   else if(!inline){setOpen(false);gear.current?.focus();}
   };
   node?.addEventListener('keydown',escape);return()=>node?.removeEventListener('keydown',escape);
- },[]);
- useEffect(()=>{if(open&&!loading&&(document.activeElement===document.body||document.activeElement===gear.current))field.current?.focus();},[open,loading]);
+ },[inline]);
+ useEffect(()=>{if(!inline&&open&&!loading&&(document.activeElement===document.body||document.activeElement===gear.current))field.current?.focus();},[open,loading]);
  useEffect(()=>{if(expanded)document.getElementById(listId+'-'+active)?.scrollIntoView({block:'nearest'});},[expanded,active,listId]);
 
  function choose(index:number){const item=options[index];if(!item||disabled)return;onChange(item.id);setNotice('');setExpanded(false);field.current?.focus();}
@@ -82,10 +82,10 @@ export function AssistantMicrophoneSettings({value,onChange,disabled=false}:Prop
   else if(event.key==='Tab')setExpanded(false);
  }
 
- return <div className="assistant-settings" ref={container}>
-  <button ref={gear} type="button" className="assistant-settings-toggle" aria-label="Настройки микрофона" title="Настройки микрофона" aria-expanded={open} aria-controls={id+'-panel'} onClick={()=>{setExpanded(false);setOpen(value=>!value);}}><Settings size={19}/></button>
+ return <div className={'assistant-settings'+(inline?' microphone-settings-inline':'')} ref={container}>
+  {!inline&&<button ref={gear} type="button" className="assistant-settings-toggle" aria-label="Настройки микрофона" title="Настройки микрофона" aria-expanded={open} aria-controls={id+'-panel'} onClick={()=>{setExpanded(false);setOpen(value=>!value);}}><Settings size={19}/></button>}
   {open&&<section className="assistant-settings-panel" id={id+'-panel'} aria-label="Настройки голосового ввода">
-   <div className="assistant-settings-heading"><div><h3>Голосовой ввод</h3><p>Выберите микрофон для ассистента.</p></div><button type="button" className="assistant-microphone-refresh" title="Обновить список микрофонов" aria-label="Обновить список микрофонов" disabled={loading||disabled} onClick={()=>void refresh(true)}><RefreshCw size={17} className={loading?'is-loading':''}/></button></div>
+   <div className="assistant-settings-heading"><div>{!inline&&<h3>Голосовой ввод</h3>}<p>{inline?'Для ассистента и звонков на этом ПК.':'Выберите микрофон для ассистента.'}</p></div><button type="button" className="assistant-microphone-refresh" title="Обновить список микрофонов" aria-label="Обновить список микрофонов" disabled={loading||disabled} onClick={()=>void refresh(true)}><RefreshCw size={17} className={loading?'is-loading':''}/></button></div>
    <span className="assistant-microphone-label" id={labelId}>Микрофон</span>
    <div className="assistant-microphone-select">
     <button ref={field} type="button" role="combobox" className="assistant-microphone-field" aria-labelledby={labelId} aria-expanded={expanded} aria-haspopup="listbox" aria-controls={listId} aria-activedescendant={expanded?listId+'-'+active:undefined} disabled={disabled||loading} onKeyDown={keyboard} onClick={()=>{setActive(Math.max(0,selected));setExpanded(value=>!value);}}><Mic size={18}/><span title={selectedLabel}>{selectedLabel}</span><ChevronDown size={17} className={expanded?'is-expanded':''}/></button>

@@ -1,3 +1,6 @@
+import {AssistantMicrophoneSettings} from './assistant-microphone-settings';
+import {selectedMicrophone,selectMicrophone,MICROPHONE_CHANGED} from './microphone-preference';
+import './sound-settings.css';
 import {CallAudioEngine} from './call-audio';
 import React,{useEffect,useRef,useState} from 'react';
 import {api,Notice,Obj,uuid} from './shared';
@@ -65,12 +68,13 @@ export async function record(onDone:(text:string)=>void,onError:(text:string)=>v
   }else if(typeof bridge()?.allow_microphone==='function')await bridge().allow_microphone();
   if(!navigator.mediaDevices?.getUserMedia)throw Error('Микрофон в браузере доступен только по HTTPS или на адресе localhost.');
   let opened:MediaStream|undefined,problem:any;
-  const constraints:MediaStreamConstraints={audio:options.deviceId?{deviceId:{exact:options.deviceId}}:true};
+  const deviceId=options.deviceId??selectedMicrophone();
+  const constraints:MediaStreamConstraints={audio:deviceId?{deviceId:{exact:deviceId}}:true};
   try{opened=await navigator.mediaDevices.getUserMedia(constraints);}
   catch(e:any){
    problem=e;
    // A remembered microphone may be unplugged: fall back to the default one.
-   if(options.deviceId&&e?.name!=='NotAllowedError'){try{opened=await navigator.mediaDevices.getUserMedia({audio:true});}catch(e2:any){problem=e2;}}
+   if(deviceId&&e?.name!=='NotAllowedError'){try{opened=await navigator.mediaDevices.getUserMedia({audio:true});}catch(e2:any){problem=e2;}}
   }
   if(!opened)throw Error(problem?.name==='NotAllowedError'?'Доступ к микрофону запрещён. Разрешите его в настройках браузера.':problem?.name==='NotFoundError'?'Микрофон не найден.':'Микрофон недоступен: '+(problem?.message||String(problem)));
   const stream:MediaStream=opened;
@@ -92,14 +96,39 @@ export async function record(onDone:(text:string)=>void,onError:(text:string)=>v
  }catch(e:any){onError(e.message||String(e));return undefined;}
 }
 
-export function VoiceSettings({localOnly=false}:{localOnly?:boolean}){
- const nativeReady=useNativeReady();
- const chat=useVoiceChat();
- const [server,setServer]=useState<Obj>(),[local,setLocal]=useState<Obj>(),[error,setError]=useState(''),[result,setResult]=useState(''),[busy,setBusy]=useState(false);
- const stop=useRef<((cancel?:boolean)=>void)|undefined>(undefined),[recording,setRecording]=useState(false);
- useEffect(()=>{if(!localOnly)api('/voice/settings').then(setServer).catch(e=>setError(e.message));if(bridge()?.voice_status&&!mobile())bridge().voice_status().then(setLocal).catch((e:any)=>setError(String(e)));return()=>stop.current?.();},[nativeReady]);
- async function change(group:string,key:string,value:any){try{setBusy(true);if(group==='pre')setServer(await api('/voice/settings','POST',{pre:{[key]:value}}));else{await bridge().voice_settings({...local?.settings.live,[key]:value});setLocal(await bridge().voice_status());window.dispatchEvent(new Event('voice-chat-settings'));}}catch(e:any){setError(e.message||String(e));}finally{setBusy(false);}}
- return <section className="panel form-panel voice-settings"><h2 className="section-title-bar">Генерация звука</h2><Notice>{error}</Notice><label><input type="checkbox" checked={chat} disabled={busy||!local?.settings} onChange={e=>change('live','chat_enabled',e.target.checked)}/> Разрешить текстовый чат вместо микрофона на этом ПК</label>{(localOnly?['live']:['pre','live']).map(group=>{const source=group==='pre'?server:local,cfg=source?.settings?.[group];return <fieldset key={group}><legend>{group==='pre'?'Предгенерация для билетов · сервер':'Разговор 112 · этот рабочий ПК'}</legend>{group==='live'&&(mobile()||!bridge())?<p>{mobile()?'Генерация речи в реальном времени на мобильных устройствах не поддерживается':'Откройте приложение Windows для настройки голосового движка этого ПК.'}</p>:<><p>{source?.available?'Голосовой модуль установлен':source?.error||'Проверка голосового модуля…'}</p><div className="form-grid">{cfg&&Object.entries(cfg).filter(([key])=>key!=='chat_enabled').map(([key,value])=><label key={key}>{({llm:'Модель анализа',llm_device:'Анализ · устройство',tts:'Озвучка',tts_device:'Озвучка · устройство',stt:'Распознавание',stt_device:'Распознавание · устройство',fillers:'Готовые реплики ожидания',delay:'Пауза перед вставкой, сек.'} as Obj)[key]}{key==='fillers'?<input type="checkbox" checked={!!value} disabled={busy} onChange={e=>change(group,key,e.target.checked)}/>:key==='delay'?<input type="number" min="0.3" max="10" step="0.1" value={Number(value)} disabled={busy} onChange={e=>change(group,key,Number(e.target.value))}/>:<select value={String(value)} disabled={busy} onChange={e=>change(group,key,e.target.value)}>{(key.endsWith('device')?(key==='tts_device'?[['cpu','CPU']]:[['cpu','CPU'],['gpu','GPU · '+(key==='llm_device'?'Vulkan':'CUDA')]]):key==='llm'?[['models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf','Qwen 2.5 1.5B Instruct · обучение 1000 шагов']]:key==='stt'?[['gigaam','GigaAM v3 · русский язык']]:[['piper','Piper · голос по персонажу'],['piper-denis','Piper · Денис'],['piper-irina','Piper · Ирина'],['piper-ruslan','Piper · Руслан']]).map(([id,label])=><option key={id} value={id} disabled={id==='gpu'&&(key==='tts_device'||!(key==='llm_device'?source?.llm_gpu:source?.gpu)) || (key==='tts'||key==='stt')&&source?.models&&!source.models[id]}>{label}{(key==='tts'||key==='stt')&&source?.models&&!source.models[id]?' · не установлена':''}</option>)}</select>}</label>)}</div>{group==='live'&&<div className="voice-actions"><button disabled={busy&&!recording} onClick={async()=>{if(recording){stop.current?.();setRecording(false);return;}setBusy(true);setResult('Запись до 15 секунд. Нажмите ещё раз, чтобы закончить.');stop.current=await record(text=>{setResult('Распознано: '+text);setRecording(false);setBusy(false);},e=>{setError(e);setBusy(false);setRecording(false);},serverTranscribe);setRecording(!!stop.current);}}>{recording?'Закончить запись':'Проверить микрофон'}</button><button disabled={busy||!source?.available} onClick={async()=>{setBusy(true);try{const r=await bridge().voice_speak('Проверка звука. Бригада прибыла по указанному адресу.','male');setResult('Синтез: '+r.seconds+' с; запись: '+r.duration+' с.');new Audio(r.audio).play();}catch(e:any){setError(String(e));}finally{setBusy(false);}}}>Проверить озвучку</button><p aria-live="polite">{result}</p><small>Синхронизировано записей: {local?.sync?.ready||0}/{local?.sync?.total||0} {local?.sync?.error}</small></div>}</>}</fieldset>;})}</section>;
+export function VoiceSettings(_props:{localOnly?:boolean}={}){
+ const nativeReady=useNativeReady(),chat=useVoiceChat();
+ const [local,setLocal]=useState<Obj>(),[saving,setSaving]=useState(false),[error,setError]=useState('');
+ const [mic,setMic]=useState(selectedMicrophone),[recording,setRecording]=useState(false),[testing,setTesting]=useState(false),[level,setLevel]=useState(0),[result,setResult]=useState('');
+ const stop=useRef<((cancel?:boolean)=>void)|undefined>(undefined),generation=useRef(0);
+ useEffect(()=>{let active=true;if(bridge()?.voice_status)bridge().voice_status().then((value:Obj)=>{if(active)setLocal(value);}).catch((e:any)=>{if(active)setError(e.message||String(e));});return()=>{active=false;};},[nativeReady]);
+ useEffect(()=>{const changed=()=>setMic(selectedMicrophone());window.addEventListener(MICROPHONE_CHANGED,changed);return()=>window.removeEventListener(MICROPHONE_CHANGED,changed);},[]);
+ useEffect(()=>()=>{generation.current++;stop.current?.(true);},[]);
+ async function changeChat(value:boolean){
+  setSaving(true);setError('');
+  try{await bridge().voice_settings({...local?.settings.live,chat_enabled:value});setLocal(await bridge().voice_status());window.dispatchEvent(new Event('voice-chat-settings'));}
+  catch(e:any){setError(e.message||String(e));}finally{setSaving(false);}
+ }
+ async function testMicrophone(){
+  const run=++generation.current;setError('');setResult('');setLevel(0);setTesting(true);
+  const finish=()=>{if(run===generation.current){setRecording(false);setTesting(false);setLevel(0);stop.current=undefined;}};
+  const end=await record(text=>{if(run===generation.current){setResult('Распознано: '+text);finish();}},message=>{if(run===generation.current){setError(message);finish();}},serverTranscribe,{deviceId:mic,onLevel:value=>{if(run===generation.current)setLevel(value);}});
+  if(run!==generation.current){end?.(true);return undefined;}
+  if(!end){finish();return undefined;}
+  setRecording(true);
+  const release=(cancel=false)=>{setRecording(false);setLevel(0);if(cancel){generation.current++;setTesting(false);}end(cancel);};
+  stop.current=release;return release;
+ }
+ return <section className="panel form-panel voice-settings minimal-sound-settings"><h2 className="section-title-bar">Настройки звука</h2><div className="sound-settings-content">
+  <div className={'sound-chat-row'+(chat?' is-enabled':'')}>
+   <div><h3 id="sound-chat-label">Текстовый чат</h3><p id="sound-chat-help">Разрешить ввод ответов с клавиатуры на этом ПК.</p></div>
+   <button type="button" role="switch" aria-checked={chat} aria-labelledby="sound-chat-label" aria-describedby="sound-chat-help" className="sound-chat-switch" disabled={saving||!local?.settings||!bridge()?.voice_settings} onClick={()=>void changeChat(!chat)}><span className="sound-switch-track" aria-hidden="true"><span/></span><span>{chat?'Включён':'Выключен'}</span></button>
+  </div>
+  {!nativeReady&&<p className="sound-native-note">Для настройки текстового чата откройте приложение Windows на этом ПК.</p>}
+  <div className="sound-microphone-section"><h3>Микрофон</h3><AssistantMicrophoneSettings inline value={mic} disabled={testing} onChange={value=>{setMic(value);selectMicrophone(value);setResult('');}}/>
+   <div className="sound-microphone-test"><MicButton recording={recording} disabled={testing&&!recording} onStart={testMicrophone} title="Удерживайте для проверки микрофона"/><div><strong>{recording?'Говорите — запись идёт':testing?'Распознаю запись…':'Проверка микрофона'}</strong><p>{recording?'Отпустите кнопку, чтобы проверить запись.':'Удерживайте кнопку и произнесите короткую фразу.'}</p></div><meter min={0} max={1} value={Math.min(1,level*6)} aria-label="Уровень микрофона"/></div>
+  </div><Notice>{error}</Notice>{result&&<p className="sound-test-result" role="status">{result}</p>}
+ </div></section>;
 }
 
 export function BrigadeAudio({id,autoPlay=false,playKey=id,hidden=false,onEnded,onPlaying,onError,beforePlay}:{id:string,autoPlay?:boolean,playKey?:string,hidden?:boolean,onEnded?:()=>void,onPlaying?:()=>void,onError?:(message:string)=>void,beforePlay?:(player:HTMLAudioElement)=>Promise<void>}){

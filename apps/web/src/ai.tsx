@@ -9,9 +9,7 @@ export function AISettings(){
   async function execution(value:string, ids:string[]){setBusy(true);setErr('');try{setData(await api('/ai/execution','POST',{execution:value,worker_ids:ids}));await reloadWorkers();}catch(x:any){setErr(x.message);}finally{setBusy(false);}}
   const enabled=(workers||[]).filter((w:Obj)=>w.enabled&&w.approved).map((w:Obj)=>w.id);
   return <><VoiceSettings/><section className="panel form-panel"><h2>Локальная текстовая нейросеть</h2><p><strong>География сценариев: Москва.</strong> Районы, округа и улицы выбираются из московского справочника. Обстоятельства и заявители создаются для учебного сценария.</p><Notice>{error||err}</Notice>
-    <p>{data?.model||'Проверка модели…'} · {data?.available?'Установлена':'Файлы модели не найдены'} · {data?.busy?'Обрабатывает запрос':data?.running?'Готова':'Запустится при первом запросе'}</p>
-    <p><strong>Генерация карточек:</strong> Qwen3 4B Instruct.</p>
-    <p><strong>Ассистент преподавателя и анализ звонков:</strong> Qwen 2.5 1.5B Instruct · обучение 1000 шагов. {data&& !data.assistant_available&&'База или адаптер обучения не найдены.'}</p>
+    <p>{data?.available?'Установлена':'Файлы модели не найдены'} · {data?.busy?'Обрабатывает запрос':data?.running?'Готова':'Запустится при первом запросе'}</p>
     <label>Где выполнять запросы <select disabled={!data||!workers||busy} value={data?.execution||'server'} onChange={e=>execution(e.target.value,enabled)}><option value="server">На учебном сервере</option><option value="workstations">На выбранных ПК класса</option></select></label>
     <label>Вычисления на сервере <select disabled={!data||busy} value={data?.mode||'cpu'} onChange={async e=>{setBusy(true);setErr('');try{setData(await api('/ai/mode','POST',{mode:e.target.value}));}catch(x:any){setErr(x.message);}finally{setBusy(false);}}}>
       <option value="cpu">CPU — процессор</option><option value="gpu" disabled={!data?.gpu_available}>GPU — видеокарта Vulkan</option></select></label>

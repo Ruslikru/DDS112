@@ -1,3 +1,4 @@
+import {selectedMicrophone,selectMicrophone,MICROPHONE_CHANGED} from './microphone-preference';
 import React,{useContext,useEffect,useRef,useState} from 'react';
 import {useLocation,useNavigate} from 'react-router-dom';
 import {Sparkles,Send,Mic,MicOff,History,Trash2} from 'lucide-react';
@@ -23,7 +24,7 @@ const HOLD_HINT='Удерживайте микрофон или Ctrl+Space и г
 /** Below this input level (RMS) the whole recording counts as silence: the microphone gave no sound. */
 const SILENT_LEVEL=0.004;
 const SILENT_HINT='Микрофон не передал звук. Проверьте, что он включён и не заглушён, или выберите другой микрофон через шестерёнку вверху ассистента.';
-const MIC_KEY='training112:assistant-mic';
+
 /** Lines like «Страницы: …» get a bold label; the rest of the text is shown as written. */
 function Text({text}:{text:string}){
  return <p>{text.split('\n').map((line,i)=>{const m=/^([А-ЯЁ][а-яё]+):\s(.+)$/.exec(line);return <React.Fragment key={i}>{i>0&&<br/>}{m?<><b>{m[1]}:</b> {m[2]}</>:line}</React.Fragment>;})}</p>;
@@ -101,8 +102,9 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const stopRecording=useRef<((cancel?:boolean)=>void)|undefined>(undefined),startedAt=useRef(0);
  /** Input level while recording and the loudest moment of the last recording (to tell a silent microphone from unclear speech). */
  const [level,setLevel]=useState(0),peak=useRef(0);
- const [mic,setMic]=useState(()=>{try{return localStorage.getItem(MIC_KEY)||'';}catch{return '';}});
- const chooseMic=(id:string)=>{setMic(id);try{if(id)localStorage.setItem(MIC_KEY,id);else localStorage.removeItem(MIC_KEY);}catch{}};
+ const [mic,setMic]=useState(selectedMicrophone);
+ useEffect(()=>{const changed=()=>setMic(selectedMicrophone());window.addEventListener(MICROPHONE_CHANGED,changed);return()=>window.removeEventListener(MICROPHONE_CHANGED,changed);},[]);
+ const chooseMic=(id:string)=>{setMic(id);selectMicrophone(id);};
  /** Recognition finishes asynchronously, so spoken answers must look at the current log and slot form, not at the ones captured when recording started. */
  const latest=useRef({messages,dialog});latest.current={messages,dialog};
  useEffect(()=>{
