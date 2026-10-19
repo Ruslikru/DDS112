@@ -50,6 +50,7 @@ function collected(slots:Obj):string[]{
  else if(slots.victims==='unknown')out.push('пострадавшие неизвестны');
  else if(slots.victims==='yes')out.push(slots.victims_count?`пострадавших: ${slots.victims_count}`:'есть пострадавшие');
  if(Array.isArray(slots.traits)&&slots.traits.length)out.push(slots.traits.join(', '));
+ if(slots.address)out.push(String(slots.address));
  return out;
 }
 
@@ -113,6 +114,31 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const [history,setHistory]=useState<string[]>(readHistory),[historyOpen,setHistoryOpen]=useState(false),[cursor,setCursor]=useState(-1);
  const input=useRef<HTMLTextAreaElement>(null),log=useRef<HTMLDivElement>(null);
  useEffect(()=>{const t=setTimeout(()=>input.current?.focus(),0);return()=>clearTimeout(t);},[]);
+ /** The panel has no shade, so the wheel over it should still scroll the page unless the log, the history or the field itself can scroll. */
+ useEffect(()=>{
+  const panel=log.current?.closest('.arm-dialog') as HTMLElement|null;
+  if(!panel)return;
+  const scrollable=(el:HTMLElement|null,stop:HTMLElement|null,delta:number):HTMLElement|null=>{
+   for(let node=el;node&&node!==stop;node=node.parentElement){
+    const style=getComputedStyle(node);
+    if(/(auto|scroll)/.test(style.overflowY)&&node.scrollHeight>node.clientHeight+1){
+     const atTop=node.scrollTop<=0,atBottom=node.scrollTop+node.clientHeight>=node.scrollHeight-1;
+     if((delta<0&&!atTop)||(delta>0&&!atBottom))return node;
+    }
+   }
+   return null;
+  };
+  const wheel=(e:WheelEvent)=>{
+   if(!e.deltaY||e.ctrlKey)return;
+   if(scrollable(e.target as HTMLElement,panel.parentElement,e.deltaY))return;
+   const below=document.elementsFromPoint(e.clientX,e.clientY).find(el=>!panel.contains(el)) as HTMLElement|undefined;
+   const target=scrollable(below||null,null,e.deltaY)||document.scrollingElement as HTMLElement|null;
+   if(!target)return;
+   e.preventDefault();target.scrollBy({top:e.deltaY});
+  };
+  panel.addEventListener('wheel',wheel,{passive:false});
+  return()=>panel.removeEventListener('wheel',wheel);
+ },[]);
  useEffect(()=>{log.current?.scrollTo({top:log.current.scrollHeight});},[messages,busy]);
  const push=(message:Message)=>setMessages(list=>[...list,message]);
  /** Marks the pending card (the last message with buttons) as answered, so it is shown muted with the outcome. */
