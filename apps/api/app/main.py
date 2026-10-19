@@ -660,6 +660,8 @@ app.include_router(diagnostic_router)
 
 from .scenario_wizard import router as wizard_router
 app.include_router(wizard_router)
+from .prompt_ticket import router as prompt_ticket_router
+app.include_router(prompt_ticket_router)
 from .classroom import router as classroom_router
 app.include_router(classroom_router)
 from .ai_workers import router as workers_router

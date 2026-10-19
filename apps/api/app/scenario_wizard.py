@@ -44,6 +44,15 @@ def split_address(value):
 @router.post('/ai/wizard')
 def wizard(data:WizardIn,u=Depends(m.current),db=Depends(m.getdb)):
     m.staff(u)
+    validated,meta=build_draft(data,db)
+    m.audit(db,u,'wizard_draft_generated',detail={'incident':data.incident_type,**meta});db.commit()
+    return {'data':validated,'meta':meta}
+
+def build_draft(data,db,fixed=None,meta=None):
+    """One draft from explicit facts. `fixed` holds facts the author already gave
+    (description, caller_name, object, seed — the scene the model rewrites); with a fixed description
+    the model only writes brigade reports."""
+    fixed=fixed or {}
     active_services=db.scalars(select(ServiceDefinition).where(ServiceDefinition.active==True)).all()
     available={service.name for service in active_services}
     if any(s not in available for s in data.services) or data.own_service not in available:m.fail('Выберите действующие службы')
@@ -60,22 +69,27 @@ def wizard(data:WizardIn,u=Depends(m.current),db=Depends(m.getdb)):
         street,house=split_address(data.address)
         facts['street']=street
         if house:facts['house']=house
+    if fixed.get('caller_name'):facts['caller_name']=fixed['caller_name']
     data.district=facts['area']
-    keys=['description']
-    schema={'type':'object','properties':{k:{'type':'string'} for k in keys},'required':keys,'additionalProperties':False}
     db.rollback()
-    victims=f"Пострадавших людей: {data.victims_count}." if data.victims_state=='yes' else 'Пострадавших людей нет.' if data.victims_state=='no' else 'Наличие пострадавших людей неизвестно.'
-    seed=scene_seed(data.incident_type,data.traits)
-    prompt=seed+' Признаки: '+', '.join(data.traits) if data.traits else seed
-    generated,meta=complete(GEOGRAPHY_PROMPT+' Rewrite the supplied Russian witness report in natural Russian, 2 or 3 short sentences. Preserve its specific object and visible signs. Do not add an address, casualties, responders or rescue actions. Return JSON with one field: description.',prompt,schema,tokens=220,temperature=.2)
-    if any(not isinstance(generated.get(k),str) or not generated[k].strip() for k in keys):m.fail('Модель вернула неполный черновик. Повторите.',502)
-    facts.update(generated)
-    if not scene_matches(data.incident_type,data.traits,facts['description']) or re.search(r'\b(?:район|округ)\b',facts['description'].casefold()):
-        facts['description']=seed
+    if fixed.get('description'):
+        facts['description']=fixed['description']
+        meta=dict(meta or {'model':'rules','mode':'rules','seconds':0})
+    else:
+        keys=['description']
+        schema={'type':'object','properties':{k:{'type':'string'} for k in keys},'required':keys,'additionalProperties':False}
+        seed=fixed.get('seed') or scene_seed(data.incident_type,data.traits)
+        prompt=seed+' Признаки: '+', '.join(data.traits) if data.traits else seed
+        generated,meta=complete(GEOGRAPHY_PROMPT+' Rewrite the supplied Russian witness report in natural Russian, 2 or 3 short sentences. Preserve its specific object and visible signs. Do not add an address, casualties, responders or rescue actions. Return JSON with one field: description.',prompt,schema,tokens=220,temperature=.2)
+        if any(not isinstance(generated.get(k),str) or not generated[k].strip() for k in keys):m.fail('Модель вернула неполный черновик. Повторите.',502)
+        facts.update(generated)
+        if not scene_matches(data.incident_type,data.traits,facts['description']) or re.search(r'\b(?:район|округ)\b',facts['description'].casefold()):
+            facts['description']=seed
     victims=f"Пострадавших людей: {data.victims_count}." if data.victims_state=='yes' else 'Пострадавших людей нет.' if data.victims_state=='no' else 'Наличие пострадавших людей неизвестно.'
     if data.animals:victims+=' Есть пострадавшие животные.'
     facts.update(victims=victims,victims_state=data.victims_state)
     enrich_facts(facts,data)
+    if fixed.get('object'):facts['object']=fixed['object']
     first=facts['description'].split('.')[0].strip()
     facts['title']=f"{first[:110]} — {facts['street']}"[:200]
     from .learning import automatic_services
@@ -139,9 +153,7 @@ def wizard(data:WizardIn,u=Depends(m.current),db=Depends(m.getdb)):
         ticket['tasks'][0]=enrich_task(task)
         ticket['title']=facts['title']
     if data.difficulty_stars:apply_difficulty(ticket,facts,data.difficulty_stars)
-    validated=TicketData.model_validate(ticket).model_dump()
-    m.audit(db,u,'wizard_draft_generated',detail={'incident':data.incident_type,**meta});db.commit()
-    return {'data':validated,'meta':meta}
+    return TicketData.model_validate(ticket).model_dump(),meta
 
 @router.post('/attempts/{id}/routing-preview')
 def routing(id:int,data:dict,u=Depends(m.current),db=Depends(m.getdb)):
