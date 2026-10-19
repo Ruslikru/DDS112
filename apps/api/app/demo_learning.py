@@ -9,10 +9,12 @@ from .ticket_difficulty import apply_difficulty
 from .schemas import TicketData
 
 def seed_demo_learning(db):
+    from .test_catalog import enabled, ensure_demo_assignments
     from .learning import seed_catalog
     seed_catalog(db)
     owner=db.scalar(select(User).where(User.login=='admin'))
     if not owner:return
+    if enabled():ensure_demo_assignments(db)
     titles=['Первые шаги','Базовая подготовка','Самостоятельная работа','Уверенный диспетчер','Опытный диспетчер']
     for n in range(1,6):
         user=db.scalar(select(User).where(User.login==f'student{n}',User.role=='student'))
@@ -23,6 +25,7 @@ def seed_demo_learning(db):
         profile.data={**profile.data,'demo_learning_v1':True,'demo_level':n-1 if n<5 else 5,'demo_stars':n,'intro_complete':False if n==1 else True}
         group=db.get(Group,user.group_id) if user.group_id else None
         teacher_id=group.teacher_id if group and group.teacher_id else owner.id
+        if enabled():continue
         for index,(incident,description,service) in enumerate([
             ('Остановка лифта','В жилом доме лифт остановился между этажами. Два человека отвечают через двери.','ДДС района'),
             ('Прорыв трубы','В подвале жилого дома течёт вода из трубы. Вода растекается по полу.','ДДС района'),

@@ -32,6 +32,14 @@ class WizardIn(BaseModel):
     traits:list[str]=Field(default_factory=list,max_length=12)
     affiliation:str=''
     difficulty_stars:int=Field(default=0,ge=0,le=5)
+    address:str=Field(default='',max_length=160)
+
+def split_address(value):
+    """«улица Ленина, дом 5» → («улица Ленина», «5»); without a number the street is kept and the house stays random."""
+    value=re.sub(r'\s+',' ',value).strip(' ,.')
+    found=re.search(r'^(.*?)[,\s]+(?:дом|д\.)?\s*(\d+[а-яa-z]?(?:/\d+)?(?:\s*к(?:орп\.?|орпус)?\s*\d+)?)$',value,flags=re.I)
+    if found and found.group(1).strip():return found.group(1).strip(' ,'),found.group(2).strip()
+    return value,''
 
 @router.post('/ai/wizard')
 def wizard(data:WizardIn,u=Depends(m.current),db=Depends(m.getdb)):
@@ -47,6 +55,11 @@ def wizard(data:WizardIn,u=Depends(m.current),db=Depends(m.getdb)):
     if not known_type and not service_tag:m.fail('Выберите тип из классификатора или тег выбранной службы')
     if data.victims_state=='yes' and data.victims_count<1:m.fail('Укажите количество пострадавших')
     facts=base_facts(data.incident_type)
+    if data.address.strip():
+        # The teacher named the place: street and house replace the random ones, the district stays from the table.
+        street,house=split_address(data.address)
+        facts['street']=street
+        if house:facts['house']=house
     data.district=facts['area']
     keys=['description']
     schema={'type':'object','properties':{k:{'type':'string'} for k in keys},'required':keys,'additionalProperties':False}

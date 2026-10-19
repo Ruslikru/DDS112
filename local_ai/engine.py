@@ -22,6 +22,7 @@ MODELS = {
     'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf': 'Qwen3 4B Instruct · подробнее',
 }
 DEFAULT_MODEL = 'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
+FAST_MODEL = 'models/Qwen3-0.6B-Q4_K_M.gguf'
 
 
 class LocalEngine:
@@ -50,6 +51,9 @@ class LocalEngine:
         config.setdefault('execution','server')
         config.setdefault('worker_ids',[])
         config.setdefault('device','')
+        # The teacher assistant parses commands with a small model; a missing file silently falls back to the main one.
+        preferred=config.get('assistant_model') or FAST_MODEL
+        config['assistant_model']=preferred if preferred in MODELS and (self.root/preferred).is_file() else config['model']
         return config
 
     def gpu_devices(self):
@@ -67,7 +71,7 @@ class LocalEngine:
     def status(self):
         c = self.config()
         return {'mode': c['mode'], 'threads': c['threads'], 'model': Path(c['model']).stem,
-                'model_id':c['model'], 'models':[{'id':name,'label':label,'available':(self.root/name).is_file()} for name,label in MODELS.items()],
+                'model_id':c['model'], 'assistant_model':Path(c['assistant_model']).stem, 'assistant_model_id':c['assistant_model'], 'models':[{'id':name,'label':label,'available':(self.root/name).is_file()} for name,label in MODELS.items()],
                 'available': (self.root / c['model']).is_file() and (self.root/'runtime'/('vulkan' if c['mode']=='gpu' else 'cpu')/'llama-server.exe').is_file(),
                 'gpu_available': bool(self.gpu_devices()),'gpus':self.gpu_devices(),'device':c['device'],
                 'execution': c['execution'],
@@ -87,8 +91,10 @@ class LocalEngine:
     def set_mode(self, mode):
         self.set_settings(mode=mode)
 
-    def set_settings(self, mode=None, execution=None, worker_ids=None, device=None, model=None):
+    def set_settings(self, mode=None, execution=None, worker_ids=None, device=None, model=None, assistant_model=None):
         if mode is not None and mode not in ('cpu','gpu'): raise ValueError('Выберите CPU или GPU')
+        if assistant_model is not None and assistant_model not in MODELS: raise ValueError('Неизвестная модель')
+        if assistant_model is not None and not (self.root/assistant_model).is_file(): raise ValueError('Файл выбранной модели не найден')
         if execution is not None and execution not in ('server','workstations'): raise ValueError('Выберите место вычислений')
         if model is not None and model not in MODELS: raise ValueError('Неизвестная модель')
         if model is not None and not (self.root/model).is_file(): raise ValueError('Файл выбранной модели не найден')
@@ -103,6 +109,7 @@ class LocalEngine:
         try:
             c = self.config()
             if model is not None:c['model']=model
+            if assistant_model is not None:c['assistant_model']=assistant_model
             if mode is not None:c['mode']=mode
             if device is not None:c['device']=device
             if execution is not None:c['execution']=execution
@@ -194,4 +201,18 @@ class LocalEngine:
         finally: self.lock.release()
 
 
+class AssistantEngine(LocalEngine):
+    """Second llama-server with the assistant model; mode, threads and context follow the main engine's settings."""
+    def __init__(self, main):
+        super().__init__(main.root, main.data / 'assistant-llm')
+        self.main = main
+
+    def config(self):
+        c = self.main.config(); c['model'] = c['assistant_model']; return c
+
+    def set_settings(self, *args, **kwargs):
+        raise ValueError('Настройки модели ассистента меняются в основном движке')
+
+
 engine = LocalEngine()
+assistant_engine = AssistantEngine(engine)

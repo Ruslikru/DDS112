@@ -6,10 +6,12 @@ from . import main as m
 from .db import Ticket,TicketVersion,Assignment,Attempt,User
 from .schemas import TicketData
 from .dds_flow import create_attempt
+from .test_catalog import enabled, available as catalog_available
 
 router=APIRouter(prefix='/api')
 
 def seed(db):
+    if enabled():return
     owner=db.scalar(select(User).where(User.role=='admin'))
     if not owner:return
     existing={t.get('onboarding') for v in db.scalars(select(TicketVersion)) for t in v.data.get('tasks',[])}
@@ -56,6 +58,7 @@ def catalog(u=Depends(m.current),db=Depends(m.getdb)):
     from .voice import readiness
     rows=[]
     for v in db.scalars(select(TicketVersion).where(TicketVersion.published==True)):
+        if not catalog_available(v.data):continue
         if not v.data.get('tasks'):continue
         key=v.data['tasks'][0].get('onboarding')
         if not key or any(x['key']==key for x in rows):continue
@@ -67,6 +70,7 @@ def catalog(u=Depends(m.current),db=Depends(m.getdb)):
 def start_tutorial(id:int,u=Depends(m.current),db=Depends(m.getdb)):
     v=db.get(TicketVersion,id)
     if not v or not v.published or not v.data.get('tasks') or not v.data['tasks'][0].get('onboarding'):m.fail('Вводный билет не найден',404)
+    if not catalog_available(v.data):m.fail('Вводный билет недоступен в тестовом каталоге',404)
     a=db.scalar(select(Assignment).where(Assignment.version_id==id,Assignment.student_id==u.id))
     if not a:
         a=Assignment(version_id=id,student_id=u.id,teacher_id=u.id,title=v.data['title'],training=True);db.add(a);db.flush()
@@ -79,6 +83,7 @@ def start_tutorial(id:int,u=Depends(m.current),db=Depends(m.getdb)):
 def try_ticket(id:int,data:dict,u=Depends(m.current),db=Depends(m.getdb)):
     m.staff(u);v=db.get(TicketVersion,id)
     if not v:m.fail('Билет не найден',404)
+    if not catalog_available(v.data):m.fail('В тестовом каталоге доступны только два билета ДДС')
     index=data.get('task_index',0)
     if not isinstance(index,int) or not 0<=index<len(v.data['tasks']):m.fail('Задание не найдено')
     a=Assignment(version_id=id,student_id=u.id,teacher_id=u.id,title='Просмотр преподавателя: '+v.data['title'][:160],training=True);db.add(a);db.flush()

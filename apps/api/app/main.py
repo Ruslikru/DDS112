@@ -11,6 +11,7 @@ from .db import *
 from .schemas import *
 from .domain import *
 from .seed import seed
+from .test_catalog import enabled as test_catalog_enabled, available as catalog_available, versions as catalog_versions
 from .caller import caller_questions, contact_questions
 from .dds_flow import create_attempt, deliver_due
 from .diagnostics import event as diagnostic_event, request_id as diagnostic_request_id
@@ -135,10 +136,11 @@ async def lifespan(app):
     with SessionLocal() as db:seed_catalog(db)
     from .voice import worker as voice_worker
     voice_job=asyncio.create_task(voice_worker()) if os.getenv("VOICE_AUTO_GENERATE","true")=="true" else None
-    from .tutorials import seed as seed_tutorials
-    with SessionLocal() as db:seed_tutorials(db)
-    from .communication_examples import seed as seed_communications
-    with SessionLocal() as db:seed_communications(db)
+    if not test_catalog_enabled():
+        from .tutorials import seed as seed_tutorials
+        with SessionLocal() as db:seed_tutorials(db)
+        from .communication_examples import seed as seed_communications
+        with SessionLocal() as db:seed_communications(db)
     from .voice import recover
     recover()
     from .result_report import recover as recover_reports
@@ -150,6 +152,8 @@ async def lifespan(app):
     from .ai_workers import broker
     local_engine.delegate=broker.dispatch
     local_engine.on_event=diagnostic_event
+    from local_ai.engine import assistant_engine
+    assistant_engine.on_event=diagnostic_event
     diagnostic_event('server_ready')
     from .backups import worker as backup_worker
     backup_job=asyncio.create_task(backup_worker())
@@ -162,8 +166,8 @@ async def lifespan(app):
     broker.stop()
     job.cancel()
     if semantic_job: semantic_job.cancel()
-    from local_ai.engine import engine as local_engine
-    local_engine.stop()
+    from local_ai.engine import engine as local_engine, assistant_engine
+    local_engine.stop();assistant_engine.stop()
     diagnostic_event('server_stopped')
 app=FastAPI(title='112 Учебный контур',lifespan=lifespan)
 @app.middleware('http')
@@ -305,7 +309,7 @@ def add_group(data:dict,u=Depends(current),db:Session=Depends(getdb)):
 def tickets(u=Depends(current),db:Session=Depends(getdb)):
     staff(u)
     from .voice import readiness
-    return [{'id':v.id,'ticket_id':v.ticket_id,'number':v.number,'published':v.published,'data':v.data,'editable':True,'archived':db.get(Ticket,v.ticket_id).archived,'voice':readiness(v.data,db)} for v in db.scalars(select(TicketVersion).order_by(TicketVersion.id.desc())) if v.data.get('description')!='Снимок занятия']
+    return [{'id':v.id,'ticket_id':v.ticket_id,'number':v.number,'published':v.published,'data':v.data,'editable':True,'archived':db.get(Ticket,v.ticket_id).archived,'voice':readiness(v.data,db)} for v in catalog_versions(db.scalars(select(TicketVersion).order_by(TicketVersion.id.desc()))) if v.data.get('description')!='Снимок занятия']
 @app.post('/api/tickets')
 def save_ticket(data:TicketData,ticket_id:int|None=None,u=Depends(current),db:Session=Depends(getdb)):
     staff(u)
@@ -363,6 +367,7 @@ def assignments(u=Depends(current),db:Session=Depends(getdb)):
     for a in db.scalars(select(Assignment).order_by(Assignment.id.desc())):
         if not visible(db,u,a.student_id): continue
         v=db.get(TicketVersion,a.version_id); student=db.get(User,a.student_id)
+        if not catalog_available(v.data):continue
         attempts=db.scalars(select(Attempt).where(Attempt.assignment_id==a.id).order_by(Attempt.id.desc())).all()
         out.append({'id':a.id,'lesson_id':a.lesson_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment} for p in attempts]})
     return out
@@ -370,6 +375,7 @@ def assignments(u=Depends(current),db:Session=Depends(getdb)):
 def assign(data:AssignmentIn,u=Depends(current),db:Session=Depends(getdb)):
     staff(u); v=db.get(TicketVersion,data.version_id)
     if not v or not v.published or db.get(Ticket,v.ticket_id).archived: fail('Выберите опубликованный билет')
+    if not catalog_available(v.data):fail('В тестовом каталоге доступны только два билета ДДС')
     from .voice import ensure_ready
     ensure_ready(v.data,db)
     for id in set(data.students):
@@ -389,6 +395,7 @@ def start(id:int,data:dict,u=Depends(current),db:Session=Depends(getdb)):
     if lesson_id: db.scalar(select(Lesson).where(Lesson.id==lesson_id).with_for_update())
     a=db.scalar(select(Assignment).where(Assignment.id==id).with_for_update())
     if not a or a.student_id!=u.id: fail('Это назначение другого ученика',403)
+    if not catalog_available(db.get(TicketVersion,a.version_id).data):fail('В тестовом каталоге доступны только два билета ДДС')
     if a.lesson_id:
         lesson=db.scalar(select(Lesson).where(Lesson.id==a.lesson_id).with_for_update())
         if lesson.status!='active': fail('Занятие ещё не начато или уже завершено')
@@ -664,6 +671,9 @@ app.include_router(management_router)
 
 from .teacher import router as teacher_router
 app.include_router(teacher_router)
+
+from .assistant import router as assistant_router
+app.include_router(assistant_router)
 
 from .voice import router as voice_router
 app.include_router(voice_router)

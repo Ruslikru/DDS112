@@ -24,3 +24,5 @@ local_ai/benchmark-*.json
 Dispetcher112/
 Изображение Codex *.gif
 local_ai/voice/
+ai_lab/
+docs/

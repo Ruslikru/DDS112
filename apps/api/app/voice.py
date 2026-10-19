@@ -6,6 +6,7 @@ import json
 import shutil
 import threading
 from fastapi import APIRouter,Depends,Request
+from pydantic import BaseModel,Field
 from fastapi.responses import FileResponse
 from sqlalchemy import String,JSON,Text,select,update
 from sqlalchemy.orm import Mapped,mapped_column
@@ -181,6 +182,23 @@ def save_settings(data:dict,u=Depends(m.current)):
     try:runtime.save(data)
     except ValueError as e:m.fail(str(e))
     return runtime.status()
+
+class TranscribeIn(BaseModel):
+    audio:str=Field(min_length=1)
+
+@router.post('/transcribe')
+def transcribe(data:TranscribeIn,u=Depends(m.current),db=Depends(m.getdb)):
+    """Speech to text on the server for the teacher assistant: a browser without the native bridge, same length limit as the bridge."""
+    m.staff(u)
+    from .assistant import speech_prompt
+    # The assistant uses the bigger Whisper model when it is installed and a hint with the command vocabulary and service names: short commands like «билет» or «служба сто два» are otherwise mis-heard.
+    try:value=runtime.transcribe(data.audio,prompt=speech_prompt(db),model='base')
+    except ValueError as e:m.fail(str(e))
+    except Exception as e:
+        # An empty recording is the speaker's problem, not an outage: Whisper reports it as an error string.
+        if 'не распознана' in str(e):m.fail('Речь не распознана. Удерживайте кнопку, пока говорите, и проверьте, что микрофон включён.')
+        m.fail('Распознавание на сервере недоступно: '+str(e),503)
+    return {**{k:v for k,v in (value or {}).items() if k!='text'},'text':str((value or {}).get('text','')).strip()}
 
 @router.post('/prepare')
 def prepare_draft(data:TicketData,u=Depends(m.current),db=Depends(m.getdb)):

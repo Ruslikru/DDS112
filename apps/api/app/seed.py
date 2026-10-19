@@ -53,7 +53,9 @@ def seed(db):
     group=Group(name='Учебная группа № 1',teacher_id=teacher.id);db.add(group);db.flush()
     students=[User(login='student',name='Алексей Морозов',role='student',password_hash=ph.hash(password),group_id=group.id),User(login='student2',name='Мария Соколова',role='student',password_hash=ph.hash(password),group_id=group.id)]
     db.add_all(students);db.flush()
-    for i,task in enumerate(sample_tasks()):
+    from .test_catalog import enabled, TITLES
+    tasks=[task for task in sample_tasks() if not enabled() or task['title'] in TITLES]
+    for i,task in enumerate(tasks):
         ticket=Ticket(title=task['title'],created_by=admin.id);db.add(ticket);db.flush()
         data=TicketData.model_validate({'title':task['title'],'description':task.get('initial_card',{}).get('description') or task['intro'],'tasks':[task]}).model_dump()
         version=TicketVersion(ticket_id=ticket.id,number=1,published=True,data=data);db.add(version);db.flush()

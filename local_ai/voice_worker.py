@@ -37,10 +37,11 @@ def run(req):
         if key!=stt_key:
             stt=WhisperModel(str(root/('whisper-'+req['model'])),device=device,compute_type='float16' if device=='cuda' else 'int8',local_files_only=True,cpu_threads=6)
             stt_key=key
-        segments,info=stt.transcribe(req['input'],language='ru',beam_size=1,vad_filter=True,condition_on_previous_text=False)
+        # `prompt` lists the words the caller expects (a command vocabulary); it biases Whisper towards them.
+        segments,info=stt.transcribe(req['input'],language='ru',beam_size=int(req.get('beam') or 1),vad_filter=True,condition_on_previous_text=False,initial_prompt=req.get('prompt') or None)
         text=' '.join(s.text.strip() for s in segments).strip()
         if not text:raise ValueError('Речь не распознана. Повторите запись.')
-        return {'text':text,'seconds':round(time.perf_counter()-start,2)}
+        return {'text':text,'seconds':round(time.perf_counter()-start,2),'model':req['model']}
     key=(req['model'],device)
     if key!=tts_key:
         tts=None

@@ -11,6 +11,7 @@ from .schemas import TicketData
 from .domain import assess, text_checks
 from .dds_flow import deliver_lesson
 from sqlalchemy import select
+from .test_catalog import available as catalog_available, versions as catalog_versions
 
 router=APIRouter(prefix='/api')
 
@@ -63,13 +64,14 @@ def create_lesson(data:LessonIn,u=Depends(current),db=Depends(getdb)):
         if not s or not s.active or s.role!='student' or not visible(db,u,sid): fail('Ученик недоступен',403)
     if data.delivery_mode in ('adaptive','sprint'):
         latest={}
-        for version in db.scalars(select(TicketVersion).join(Ticket).where(TicketVersion.published==True,Ticket.archived==False).order_by(TicketVersion.id.desc())):
+        for version in catalog_versions(db.scalars(select(TicketVersion).join(Ticket).where(TicketVersion.published==True,Ticket.archived==False).order_by(TicketVersion.id.desc()))):
             if readiness(version.data,db)['ready']:latest.setdefault(version.ticket_id,version.id)
         data.versions=list(latest.values())
     tasks=[]
     for vid in dict.fromkeys(data.versions):
         v=db.get(TicketVersion,vid)
         if not v or not v.published or db.get(Ticket,v.ticket_id).archived: fail('Билет должен быть опубликован')
+        if not catalog_available(v.data):fail('В тестовом каталоге доступны только два билета ДДС')
         ensure_ready(v.data,db)
         tasks += [{**copy.deepcopy(t),'difficulty_level':(v.data.get('difficulty_stars') or {'Базовый':1,'Средний':3,'Сложный':5}.get(v.data.get('difficulty'),1))} for t in v.data['tasks'] if not data.categories or t['category'] in data.categories]
     if data.delivery_mode in ('adaptive','sprint') and len(tasks)>100:tasks=random.SystemRandom().sample(tasks,100)
@@ -99,6 +101,8 @@ def create_lesson(data:LessonIn,u=Depends(current),db=Depends(getdb)):
 @router.post('/lessons/{id}/start')
 def start_lesson(id:int,u=Depends(current),db=Depends(getdb)):
     staff(u); l=lesson_access(db,u,id,True)
+    for assignment in db.scalars(select(Assignment).where(Assignment.lesson_id==id)):
+        if not catalog_available(db.get(TicketVersion,assignment.version_id).data):fail('В тестовом каталоге доступны только два билета ДДС')
     if l.status=='ended': fail('Завершённое занятие нельзя запустить повторно')
     if l.status=='prepared':
         l.status='active'; l.started_at=now()

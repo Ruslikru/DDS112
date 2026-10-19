@@ -1,0 +1,16 @@
+{
+  "status": "verified",
+  "ticket_count": 75,
+  "files": [
+    {
+      "file": "catalog.json",
+      "bytes": 1063597,
+      "sha256": "1466f38552769768f54af52ec4ff9b8e131a5d5a7e124164818dfc64c6c51dcc"
+    },
+    {
+      "file": "catalog.md",
+      "bytes": 592988,
+      "sha256": "98ecc6e9638d1fee9e9041f6b8c25134c042e3f5e6a9ef034a2f2ff4cd8fef01"
+    }
+  ]
+}

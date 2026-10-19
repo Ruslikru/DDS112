@@ -12,6 +12,7 @@ import {LearningEditor,IntroGate} from './training-tools';
 import {TeacherJournal} from './teacher-journal';
 import {MiniQuestions} from './mini-questions';
 import {ArmConsole} from './arm-journal';
+import {TeacherAssistant} from './assistant';
 const demoLaunchExample = new URL('./demo-launch-exe.png', import.meta.url).href;
 import { Library, Registry } from './library';
 import { Lessons } from './lessons';
@@ -320,7 +321,7 @@ export function App() {
     ...(user.role === "admin" ? [["/system", "Система", Settings]] : []),
   ];
   return (
-    <UserContext.Provider value={user}><NetworkStatus key={user.id} user={user.id}/><ClassroomClient>{user.role!=='student'&&<VoiceQueue/>}{!location.pathname.startsWith('/attempts/')&&<IntroGate/>}{user.role==='admin'&&<ServerNameSetup/>}{user.role==='admin'&&<DemoStationSetup user={user}/>}<DemoTeacherWelcome user={user}/>
+    <UserContext.Provider value={user}><NetworkStatus key={user.id} user={user.id}/><ClassroomClient>{user.role!=='student'&&<VoiceQueue/>}{user.role!=='student'&&<TeacherAssistant/>}{!location.pathname.startsWith('/attempts/')&&<IntroGate/>}{user.role==='admin'&&<ServerNameSetup/>}{user.role==='admin'&&<DemoStationSetup user={user}/>}<DemoTeacherWelcome user={user}/>
       <div
         className={
           "app " + (user.role!=="student"?"staff-app ":"") +
