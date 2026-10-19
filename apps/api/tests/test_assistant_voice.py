@@ -5,20 +5,21 @@ from test_flows import app, TestClient, login, post
 from apps.api.app import voice
 from apps.api.app.assistant import clean_speech
 
-def test_transcribe_route_uses_runtime_and_requires_staff(monkeypatch):
+def test_transcribe_route_uses_gigaam_for_staff_and_students(monkeypatch):
     seen=[]
-    def fake(content,**options):seen.append((content,options));return {'text':' Покажи журнал. ','seconds':.2,'model':'tiny'}
+    def fake(content,**options):seen.append((content,options));return {'text':' Покажи журнал. ','seconds':.2,'model':'gigaam'}
     monkeypatch.setattr(voice.runtime,'transcribe',fake)
     audio=base64.b64encode(b'webm-bytes').decode()
     with TestClient(app) as c:
         login(c,'teacher')
         r=post(c,'/voice/transcribe',{'audio':audio});assert r.status_code==200,r.text
-        assert r.json()=={'seconds':.2,'model':'tiny','text':'Покажи журнал.'}
+        assert r.json()=={'seconds':.2,'model':'gigaam','text':'Покажи журнал.'}
         # Команды преподавателя распознаёт GigaAM; словарь содержит названия страниц.
         assert len(seen)==1 and seen[0][0]==audio and seen[0][1]['model']=='gigaam' and 'билет ДДС' in seen[0][1]['prompt']
         assert post(c,'/voice/transcribe',{'audio':''}).status_code==422
         post(c,'/logout');login(c,'student')
-        assert post(c,'/voice/transcribe',{'audio':audio}).status_code==403
+        assert post(c,'/voice/transcribe',{'audio':audio}).status_code==200
+        assert seen[-1][1]=={'model':'gigaam','prompt':''}
 
 def test_transcribe_length_limit_and_missing_module(monkeypatch):
     with TestClient(app) as c:

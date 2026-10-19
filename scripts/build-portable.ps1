@@ -1,4 +1,4 @@
-param([string]$SevenZip = 'C:/Program Files/7-Zip/7z.exe', [string]$OutputSuffix = '')
+﻿param([string]$SevenZip = 'C:/Program Files/7-Zip/7z.exe', [string]$OutputSuffix = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $versionLine = Get-Content (Join-Path $root 'packaging/installer.iss') | Select-String '^#define AppVersion "([^"]+)"$'
@@ -39,13 +39,14 @@ foreach ($item in @(
     @('local_ai/runtime/cpu', 'local_ai/runtime/cpu'),
     @('local_ai/runtime/vulkan', 'local_ai/runtime/vulkan'),
     @('local_ai/voice/runtime', 'local_ai/voice/runtime'),
-    @('local_ai/voice/models', 'local_ai/voice/models'),
+    @('local_ai/voice/models/gigaam', 'local_ai/voice/models/gigaam'),
+    @('local_ai/voice/piper/FINAL_MODELS_29800', 'local_ai/voice/piper/FINAL_MODELS_29800'),
     @('local_ai/voice/builtin', 'local_ai/voice/builtin'),
     @('local_ai/voice/fillers', 'local_ai/voice/fillers')
 )) {
     Copy-Tree (Join-Path $root $item[0]) (Join-Path $destination $item[1])
 }
-foreach ($name in @('Qwen3-4B-Instruct-2507-Q4_K_M.gguf', 'Qwen3-0.6B-Q4_K_M.gguf')) {
+foreach ($name in @('Qwen3-4B-Instruct-2507-Q4_K_M.gguf', 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf', 'qwen-dds-1000-f32.gguf')) {
     Copy-Required "local_ai/models/$name" (Join-Path $ai "models/$name")
 }
 & (Join-Path $ai 'voice/runtime/python.exe') -I (Join-Path $PSScriptRoot 'check_voice_runtime.py')

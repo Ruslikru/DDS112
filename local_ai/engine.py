@@ -17,12 +17,9 @@ from logging.handlers import RotatingFileHandler
 class AIUnavailable(RuntimeError):
     pass
 
-MODELS = {
-    'models/Qwen3-0.6B-Q4_K_M.gguf': 'Qwen3 0.6B · быстрый',
-    'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf': 'Qwen3 4B Instruct · подробнее',
-}
-DEFAULT_MODEL = 'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
-FAST_MODEL = 'models/Qwen3-0.6B-Q4_K_M.gguf'
+from .model_catalog import MODELS, CARD_MODEL, ASSISTANT_MODEL, ASSISTANT_ADAPTER, model_available
+DEFAULT_MODEL = CARD_MODEL
+FAST_MODEL = ASSISTANT_MODEL
 
 
 class LocalEngine:
@@ -51,9 +48,8 @@ class LocalEngine:
         config.setdefault('execution','server')
         config.setdefault('worker_ids',[])
         config.setdefault('device','')
-        # The teacher assistant parses commands with a small model; a missing file silently falls back to the main one.
-        preferred=config.get('assistant_model') or FAST_MODEL
-        config['assistant_model']=preferred if preferred in MODELS and (self.root/preferred).is_file() else config['model']
+        # Never silently run the untrained base or substitute the card generator.
+        config['assistant_model']=ASSISTANT_MODEL
         return config
 
     def gpu_devices(self):
@@ -71,8 +67,8 @@ class LocalEngine:
     def status(self):
         c = self.config()
         return {'mode': c['mode'], 'threads': c['threads'], 'model': Path(c['model']).stem,
-                'model_id':c['model'], 'assistant_model':Path(c['assistant_model']).stem, 'assistant_model_id':c['assistant_model'], 'models':[{'id':name,'label':label,'available':(self.root/name).is_file()} for name,label in MODELS.items()],
-                'available': (self.root / c['model']).is_file() and (self.root/'runtime'/('vulkan' if c['mode']=='gpu' else 'cpu')/'llama-server.exe').is_file(),
+                'model_id':c['model'], 'assistant_model':MODELS[c['assistant_model']], 'assistant_model_id':c['assistant_model'], 'assistant_available':model_available(self.root,c['assistant_model']), 'models':[{'id':name,'label':label,'available':model_available(self.root,name)} for name,label in MODELS.items()],
+                'available': model_available(self.root,c['model']) and (self.root/'runtime'/('vulkan' if c['mode']=='gpu' else 'cpu')/'llama-server.exe').is_file(),
                 'gpu_available': bool(self.gpu_devices()),'gpus':self.gpu_devices(),'device':c['device'],
                 'execution': c['execution'],
                 'running': self.process is not None and self.process.poll() is None,
@@ -93,11 +89,11 @@ class LocalEngine:
 
     def set_settings(self, mode=None, execution=None, worker_ids=None, device=None, model=None, assistant_model=None):
         if mode is not None and mode not in ('cpu','gpu'): raise ValueError('Выберите CPU или GPU')
-        if assistant_model is not None and assistant_model not in MODELS: raise ValueError('Неизвестная модель')
-        if assistant_model is not None and not (self.root/assistant_model).is_file(): raise ValueError('Файл выбранной модели не найден')
+        if assistant_model is not None and assistant_model != ASSISTANT_MODEL: raise ValueError('Ассистент использует Qwen 2.5 1.5B после 1000 шагов обучения')
+        if assistant_model is not None and not model_available(self.root,assistant_model): raise ValueError('Не найдены база или адаптер обученной модели')
         if execution is not None and execution not in ('server','workstations'): raise ValueError('Выберите место вычислений')
         if model is not None and model not in MODELS: raise ValueError('Неизвестная модель')
-        if model is not None and not (self.root/model).is_file(): raise ValueError('Файл выбранной модели не найден')
+        if model is not None and not model_available(self.root,model): raise ValueError('Не найдены файлы выбранной модели, включая адаптер обучения')
         if mode=='gpu' and not (self.root/'runtime/vulkan/llama-server.exe').is_file():
             raise ValueError('В поставке отсутствует компонент GPU Vulkan')
         if mode=='gpu':
@@ -126,7 +122,7 @@ class LocalEngine:
         c = self.config()
         executable = self.root / 'runtime' / ('cpu' if c['mode'] == 'cpu' else 'vulkan') / 'llama-server.exe'
         model = self.root / c['model']
-        if not executable.is_file() or not model.is_file():
+        if not executable.is_file() or not model_available(self.root,c['model']):
             raise AIUnavailable('Локальная модель не установлена. Нужна папка local_ai с моделью и runtime.')
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
@@ -136,6 +132,7 @@ class LocalEngine:
                 '-t', str(c['threads']), '-tb', str(c['threads']), '-ngl', '0' if c['mode'] == 'cpu' else '99',
                 '-c', str(c['context']), '-np', '1', '--reasoning', 'off', '--api-key', self.key]
         if c['mode']=='gpu' and c['device']:args+=['--device',c['device']]
+        if c['model']==ASSISTANT_MODEL:args+=['--lora',str(self.root/ASSISTANT_ADAPTER)]
         logger=logging.getLogger('training112.llama.'+str(id(self)));logger.setLevel(logging.INFO);logger.propagate=False;logger.disabled=False
         for old in logger.handlers[:]: old.close();logger.removeHandler(old)
         self.log_handler=RotatingFileHandler(logs/'local-ai.log',maxBytes=5_000_000,backupCount=2,encoding='utf-8')
@@ -189,6 +186,7 @@ class LocalEngine:
                     'inference_seconds':round(time.monotonic()-ready,3)}
             self.on_event('ai_request_finished',**timing,usage=result.get('usage',{}))
             return value, {'model':Path(self.config()['model']).stem,'mode':self.config()['mode'],
+                           **({'adapter':ASSISTANT_ADAPTER,'training_steps':1000} if self.config()['model']==ASSISTANT_MODEL else {}),
                            **timing,'usage':result.get('usage',{})}
         except AIUnavailable as error:
             self.on_event('ai_request_failed',error=str(error))

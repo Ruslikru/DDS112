@@ -66,10 +66,11 @@ def test_gpu_and_execution_settings_persist(tmp_path,monkeypatch):
     import json
     root=tmp_path/'ai';(root/'runtime/vulkan').mkdir(parents=True)
     (root/'models').mkdir()
-    (root/'models/Qwen3-0.6B-Q4_K_M.gguf').touch()
+    (root/'models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf').touch()
+    (root/'models/qwen-dds-1000-f32.gguf').touch()
     (root/'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf').touch()
     (root/'runtime/vulkan/llama-server.exe').touch()
-    (root/'config.json').write_text(json.dumps({'model':'models/Qwen3-0.6B-Q4_K_M.gguf','mode':'cpu','threads':6,'context':4096}))
+    (root/'config.json').write_text(json.dumps({'model':'models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf','mode':'cpu','threads':6,'context':4096}))
     e=LocalEngine(root,tmp_path/'data')
     monkeypatch.setattr(e,'gpu_devices',lambda:[{'id':'Vulkan0','name':'Test GPU'}])
     e.set_settings(mode='gpu',execution='workstations',worker_ids=['a'])
@@ -77,8 +78,8 @@ def test_gpu_and_execution_settings_persist(tmp_path,monkeypatch):
     assert e.status()['gpu_available']
     e.set_settings(model='models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf')
     assert e.config()['model']=='models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
-    e.set_settings(model='models/Qwen3-0.6B-Q4_K_M.gguf')
-    assert e.config()['model']=='models/Qwen3-0.6B-Q4_K_M.gguf'
+    e.set_settings(model='models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf')
+    assert e.config()['model']=='models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf'
     with __import__('pytest').raises(ValueError):e.set_settings(model='models/unknown.gguf')
 
 
@@ -88,7 +89,7 @@ def test_only_admin_can_choose_default_model(monkeypatch):
     monkeypatch.setattr(ai,'set_settings',lambda **settings:selected.append(settings))
     with TestClient(app) as client:
         login(client,'student')
-        payload={'model':'models/Qwen3-0.6B-Q4_K_M.gguf'}
+        payload={'model':'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf'}
         assert post(client,'/ai/model',payload).status_code==403
         login(client,'admin')
         assert post(client,'/ai/model',payload).status_code==200

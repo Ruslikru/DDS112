@@ -8,8 +8,9 @@ import subprocess
 import threading
 import uuid
 from pathlib import Path
+from .model_catalog import ASSISTANT_MODEL
 
-DEFAULT={'pre':{'llm':'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','llm_device':'cpu','tts':'piper','tts_device':'cpu'},'live':{'llm':'models/Qwen3-0.6B-Q4_K_M.gguf','llm_device':'cpu','tts':'piper','tts_device':'cpu','stt':'gigaam','stt_device':'cpu','fillers':True,'delay':1.5,'chat_enabled':False}}
+DEFAULT={'pre':{'llm':ASSISTANT_MODEL,'llm_device':'cpu','tts':'piper','tts_device':'cpu'},'live':{'llm':ASSISTANT_MODEL,'llm_device':'cpu','tts':'piper','tts_device':'cpu','stt':'gigaam','stt_device':'cpu','fillers':True,'delay':1.5,'chat_enabled':False}}
 PIPER_MODELS=('piper','piper-denis','piper-irina','piper-ruslan')
 
 class VoiceRuntime:
@@ -23,27 +24,27 @@ class VoiceRuntime:
         file=self.data/'voice-settings.json'
         saved=json.loads(file.read_text('utf-8')) if file.exists() else {}
         result={k:{**v,**saved.get(k,{})} for k,v in DEFAULT.items()}
-        if saved.get('_version',0)<2 and result['live']['stt']=='tiny':result['live']['stt']='gigaam'
         for group in result.values():
-            if group['tts'] in ('silero','qwen'):group['tts']='piper'
-            if group['tts'].startswith('piper'):group['tts_device']='cpu'
+            group['llm']=ASSISTANT_MODEL
+            if group['tts'] not in PIPER_MODELS:group['tts']='piper'
+            group['tts_device']='cpu'
+        result['live']['stt']='gigaam'
         return result
     def save(self,value):
-        from .engine import MODELS
         result=self.settings()
         for group in ('pre','live'):
             for key,val in value.get(group,{}).items():
                 valid=key in result[group]
-                if key.endswith('device'):valid=val in ('cpu','gpu')
-                elif key=='llm':valid=val in MODELS
+                if key.endswith('device'):valid=val in (('cpu',) if key=='tts_device' else ('cpu','gpu'))
+                elif key=='llm':valid=val==ASSISTANT_MODEL
                 elif key=='tts':valid=val in PIPER_MODELS
-                elif key=='stt':valid=val in ('tiny','base','gigaam')
+                elif key=='stt':valid=val=='gigaam'
                 elif key=='delay':valid=isinstance(val,(float,int)) and .3<=val<=10
                 elif key in ('fillers','chat_enabled'):valid=isinstance(val,bool)
                 if not valid:raise ValueError('Некорректная настройка звука: '+key)
                 result[group][key]=val
         file=self.data/'voice-settings.json';tmp=file.with_suffix('.tmp')
-        tmp.write_text(json.dumps({**result,'_version':2},ensure_ascii=False),encoding='utf-8');tmp.replace(file)
+        tmp.write_text(json.dumps({**result,'_version':3},ensure_ascii=False),encoding='utf-8');tmp.replace(file)
         return result
     def call(self,request):
         with self.lock:
@@ -69,8 +70,6 @@ class VoiceRuntime:
                     'piper-denis':'../piper/FINAL_MODELS_29800/denis_29800.onnx',
                     'piper-irina':'../piper/FINAL_MODELS_29800/irina_29800.onnx',
                     'piper-ruslan':'../piper/FINAL_MODELS_29800/ruslan_29800.onnx',
-                    'silero':'silero-v5-ru.pt','qwen':'qwen-tts/config.json',
-                    'tiny':'whisper-tiny/model.bin','base':'whisper-base/model.bin',
                     'gigaam':'gigaam/config.json'}.items()}
                 status={'gpu':False,'models':models,**self.last.get('status',{}),'busy':True,'available':True}
             else:
@@ -93,7 +92,9 @@ class VoiceRuntime:
     def synthesize(self,text,gender='male',group='live',settings=None):
         from .speech_text import spoken_text
         text=spoken_text(text)
-        cfg=settings or self.settings()[group]
+        cfg=dict(settings or self.settings()[group])
+        if cfg.get('tts') not in PIPER_MODELS:cfg['tts']='piper'
+        cfg['tts_device']='cpu'
         cache=self.data/'voice-cache';cache.mkdir(exist_ok=True)
         key=hashlib.sha256(json.dumps([text,gender,cfg['tts'],cfg['tts_device'],'v3'],ensure_ascii=False).encode()).hexdigest()
         target=cache/(key+'.wav');meta=cache/(key+'.json')
@@ -105,15 +106,13 @@ class VoiceRuntime:
             temp.replace(target);meta.write_text(json.dumps(value),encoding='utf-8')
             return target,value
     def transcribe(self,content,prompt=None,model=None,beam=None):
-        """Speech to text. `model` overrides the live setting (used when the bigger model is installed), `prompt` is an expected-words hint."""
+        """Recognize microphone audio with the bundled GigaAM v3 model."""
+        if model not in (None,'gigaam'):raise ValueError('Распознавание доступно только через GigaAM v3')
         if len(content)>16000000:raise ValueError('Запись слишком длинная')
         path=self.data/(uuid.uuid4().hex+'.webm')
         try:
             path.write_bytes(base64.b64decode(content,validate=True));cfg=self.settings()['live']
-            if model:
-                model_file='gigaam/config.json' if model=='gigaam' else 'whisper-'+model+'/model.bin'
-                if not (self.bundle/'models'/model_file).exists():model=None
-            return self.call({'op':'transcribe','input':str(path),'model':model or cfg['stt'],'device':cfg['stt_device'],'prompt':prompt,'beam':beam})
+            return self.call({'op':'transcribe','input':str(path),'model':'gigaam','device':cfg['stt_device']})
         finally:path.unlink(missing_ok=True)
     def speak(self,text,gender='female'):
         path,meta=self.synthesize(text,gender)

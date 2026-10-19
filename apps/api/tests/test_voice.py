@@ -46,9 +46,12 @@ def test_voice_settings_validation(tmp_path):
     from local_ai.voice import VoiceRuntime
     v=VoiceRuntime(tmp_path)
     assert v.settings()['live']['delay']==1.5
-    v.save({'live':{'stt':'base','tts_device':'cpu'}})
-    assert VoiceRuntime(tmp_path).settings()['live']['stt']=='base'
-    with pytest.raises(ValueError):v.save({'live':{'stt':'cloud'}})
+    v.save({'live':{'stt':'gigaam','tts_device':'cpu'}})
+    assert VoiceRuntime(tmp_path).settings()['live']['stt']=='gigaam'
+    for obsolete in ('cloud','tiny','base'):
+        with pytest.raises(ValueError):v.save({'live':{'stt':obsolete}})
+    for obsolete in ('silero','qwen'):
+        with pytest.raises(ValueError):v.save({'live':{'tts':obsolete}})
 
 
 def test_queue_restart_preserves_ready_and_requeues_interrupted(monkeypatch,tmp_path):
@@ -89,3 +92,18 @@ def test_retry_failed_requeues_all_failed_for_staff():
             assert all(db.get(voice.VoiceJob,f'failed-{i}').status=='pending' and db.get(voice.VoiceJob,f'failed-{i}').error=='' for i in range(3))
             assert db.get(voice.VoiceJob,ready_id).status=='ready'
         assert post(c,'/voice/jobs/retry-failed').json()['count']==0
+
+
+def test_old_voice_settings_migrate_without_losing_voice_or_devices(tmp_path):
+    import json
+    from local_ai.voice import VoiceRuntime
+    from local_ai.model_catalog import ASSISTANT_MODEL
+    (tmp_path/'voice-settings.json').write_text(json.dumps({'_version':2,
+        'pre':{'llm':'models/Qwen3-0.6B-Q4_K_M.gguf','tts':'silero'},
+        'live':{'llm':'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','tts':'piper-ruslan','stt':'base','stt_device':'gpu','chat_enabled':True}}))
+    settings=VoiceRuntime(tmp_path).settings()
+    assert settings['pre']['llm']==settings['live']['llm']==ASSISTANT_MODEL
+    assert settings['pre']['tts']=='piper'
+    assert settings['live']['tts']=='piper-ruslan'
+    assert settings['live']['stt']=='gigaam'
+    assert settings['live']['stt_device']=='gpu' and settings['live']['chat_enabled']
