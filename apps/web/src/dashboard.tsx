@@ -43,6 +43,7 @@ import {
   services,
   labels,
   useLoad,
+  useOperator112,
   Notice,
   Badge,
   Field,
@@ -50,6 +51,7 @@ import {
   Heading,
 } from "./shared";
 export function Dashboard() {
+  const operator112=useOperator112();
   const u = React.useContext(UserContext),
     { data: a } = useLoad("/assignments"),
     { data: r } = useLoad("/results");
@@ -81,7 +83,7 @@ export function Dashboard() {
         </div>
         <div className="hero-mark">
           <Radio size={110} strokeWidth={1} />
-          <span>112 / ДДС</span>
+          <span>{operator112?'112 / ДДС':'ДДС'}</span>
           <small>СЛУШАТЬ · УТОЧНЯТЬ · РЕАГИРОВАТЬ</small>
         </div>
       </div>
@@ -139,7 +141,7 @@ export function Dashboard() {
         </div>
       </div>
       <div className="method-note">
-        Сценарии начального набора — демонстрационные адаптации материалов.
+        Сценарии начального набора — учебные адаптации материалов.
         Эталоны и оценки требуют проверки профильным преподавателем.
       </div>
     </div>

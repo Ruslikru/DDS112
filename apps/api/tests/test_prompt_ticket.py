@@ -161,7 +161,7 @@ def test_long_description_without_model_keeps_place_people_and_scene(author,monk
     assert not any(word in story for word in ('Барселона','Месси','Игорь','мужчина.','квартира 10','Адрес'))
     assert 'Пострадавших людей: 2.' in story and 'Иван Петров Ильдарович 2006 года рождения' in story
     assert {'Служба 101','Служба 102','Служба 103','Служба 104'}<=set(task['services'])
-    assert 'Барселона' not in ticket['title'] and 'квартира' not in ticket['title'].split('—')[-1]
+    assert ticket['title']=='пожар: квартира: улица Лионелли Месси, дом 21А'
     assert 'Москва' not in task['intro']
     assert post(author,'/tickets',ticket).status_code==200
 

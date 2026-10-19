@@ -33,6 +33,8 @@ def prepare(data,db,owner,preserve=False):
     from .caller import enrich_task
     result['tasks']=[enrich_task(t) for t in result['tasks']]
     for task in result['tasks']:
+        from .call_audio import prepare_task
+        prepare_task(task)
         if preserve:
             old=next((db.get(VoiceJob,line['voice_key']) for c in task.get('contacts',[]) for line in c.get('voice_lines',[]) if line.get('voice_key') and db.get(VoiceJob,line['voice_key'])),None)
             if old:cfg=old.data['settings']
@@ -77,6 +79,8 @@ def readiness(data,db):
 def attach_audio(data,db):
     result=copy.deepcopy(data)
     for task in result.get('tasks',[result]):
+        from .call_audio import prepare_task
+        prepare_task(task)
         for event in speech_items(task):
             job=db.get(VoiceJob,event.get('voice_key',''))
             if job and job.status=='ready':event['audio_id']=job.audio_id
@@ -142,6 +146,11 @@ def recover():
 
 
 def ensure_ready(data,db):
+    from .call_audio import prepare_task,ensure_assets
+    try:
+        for task in data.get('tasks',[data]):
+            if task.get('mode')=='dds':ensure_assets(prepare_task(copy.deepcopy(task)))
+    except (OSError,ValueError,KeyError):m.fail('Не удалось подготовить звуковое окружение звонка. Проверьте файлы программы.',409)
     status=readiness(data,db)
     if not status['ready']:
         label='Ошибка генерации звука. Попросите преподавателя проверить очередь.' if status['failed'] else 'Звук для билета ещё генерируется.'
@@ -189,10 +198,9 @@ class TranscribeIn(BaseModel):
 @router.post('/transcribe')
 def transcribe(data:TranscribeIn,u=Depends(m.current),db=Depends(m.getdb)):
     """Speech to text on the server for the teacher assistant: a browser without the native bridge, same length limit as the bridge."""
-    m.staff(u)
     from .assistant import speech_prompt
-    # The assistant uses the bigger Whisper model when it is installed and a hint with the command vocabulary and service names: short commands like «билет» or «служба сто два» are otherwise mis-heard.
-    try:value=runtime.transcribe(data.audio,prompt=speech_prompt(db),model='base')
+    # Распознавание команд преподавателя использует локальную GigaAM.
+    try:value=runtime.transcribe(data.audio,prompt=speech_prompt(db,u) if u.role in ('teacher','admin') else '',model='gigaam')
     except ValueError as e:m.fail(str(e))
     except Exception as e:
         # An empty recording is the speaker's problem, not an outage: Whisper reports it as an error string.

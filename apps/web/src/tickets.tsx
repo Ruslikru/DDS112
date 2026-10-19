@@ -50,6 +50,7 @@ import {
   services,
   labels,
   useLoad,
+  useOperator112,
   Notice,
   Badge,
   Field,
@@ -57,6 +58,7 @@ import {
   Heading,
 } from "./shared";
 export function Tickets() {
+  const operator112=useOperator112();
   const { data, error, load } = useLoad("/tickets"),
     u = React.useContext(UserContext),
     [filter, setFilter] = useState(""),
@@ -82,7 +84,7 @@ export function Tickets() {
   const visible = latest.filter(item => item.archived === archive &&
     `${item.ticket_id} ${item.data.title}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase()) &&
     (!service || item.data.tasks.some((task: Obj) => (task.services || []).includes(service) || task.own_service === service)) &&
-    (!mode || item.data.tasks.some((task: Obj) => task.mode === mode)) &&
+    (!operator112 || !mode || item.data.tasks.some((task: Obj) => task.mode === mode)) &&
     (!difficulty || ticketStars(item.data) === Number(difficulty)));
   visible.sort((a, b) => order === "oldest" ? a.ticket_id - b.ticket_id : order === "title" ? a.data.title.localeCompare(b.data.title, "ru") : order === 'difficulty-asc' ? ticketStars(a.data)-ticketStars(b.data) || a.ticket_id-b.ticket_id : order === 'difficulty-desc' ? ticketStars(b.data)-ticketStars(a.data) || b.ticket_id-a.ticket_id : b.ticket_id - a.ticket_id);
   async function importJson(file?: File) {
@@ -102,7 +104,7 @@ export function Tickets() {
       <Heading eyebrow="УЧЕБНЫЙ МАТЕРИАЛ" title="Библиотека билетов">
         {u.role !== "student" && <div className="ticket-create-actions"><Link to="/tickets/new" className="button"><Plus size={18}/>Создать билет вручную</Link><button type="button" className="primary" onClick={()=>{setWizardSeed(undefined);setAssistantOpen(true);}}>Создать билет с помощью ИИ</button><button type="button" className="primary" onClick={()=>setPromptOpen(true)}>Создать билет по описанию</button></div>}
       </Heading>
-      <Notice>{error || err}</Notice>{trial&&<ArmDialog title="Пройти билет" onClose={()=>setTrial(null)}><p>{trial.data.title}</p>{trial.data.tasks.map((t:Obj,i:number)=><button key={t.id} disabled={trying} onClick={()=>tryTask(i)}>{t.title} · {t.mode==='dds'?'ДДС':'112'}</button>)}</ArmDialog>}
+      <Notice>{error || err}</Notice>{trial&&<ArmDialog title="Пройти билет" onClose={()=>setTrial(null)}><p>{trial.data.title}</p>{trial.data.tasks.map((t:Obj,i:number)=>!operator112&&t.mode!=='dds'?null:<button key={t.id} disabled={trying} onClick={()=>tryTask(i)}>{t.title}{operator112&&` · ${t.mode==='dds'?'ДДС':'112'}`}</button>)}</ArmDialog>}
       {u.role !== 'student' && assistantOpen && <AIDraft initial={wizardSeed} onClose={()=>setAssistantOpen(false)}/>}
       {u.role !== 'student' && promptOpen && <PromptDraft onClose={()=>setPromptOpen(false)} onWizard={initial=>{setPromptOpen(false);setWizardSeed(initial);setAssistantOpen(true);}}/>}
       <div className="ticket-list-tabs" role="tablist" aria-label="Состояние билетов"><button role="tab" aria-selected={!archive} className={!archive ? 'active' : ''} onClick={()=>setArchive(false)}>Билеты</button><button role="tab" aria-selected={archive} className={archive ? 'active' : ''} onClick={()=>setArchive(true)}>Архив</button></div>
@@ -110,7 +112,7 @@ export function Tickets() {
         <label className="button ticket-import">{importing ? 'Разбираем файл…' : 'Импорт JSON'}<input type="file" accept=".json,application/json" hidden disabled={importing} onChange={event=>{void importJson(event.target.files?.[0]);event.target.value='';}}/></label>
         <label className="ticket-list-search"><Search size={16}/><input aria-label="Поиск билета" placeholder="Номер или название" value={filter} onChange={event=>setFilter(event.target.value)}/></label>
         <select aria-label="Служба" value={service} onChange={event=>setService(event.target.value)}><option value="">Все службы</option>{serviceNames.map(name=><option key={name}>{name}</option>)}</select>
-        <select aria-label="Режим" value={mode} onChange={event=>setMode(event.target.value)}><option value="">112 и ДДС</option><option value="112">112</option><option value="dds">ДДС</option></select>
+        {operator112&&<select aria-label="Режим" value={mode} onChange={event=>setMode(event.target.value)}><option value="">112 и ДДС</option><option value="112">112</option><option value="dds">ДДС</option></select>}
         <select aria-label="Сложность" value={difficulty} onChange={event=>setDifficulty(event.target.value)}><option value="">Любая сложность</option>{[1,2,3,4,5].map(stars=><option key={stars} value={stars}>{starLabel(stars)}</option>)}</select>
         <select aria-label="Порядок" value={order} onChange={event=>setOrder(event.target.value)}><option value="newest">Новые сначала</option><option value="oldest">По номеру</option><option value="title">По названию</option><option value="difficulty-asc">Сначала проще ★→★★★★★</option><option value="difficulty-desc">Сначала сложнее ★★★★★→★</option></select>
       </div>
@@ -168,7 +170,7 @@ function ticketSummary(data: Obj) {
 const newTask = () => ({
   id: uuid(),
   title: "Новое задание",
-  mode: "112",
+  mode: "dds",
   category: "Происшествие",
   intro: "Опишите исходную реплику заявителя",
   phone: "+7 (000) 000-00-01",
@@ -188,6 +190,7 @@ const newTask = () => ({
   criteria: [],
 });
 export function TicketEditor() {
+  const operator112=useOperator112();
   const { id } = useParams(),
     u = React.useContext(UserContext),
     nav = useNavigate(),
@@ -388,7 +391,7 @@ export function TicketEditor() {
                   onChange={(e) => updateTask("title", e.target.value)}
                 />
               </Field>
-              <Field label="Режим">
+              {operator112&&<Field label="Режим">
                 <select
                   value={task.mode}
                   onChange={(e) => updateTask("mode", e.target.value)}
@@ -396,7 +399,7 @@ export function TicketEditor() {
                   <option value="112">Оператор 112</option>
                   <option value="dds">Диспетчер ДДС</option>
                 </select>
-              </Field>
+              </Field>}
               <Field label="Категория для статистики">
                 <input
                   value={task.category}

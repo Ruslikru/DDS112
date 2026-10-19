@@ -326,7 +326,8 @@ def prompt_ticket(data:PromptIn,u=Depends(m.current),db=Depends(m.getdb)):
         suggested=[s for s in automatic_services(db,{'incident_type':incident,'description':description or text,'traits':traits,'victims':victims}) if s in names]
         own_service=suggested[0] if suggested else 'ДДС района' if 'ДДС района' in names else sorted(names)[0]
         sources['own_service']='computed'
-    mode=slots.get('mode') if slots.get('mode') in ('112','dds') else 'dds'
+    from .training_modes import operator_112_enabled
+    mode=slots.get('mode') if operator_112_enabled(db) and slots.get('mode') in ('112','dds') else 'dds'
     sources.setdefault('mode','default')
     stars=int(slots.get('difficulty') or 0)
     if not stars:sources['difficulty']='computed'

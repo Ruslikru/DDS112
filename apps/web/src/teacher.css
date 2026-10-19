@@ -58,8 +58,8 @@
 .student-profile th{background:#e0e5e7!important;color:#425963!important;font-size:11px}
 .teacher-page .score-chart meter{height:9px;min-width:60px}
 @media(max-width:900px){.teacher-desktops{grid-template-columns:1fr}.teacher-roster{order:0}.teacher-page .teacher-modes{grid-template-columns:repeat(2,minmax(0,1fr))}.student-profile .profile-stats{grid-template-columns:1fr;gap:12px}.teacher-page>.classroom-title{flex-wrap:wrap}}
-.demo-accounts .demo-account-student{flex-basis:100%;display:flex!important;align-items:center;justify-content:space-between;gap:12px;text-align:left}
-.demo-accounts .demo-account-student small{font-size:11px;font-weight:400;line-height:1.4}
+.demo-accounts .demo-account-student{flex-basis:100%;justify-content:space-between;text-align:left}
+.demo-accounts .demo-account-student small{font-size:11px;font-weight:400;line-height:1.4;color:#d5d5d5}
 
 /* Shared classroom presentation, matching the administrative panels. */
 .lessons-page{max-width:1150px;margin:auto;padding:26px}
@@ -82,3 +82,5 @@
 .student-coach>button:not(.coach-close){background:#30383c!important;color:white!important;border:0!important}
 .student-hint-target{outline:2px solid #ffe52d!important;outline-offset:3px}
 .mini-drill{background:#24303488!important}.mini-drill article{background:#ffe52d!important;color:#30383c!important;border-radius:4px!important;max-width:640px;padding:28px!important}.mini-drill h1{font-size:21px!important;line-height:1.4}.mini-drill .choice-line{padding:12px;background:#fff8;border:1px solid #b8a841;margin:10px 0}
+
+.teacher-error-summary>p{max-width:850px;line-height:1.55}.teacher-error-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.teacher-error-list article{padding:16px;border:1px solid #c5cfd4;background:#f7f9fa}.teacher-error-list h3{font-size:16px;margin:0 0 8px}.teacher-error-list p{font-size:14px;line-height:1.5;margin:0}

@@ -15,7 +15,7 @@ def seed(db):
     owner=db.scalar(select(User).where(User.role=='admin'))
     if not owner:return
     existing={t.get('onboarding') for v in db.scalars(select(TicketVersion)) for t in v.data.get('tasks',[])}
-    for mode in ('112','dds'):
+    for mode in ('dds',):
         for n in (1,2):
             key=f'{mode}-{n}'
             if key in existing:continue
@@ -56,10 +56,12 @@ def seed(db):
 @router.get('/tutorials')
 def catalog(u=Depends(m.current),db=Depends(m.getdb)):
     from .voice import readiness
+    from .training_modes import operator_112_enabled
+    allow_112=operator_112_enabled(db)
     rows=[]
     for v in db.scalars(select(TicketVersion).where(TicketVersion.published==True)):
         if not catalog_available(v.data):continue
-        if not v.data.get('tasks'):continue
+        if not v.data.get('tasks') or (not allow_112 and v.data['tasks'][0].get('mode')!='dds'):continue
         key=v.data['tasks'][0].get('onboarding')
         if not key or any(x['key']==key for x in rows):continue
         attempts=db.scalars(select(Attempt).join(Assignment).where(Assignment.version_id==v.id,Attempt.student_id==u.id)).all()
@@ -70,6 +72,8 @@ def catalog(u=Depends(m.current),db=Depends(m.getdb)):
 def start_tutorial(id:int,u=Depends(m.current),db=Depends(m.getdb)):
     v=db.get(TicketVersion,id)
     if not v or not v.published or not v.data.get('tasks') or not v.data['tasks'][0].get('onboarding'):m.fail('Вводный билет не найден',404)
+    from .training_modes import operator_112_enabled
+    if not operator_112_enabled(db) and v.data['tasks'][0].get('mode')!='dds':m.fail('Режим 112 отключён администратором')
     if not catalog_available(v.data):m.fail('Вводный билет недоступен в тестовом каталоге',404)
     a=db.scalar(select(Assignment).where(Assignment.version_id==id,Assignment.student_id==u.id))
     if not a:

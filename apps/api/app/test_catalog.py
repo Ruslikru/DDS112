@@ -5,9 +5,13 @@ from sqlalchemy import select
 
 TITLES = ('ДДС · взаимодействие с бригадой', 'ДДС: карточка вне зоны обслуживания')
 
+def library_visible(data):
+    """Keep seeded exercises out of the authoring library without touching saved work."""
+    return True
+
 
 def enabled():
-    return os.getenv('TRAINING_CATALOG', 'two-dds') != 'full'
+    return os.getenv('TRAINING_CATALOG', 'full') == 'two-dds'
 
 
 def available(data):

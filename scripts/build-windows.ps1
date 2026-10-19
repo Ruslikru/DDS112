@@ -23,11 +23,13 @@ try {
     if ($LASTEXITCODE) { throw 'Web build failed' }
     & $python scripts/desktop_notices.py
     if ($LASTEXITCODE) { throw 'License notices failed' }
-    & $python -m PyInstaller packaging/desktop.spec --noconfirm --distpath build/desktop-dist --workpath build/desktop-work
+    & $python -m PyInstaller packaging/desktop.spec --noconfirm --distpath build/desktop-dist-0.8.25 --workpath build/desktop-work-0.8.25
     if ($LASTEXITCODE) { throw 'PyInstaller failed' }
     # The bundled speech Python must not import packages from the build PC.
-    & (Join-Path $projectRoot 'local_ai/voice/runtime/python.exe') -I scripts/check_voice_runtime.py
+    & (Join-Path $projectRoot 'local_ai/voice/runtime-0.8.24b/python.exe') -I scripts/check_voice_runtime.py
     if ($LASTEXITCODE) { throw 'Voice runtime is not self-contained: run scripts/prepare-voice-runtime.ps1' }
+    & (Join-Path $projectRoot 'local_ai/voice/runtime-0.8.24b/python.exe') -I scripts/prepare_gigaam.py
+    if ($LASTEXITCODE) { throw 'GigaAM model could not be prepared' }
     & $InnoCompiler packaging/installer.iss
     if ($LASTEXITCODE) { throw 'Installer compilation failed' }
     $versionLine=Get-Content packaging/installer.iss | Select-String '^#define AppVersion "([^"]+)"$'

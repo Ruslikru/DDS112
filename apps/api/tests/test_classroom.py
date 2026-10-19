@@ -72,8 +72,12 @@ def test_workstation_admission_and_classroom_permissions():
         assert student.get('/api/registry').status_code==403
         assert teacher.get(f'/api/classroom/links/{link}/signals').status_code==403
 
-def test_cooperative_handoff_and_no_duplicate_or_simulated_status():
+def test_cooperative_handoff_and_no_duplicate_or_simulated_status(monkeypatch):
+    monkeypatch.setenv('TRAINING_LIBRARY','all')
     with TestClient(app) as c:
+        login(c,'admin')
+        assert post(c,'/management/training-modes',{'operator112':True}).status_code==200
+        post(c,'/logout')
         login(c,'teacher');users=c.get('/api/users').json();s1=next(u['id'] for u in users if u['login']=='student');s2=next(u['id'] for u in users if u['login']=='student2')
         versions=c.get('/api/tickets').json();v=next(v for v in versions if v['published'] and v['data']['tasks'][0]['mode']=='112')
         for sid in (s1,s2):
@@ -95,6 +99,8 @@ def test_cooperative_handoff_and_no_duplicate_or_simulated_status():
         login(c,'teacher');p=c.get('/api/attempts/'+str(source)).json()
         assert p['state']['services']['ДДС района'][-1]['status']=='Принята'
         post(c,f'/lessons/{lid}/stop')
+        post(c,'/logout');login(c,'admin')
+        assert post(c,'/management/training-modes',{'operator112':False}).status_code==200
 
 def test_memory_is_scoped_and_revocable():
     from apps.api.app.answer_memory import remember, examples

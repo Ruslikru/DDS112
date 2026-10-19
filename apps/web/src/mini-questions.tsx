@@ -1,10 +1,11 @@
 import React, {useState} from 'react';
-import {api, Notice, useLoad, type Obj} from './shared';
+import {api, Notice, useLoad, useOperator112, type Obj} from './shared';
 import './mini-questions.css';
 
-const blank={prompt:'',kind:'text',answer:'',options:[] as string[],level:1,active:true,audio_text:'',voice_gender:'female'};
+const blank={prompt:'',kind:'text',answer:'',options:[] as string[],level:1,active:true,audio_text:'',voice_gender:'female',mode:'dds'};
 
 export function MiniQuestions(){
+  const operator112=useOperator112();
   const {data:questions,error,load}=useLoad('/learning/questions',3000);
   const [edit,setEdit]=useState<Obj>(blank);
   const [message,setMessage]=useState('');
@@ -25,6 +26,7 @@ export function MiniQuestions(){
     <form className="mini-question-form" onSubmit={save}>
       <label>Вопрос<input required value={edit.prompt} onChange={event=>setEdit({...edit,prompt:event.target.value})}/></label>
       <div className="mini-question-pair"><label>Тип<select value={edit.kind} onChange={event=>setEdit({...edit,kind:event.target.value})}><option value="text">Написать текст</option><option value="choice">Выбрать вариант</option><option value="hotkey">Нажать клавиши</option></select></label><label>Минимальный уровень<input type="number" min={0} max={4} value={edit.level} onChange={event=>setEdit({...edit,level:Number(event.target.value)})}/></label></div>
+      {operator112&&<label>Режим<select value={edit.mode||'dds'} onChange={event=>setEdit({...edit,mode:event.target.value})}><option value="dds">ДДС</option><option value="112">112</option></select></label>}
       <label>Текст для озвучки (не показывается ученику)<textarea value={edit.audio_text||''} onChange={e=>setEdit({...edit,audio_text:e.target.value})} placeholder="Например: Москва, улица Декабристов, дом 28"/></label><label>Голос<select value={edit.voice_gender||'female'} onChange={e=>setEdit({...edit,voice_gender:e.target.value})}><option value="female">Женский</option><option value="male">Мужской</option></select></label><p>При сохранении запись добавится в очередь генерации. Вопрос появится в обучении после готовности звука.</p>
       <label>Правильный ответ<input required value={edit.answer} onChange={event=>setEdit({...edit,answer:event.target.value})}/></label>
       {edit.kind==='choice'&&<label>Варианты, каждый с новой строки<textarea value={edit.options.join('\n')} onChange={event=>setEdit({...edit,options:event.target.value.split('\n')})}/></label>}

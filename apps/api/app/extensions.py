@@ -38,10 +38,13 @@ def lesson_access(db,u,id,lock=False):
 
 @router.get('/lessons')
 def lessons(u=Depends(current),db=Depends(getdb)):
+    from .training_modes import operator_112_enabled
+    allow_112=operator_112_enabled(db)
     output=[]
     for l in db.scalars(select(Lesson).order_by(Lesson.id.desc())):
         if u.role=='student' and u.id not in l.config['students']: continue
         if u.role=='teacher' and l.teacher_id!=u.id: continue
+        if not allow_112 and any(any(task.get('mode')!='dds' for task in db.get(TicketVersion,a.version_id).data.get('tasks',[])) for a in db.scalars(select(Assignment).where(Assignment.lesson_id==l.id))):continue
         members=[]
         for sid in l.config['students']:
             if u.role=='student' and sid!=u.id: continue
@@ -58,6 +61,9 @@ def lessons(u=Depends(current),db=Depends(getdb)):
 @router.post('/lessons')
 def create_lesson(data:LessonIn,u=Depends(current),db=Depends(getdb)):
     staff(u)
+    from .training_modes import operator_112_enabled
+    allow_112=operator_112_enabled(db)
+    if not allow_112 and data.delivery_mode=='cooperative':fail('Режим 112 отключён администратором')
     from .voice import readiness,ensure_ready
     for sid in set(data.students):
         s=db.get(User,sid)
@@ -65,12 +71,13 @@ def create_lesson(data:LessonIn,u=Depends(current),db=Depends(getdb)):
     if data.delivery_mode in ('adaptive','sprint'):
         latest={}
         for version in catalog_versions(db.scalars(select(TicketVersion).join(Ticket).where(TicketVersion.published==True,Ticket.archived==False).order_by(TicketVersion.id.desc()))):
-            if readiness(version.data,db)['ready']:latest.setdefault(version.ticket_id,version.id)
+            if (allow_112 or all(task.get('mode')=='dds' for task in version.data.get('tasks',[]))) and readiness(version.data,db)['ready']:latest.setdefault(version.ticket_id,version.id)
         data.versions=list(latest.values())
     tasks=[]
     for vid in dict.fromkeys(data.versions):
         v=db.get(TicketVersion,vid)
         if not v or not v.published or db.get(Ticket,v.ticket_id).archived: fail('Билет должен быть опубликован')
+        if not allow_112 and any(task.get('mode')!='dds' for task in v.data.get('tasks',[])):fail('Режим 112 отключён администратором')
         if not catalog_available(v.data):fail('В тестовом каталоге доступны только два билета ДДС')
         ensure_ready(v.data,db)
         tasks += [{**copy.deepcopy(t),'difficulty_level':(v.data.get('difficulty_stars') or {'Базовый':1,'Средний':3,'Сложный':5}.get(v.data.get('difficulty'),1))} for t in v.data['tasks'] if not data.categories or t['category'] in data.categories]
@@ -235,9 +242,11 @@ def add_material(data:MaterialIn,u=Depends(current),db=Depends(getdb)):
 
 @router.get('/registry')
 def registry(u=Depends(current),db=Depends(getdb)):
+    from .training_modes import operator_112_enabled
+    allow_112=operator_112_enabled(db)
     out=[]
     for p in db.scalars(select(Attempt).order_by(Attempt.id.desc())):
-        if not visible(db,u,p.student_id): continue
+        if not visible(db,u,p.student_id) or (not allow_112 and p.snapshot.get('mode')!='dds'): continue
         out.append({**journal_fields(p),'id':p.id,'student':db.get(User,p.student_id).name,'mode':p.snapshot['mode'],'started_at':p.started_at,'status':p.status,
           'incident_type':p.card.get('incident_type',''),'address':', '.join(str(p.card.get(k,'')) for k in ['city','street','house'] if p.card.get(k)),
           'description':p.card.get('description',''),'services':{k:v[-1]['status'] for k,v in p.state.get('services',{}).items() if v}})

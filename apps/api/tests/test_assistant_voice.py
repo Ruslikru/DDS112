@@ -14,8 +14,8 @@ def test_transcribe_route_uses_runtime_and_requires_staff(monkeypatch):
         login(c,'teacher')
         r=post(c,'/voice/transcribe',{'audio':audio});assert r.status_code==200,r.text
         assert r.json()=={'seconds':.2,'model':'tiny','text':'Покажи журнал.'}
-        # The assistant asks for the bigger model and hints the command vocabulary, so «билет» is not heard as «белет».
-        assert len(seen)==1 and seen[0][0]==audio and seen[0][1]['model']=='base' and 'билеты' in seen[0][1]['prompt']
+        # Команды преподавателя распознаёт GigaAM; словарь содержит названия страниц.
+        assert len(seen)==1 and seen[0][0]==audio and seen[0][1]['model']=='gigaam' and 'билет ДДС' in seen[0][1]['prompt']
         assert post(c,'/voice/transcribe',{'audio':''}).status_code==422
         post(c,'/logout');login(c,'student')
         assert post(c,'/voice/transcribe',{'audio':audio}).status_code==403
