@@ -93,12 +93,19 @@ def test_nearest_type_and_choice_among_candidates(author,monkeypatch):
     model(monkeypatch,empty(incident='пожар машины'))
     body=generate(author,'Пожар машины во дворе')
     meta=body['meta']
-    assert meta['sources']['incident_type'] in ('prompt','nearest')
-    if meta['candidates']:
-        chosen=meta['candidates'][-1]
-        again=generate(author,'Пожар машины во дворе',incident_type=chosen)
-        assert again['meta']['slots']['incident_type']==chosen and again['meta']['sources']['incident_type']=='prompt'
+    assert meta['sources']['incident_type']=='nearest' and meta['slots']['incident_type']=='пожар: машина'
+    assert len(meta['candidates'])>1 and meta['candidates'][0]=='пожар: машина' and 'Служба 101' in body['data']['tasks'][0]['services']
+    chosen=next(title for title in meta['candidates'][1:] if title!='пожар: машина')
+    again=generate(author,'Пожар машины во дворе',incident_type=chosen)
+    assert again['meta']['slots']['incident_type']==chosen and again['meta']['sources']['incident_type']=='chosen'
     assert post(author,'/ai/prompt',{'prompt':'Пожар машины во дворе','incident_type':'несуществующий тип'}).status_code==400
+
+def test_nearest_type_prefers_titles_without_extra_words(author,monkeypatch):
+    model(monkeypatch,empty())
+    meta=generate(author,'Застрял лифт в жилом доме, внутри двое взрослых')['meta']
+    assert meta['slots']['incident_type']=='Застревание в лифте',meta['candidates']
+    meta=generate(author,'Прорыв трубы в подвале, вода')['meta']
+    assert 'прорыв' in meta['slots']['incident_type'].casefold(),meta['candidates']
 
 def test_without_model_rules_and_template_still_give_a_draft(author,monkeypatch):
     from apps.api.app import prompt_ticket
@@ -126,3 +133,12 @@ def test_students_cannot_generate():
     with TestClient(app) as c:
         login(c,'student')
         assert post(c,'/ai/prompt',{'prompt':'Пожар в подъезде жилого дома'}).status_code==403
+
+def test_model_enums_count_only_when_the_request_mentions_them(author,monkeypatch):
+    model(monkeypatch,empty(incident='запах газа',own_service='ДДС района',mode='dds',victims='unknown',difficulty=5,animals='yes',
+                            description='В подъезде сильно пахнет газом. Жильцы жалуются на головную боль.'))
+    body=generate(author,'Запах газа в подъезде, жильцы жалуются на головную боль.')
+    meta=body['meta'];task=body['data']['tasks'][0]
+    assert meta['sources']['own_service']=='computed' and task['own_service']=='Служба 104'
+    assert meta['sources']['mode']=='default' and meta['sources']['victims']=='default' and meta['sources']['difficulty']=='computed'
+    assert not meta['slots']['animals'] and meta['sources']['object']=='computed'

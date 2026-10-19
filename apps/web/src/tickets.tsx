@@ -2,6 +2,7 @@ import {ArmDialog} from './arm-ui';
 import {VoiceDraft} from './voice';
 import { TextCheck } from './shared';
 import { DraftWizard as AIDraft } from './draft-wizard';
+import { PromptDraft } from './prompt-draft';
 import {ticketStars,legacyDifficulty,starLabel} from './ticket-difficulty';
 import React, { useEffect, useState, useRef } from "react";
 
@@ -70,6 +71,9 @@ export function Tickets() {
   // The teacher assistant opens the wizard prefilled through navigation state.
   const wizardInitial = (useLocation().state as Obj|null)?.wizard as Obj|undefined;
   const [assistantOpen, setAssistantOpen] = useState(!!wizardInitial);
+  const [promptOpen, setPromptOpen] = useState(false);
+  // «Уточнить в мастере» from the description form hands its facts to the wizard.
+  const [wizardSeed, setWizardSeed] = useState<Obj|undefined>(wizardInitial);
   const [trial,setTrial]=useState<Obj|null>(null);
   const [trying,setTrying]=useState(false);
   async function tryTask(index:number){setTrying(true);try{const p=await api(`/tickets/${trial!.id}/try`,"POST",{task_index:index});nav("/attempts/"+p.id);}catch(e:any){setErr(e.message);setTrial(null);}finally{setTrying(false);}}
@@ -96,10 +100,11 @@ export function Tickets() {
   return (
     <div className="page">
       <Heading eyebrow="УЧЕБНЫЙ МАТЕРИАЛ" title="Библиотека билетов">
-        {u.role !== "student" && <div className="ticket-create-actions"><Link to="/tickets/new" className="button"><Plus size={18}/>Создать билет вручную</Link><button type="button" className="primary" onClick={()=>setAssistantOpen(true)}>Создать билет с помощью ИИ</button></div>}
+        {u.role !== "student" && <div className="ticket-create-actions"><Link to="/tickets/new" className="button"><Plus size={18}/>Создать билет вручную</Link><button type="button" className="primary" onClick={()=>{setWizardSeed(undefined);setAssistantOpen(true);}}>Создать билет с помощью ИИ</button><button type="button" className="primary" onClick={()=>setPromptOpen(true)}>Создать билет по описанию</button></div>}
       </Heading>
       <Notice>{error || err}</Notice>{trial&&<ArmDialog title="Пройти билет" onClose={()=>setTrial(null)}><p>{trial.data.title}</p>{trial.data.tasks.map((t:Obj,i:number)=><button key={t.id} disabled={trying} onClick={()=>tryTask(i)}>{t.title} · {t.mode==='dds'?'ДДС':'112'}</button>)}</ArmDialog>}
-      {u.role !== 'student' && assistantOpen && <AIDraft initial={wizardInitial} onClose={()=>setAssistantOpen(false)}/>}
+      {u.role !== 'student' && assistantOpen && <AIDraft initial={wizardSeed} onClose={()=>setAssistantOpen(false)}/>}
+      {u.role !== 'student' && promptOpen && <PromptDraft onClose={()=>setPromptOpen(false)} onWizard={initial=>{setPromptOpen(false);setWizardSeed(initial);setAssistantOpen(true);}}/>}
       <div className="ticket-list-tabs" role="tablist" aria-label="Состояние билетов"><button role="tab" aria-selected={!archive} className={!archive ? 'active' : ''} onClick={()=>setArchive(false)}>Билеты</button><button role="tab" aria-selected={archive} className={archive ? 'active' : ''} onClick={()=>setArchive(true)}>Архив</button></div>
       <div className="ticket-list-toolbar">
         <label className="button ticket-import">{importing ? 'Разбираем файл…' : 'Импорт JSON'}<input type="file" accept=".json,application/json" hidden disabled={importing} onChange={event=>{void importJson(event.target.files?.[0]);event.target.value='';}}/></label>

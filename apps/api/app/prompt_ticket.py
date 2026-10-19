@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from . import main as m
 from .voice import runtime
 from .scenario_facts import GEOGRAPHY_PROMPT, scene_seed, scene_matches, positive_facts
-from .assistant_tickets import (GENERIC_TOPICS, active_services, classifier_search, classifier_traits, confirmed_by_text,
+from .assistant_tickets import (GENERIC_TOPICS, active_services, classifier_search, classifier_traits, confirmed_by_text, match_service,
                                 normalize, parse_create, resolve_incident, service_tags, stem, traits_in_text)
 
 router=APIRouter(prefix='/api')
@@ -33,7 +33,7 @@ EXTRACT_PROMPT=(GEOGRAPHY_PROMPT+' You turn a teacher\'s Russian request into fa
     'own_service: only if the request names the service. mode: 112 when a 112 operator is trained, dds when a service dispatcher is trained. '
     'victims: yes, no or unknown; victims_count: number of injured people. difficulty: stars 1–5 if stated. '
     'street, house, caller_name: only if explicitly given. object: the place in Russian (школа, магазин, жилой дом) if stated. '
-    'description: 2 or 3 short sentences in Russian, what a witness sees at the scene, built only from the request; '
+    'description: 2 or 3 short sentences in Russian, what a witness sees at the scene, built only from the request; it must name what happened; '
     'no address, no number of injured, no responders and no rescue actions. Return JSON only.')
 
 def extract_schema(services):
@@ -67,12 +67,15 @@ def model_facts(text,services):
     out={}
     incident=str(value.get('incident') or '').strip()
     if incident and confirmed_by_text(incident,text):out['incident_query']=incident[:120]
-    if value.get('own_service') in names:out['own_service']=value['own_service']
-    if value.get('mode') in ('112','dds'):out['mode']=value['mode']
-    if value.get('victims') in ('yes','no','unknown'):out['victims']=value['victims']
-    if out.get('victims')=='yes' and isinstance(value.get('victims_count'),int) and value['victims_count']>0:out['victims_count']=value['victims_count']
-    if value.get('animals')=='yes':out['animals']=True
-    if isinstance(value.get('difficulty'),int) and 1<=value['difficulty']<=5:out['difficulty']=value['difficulty']
+    # A small model fills every enum it is given; a value counts only when the request has words about it.
+    t=normalize(text)
+    if value.get('own_service') in names and match_service(text,[s for s in services if s.name==value['own_service']]):out['own_service']=value['own_service']
+    if value.get('mode') in ('112','dds') and re.search(r'112|ддс|оператор|диспетчер|служб',t):out['mode']=value['mode']
+    if value.get('victims') in ('yes','no') or value.get('victims')=='unknown' and re.search(r'пострада|ранен|жертв',t):out['victims']=value['victims']
+    if out.get('victims')=='yes' and isinstance(value.get('victims_count'),int) and value['victims_count']>0 and re.search(r'\d|один|одн|дво|тро|два|две|три|четыр|пят|несколько',t):
+        out['victims_count']=value['victims_count']
+    if value.get('animals')=='yes' and re.search(r'животн|собак|кошк|\bкот|\bпес|\bпёс|лошад|скот|птиц',t):out['animals']=True
+    if isinstance(value.get('difficulty'),int) and 1<=value['difficulty']<=5 and re.search(r'звезд|сложн|уровн|прост|легк|средн',t):out['difficulty']=value['difficulty']
     street=str(value.get('street') or '').strip(' ,.')
     house=str(value.get('house') or '').strip(' ,.')
     if street and stated(street,text):
@@ -82,6 +85,8 @@ def model_facts(text,services):
     place=str(value.get('object') or '').strip()
     if place and confirmed_by_text(place,text):out['object']=place[:1].upper()+place[1:80]
     description=re.sub(r'\s+',' ',str(value.get('description') or '')).strip()
+    # Casualties are appended by the wizard from the victims field; the model's own words about them would repeat or contradict it.
+    description=' '.join(s for s in re.split(r'(?<=[.!?])\s+',description) if not re.search(r'пострада|ранен',s.casefold()))
     if 20<=len(description)<=800:out['description']=description
     return out,meta
 
@@ -90,9 +95,9 @@ def animals_in(text):
     return bool(re.search(r'животн|собак|кошк|\bкот\b|\bпес\b|\bпёс\b|лошад|скот',t))
 
 # Words of a request that say how to build the ticket, not what happened.
-META_WORDS=re.compile(r'^(созда|добав|сдела|сгенер|придум|нуж|хоч|дава|билет|учебн|сценари|сложн|звезд|уровн|режим|оператор|диспетчер|служб|'
-                      r'пострадав|ранен|неизвест|есть|нет|без|для|про|это|какой|какая|любой|пожалуйст|звонит|заявит|очевид|сообща|'
-                      r'улиц|проспект|переул|шоссе|набережн|проезд|бульвар|дом|доме|жил|рядом|возле|около|очень|один|одна|двое|трое|два|две|три)')
+META_WORDS=re.compile(r'^(?:(?:созда|добав|сдела|сгенер|придум|нужн|нужен|хоч|дава|билет|учебн|сценари|сложн|звезд|уровн|режим|оператор|диспетчер|служб|'
+                      r'пострадав|ранен|неизвест|пожалуйст|звонит|заявит|очевид|сообща|улиц|проспект|переул|шоссе|набережн|проезд|бульвар|жил|рядом|возле|около|очень)\w*'
+                      r'|есть|нет|без|для|про|это|как\w*|любой|дом|доме|дома|один|одна|двое|трое|два|две|три)$')
 
 def request_words(text):
     return [w for w in re.findall(r'[а-яa-z0-9]+',normalize(text)) if len(w)>=3 and not META_WORDS.match(w)]
@@ -101,10 +106,11 @@ def word_match(a,b):
     return a.startswith(stem(b)) or b.startswith(stem(a))
 
 def score(title,words):
-    """How well an incident title is covered by the request: (matched words, share of the title)."""
+    """How well an incident title is covered by the request: words that match, minus half of those that do not
+    («Застревание в лифте (ребенок без взрослых)» loses to «Застревание в лифте» for «двое взрослых»), then the share."""
     title_words=[w for w in re.findall(r'[а-яa-z0-9]+',normalize(title)) if len(w)>=3]
     matched=sum(any(word_match(t,w) for w in words) for t in title_words)
-    return matched,matched/max(1,len(title_words))
+    return matched-(len(title_words)-matched)/2,matched/max(1,len(title_words))
 
 def nearest_incidents(db,text,services,own_service,limit=8):
     """Tags and classifier titles ranked by overlap with the request; tags of the chosen service first on ties."""
@@ -117,8 +123,8 @@ def nearest_incidents(db,text,services,own_service,limit=8):
         key=normalize(title)
         if key in seen or key in GENERIC_TOPICS:continue
         seen.add(key)
-        matched,share=score(title,words)
-        if matched:ranked.append(((matched,share,is_tag,-len(title)),title))
+        value,share=score(title,words)
+        if share:ranked.append(((value,share,is_tag,-len(title)),title))
     ranked.sort(key=lambda item:item[0],reverse=True)
     return [title for _,title in ranked[:limit]]
 
@@ -206,7 +212,7 @@ def prompt_ticket(data:PromptIn,u=Depends(m.current),db=Depends(m.getdb)):
     if data.incident_type.strip():
         status=resolve_incident(db,data.incident_type,services,own_service)
         if status[0]!='ok':m.fail('Выберите тип происшествия из предложенных')
-        origin,incident,owners,candidates='prompt',status[1],status[2],[]
+        origin,incident,owners,candidates='chosen',status[1],status[2],[]
     else:
         query=rules.get('incident_query') or extracted.get('incident_query') or ''
         origin,incident,owners,candidates=choose_incident(db,query,text,services,own_service)
@@ -246,6 +252,7 @@ def prompt_ticket(data:PromptIn,u=Depends(m.current),db=Depends(m.getdb)):
     stars=int(slots.get('difficulty') or 0)
     if not stars:sources['difficulty']='computed'
     for key in ('address','caller_name'):sources.setdefault(key,'random')
+    sources.setdefault('object','computed')
     address=str(slots.get('address') or '')[:160]
     wizard_in=WizardIn(incident_type=incident,mode=mode,victims_state=victims,victims_count=count,animals=bool(slots.get('animals')),
                        own_service=own_service,services=list(dict.fromkeys([own_service]+([tag_owner] if tag_owner else []))),
