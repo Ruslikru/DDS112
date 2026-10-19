@@ -150,7 +150,7 @@ def ensure_ready(data,db):
     try:
         for task in data.get('tasks',[data]):
             if task.get('mode')=='dds':ensure_assets(prepare_task(copy.deepcopy(task)))
-    except (OSError,ValueError,KeyError):m.fail('?? ??????? ??????????? ???????? ????????? ??????. ????????? ????? ?????????.',409)
+    except (OSError,ValueError,KeyError):m.fail('Не удалось подготовить звуковое окружение звонка. Проверьте файлы программы.',409)
     status=readiness(data,db)
     if not status['ready']:
         label='Ошибка генерации звука. Попросите преподавателя проверить очередь.' if status['failed'] else 'Звук для билета ещё генерируется.'

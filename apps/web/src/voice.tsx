@@ -106,8 +106,8 @@ export function BrigadeAudio({id,autoPlay=false,playKey=id,hidden=false,onEnded,
  const [source,setSource]=useState<{id:string,url:string}|null>(null);const ref=useRef<HTMLAudioElement>(null);
  const url=source?.id===id?source.url:undefined;
  useEffect(()=>{let closed=false;const player=ref.current;setSource(null);Promise.resolve(bridge()?.voice_cached?.(id)).catch(()=>null).then((cached:string)=>{if(!closed)setSource({id,url:cached||'/api/media/'+id});});return()=>{closed=true;player?.pause();};},[id]);
- useEffect(()=>{const key='voice-played:'+playKey;if(url&&autoPlay&&!sessionStorage.getItem(key)){document.querySelectorAll('audio').forEach(a=>{if(a!==ref.current)a.pause();});const player=ref.current;if(player)Promise.resolve(beforePlay?.(player)).then(()=>player.play()).then(()=>sessionStorage.setItem(key,'1')).catch(e=>onError?.(e.message||'?? ??????? ???????? ????'));}},[url,autoPlay,playKey]);
- return <audio ref={ref} onEnded={onEnded} onPlaying={onPlaying} onError={()=>onError?.('?? ??????? ????????????? ?????. ????????? ????? ? ????????.')} controls={!hidden} hidden={hidden} preload="none" src={url}/>;
+ useEffect(()=>{const key='voice-played:'+playKey;if(url&&autoPlay&&!sessionStorage.getItem(key)){document.querySelectorAll('audio').forEach(a=>{if(a!==ref.current)a.pause();});const player=ref.current;if(player)Promise.resolve(beforePlay?.(player)).then(()=>player.play()).then(()=>sessionStorage.setItem(key,'1')).catch(e=>onError?.(e.message||'Не удалось включить звук'));}},[url,autoPlay,playKey]);
+ return <audio ref={ref} onEnded={onEnded} onPlaying={onPlaying} onError={()=>onError?.('Не удалось воспроизвести ответ. Проверьте связь с сервером.')} controls={!hidden} hidden={hidden} preload="none" src={url}/>;
 }
 
 export function MicButton({recording,disabled,onStart,title}:{recording:boolean,disabled:boolean,onStart:()=>Promise<((cancel?:boolean)=>void)|undefined>,title?:string}){
