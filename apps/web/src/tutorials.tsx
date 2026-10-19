@@ -1,6 +1,6 @@
 import React,{useState,useEffect} from 'react';
 import {useNavigate} from 'react-router-dom';
-import {api,useLoad,Notice,Obj} from './shared';
+import {api,useLoad,Notice,Obj,UserContext} from './shared';
 import {StudentHint} from './student-hint';
 import './tutorials.css';
 
@@ -11,6 +11,7 @@ export function TutorialCatalog(){
 
 export function TutorialCoach({p,card,phoneOpen,editingStatus,contactId,contactText,selected,trainingMenu}:{p:Obj,card:Obj,phoneOpen:boolean,editingStatus:boolean,contactId:string,contactText:string,selected:string[],trainingMenu:boolean}){
  const [read,setRead]=useState(sessionStorage.getItem('tutorial-read:'+p.id)==='yes');
+ const tickets=React.useContext(UserContext).role==='student'?'«Мои билеты»':'«Билеты»';
  const [,setTick]=useState(0);
  useEffect(()=>{const timer=setInterval(()=>setTick(x=>x+1),300);return()=>clearInterval(timer);},[]);
  const dds=p.task.mode==='dds',history=p.state.services[p.task.own_service]||[],statuses=history.map((h:Obj)=>h.status),n=p.task.onboarding?.endsWith('2')?2:1;
@@ -21,7 +22,13 @@ export function TutorialCoach({p,card,phoneOpen,editingStatus,contactId,contactT
  const status=(name:string,message:string,num:number)=>point(editingStatus?'button[title="Сохранить статус"]':'button[title="Изменить статус своей службы"]',editingStatus?`Выберите «${name}», запишите в комментарии: «${message}». Нажмите галочку для сохранения.`:`Откройте изменение статуса своей службы. Следующий статус — «${name}». ${message}`,num);
  const contact=(message:string,num:number)=>{if(document.querySelector('.voice-mic.ready,.voice-mic.recording'))point('.voice-mic',message+' Удерживайте микрофон, пока произносите сообщение. Отпустите кнопку и прослушайте ответ.',num);else point('[data-guide=voice-contact]',message+' Нажмите «Старший бригады», дождитесь приветствия, затем удерживайте микрофон, пока говорите.',num);};
  const incoming=(message:string,num:number)=>point(p.state.incoming_calls?.length?'[data-guide=accept]':'[data-guide=phone]',p.state.incoming_calls?.length?'Бригада звонит. Примите звонок и прослушайте доклад.':message,num);
- if(['completed','aborted'].includes(p.status))return <section className="tutorial-progress"><b>Вводный билет завершён</b><p>Нажмите «Результат» в управлении обучением. Пока ИИ анализирует работу, можно решать минивопросы — это тренировка, они не влияют на оценку.</p>{p.assessment&&<StudentHint dismissible={false} target='[data-guide=training-result]'><b>Посмотрите результат</b><p>Здесь появится оценка и разбор работы. Во время анализа доступны минивопросы для тренировки.</p></StudentHint>}</section>;
+ if(['completed','aborted'].includes(p.status)){
+  // После просмотра результата подсказка ведёт к выходу, а не остаётся поверх кнопки «К списку происшествий».
+  const seenKey='tutorial-result:'+p.id;
+  if(document.querySelector('.assessment-modal'))sessionStorage.setItem(seenKey,'yes');
+  const seen=sessionStorage.getItem(seenKey)==='yes';
+  return <section className="tutorial-progress"><b>Вводный билет завершён</b><p>{seen?`Обучение пройдено. Нажмите «К списку происшествий», чтобы закрыть карточку. Учебные билеты — в разделе ${tickets}.`:'Нажмите «Результат» в управлении обучением. Пока ИИ анализирует работу, можно решать минивопросы — это тренировка, они не влияют на оценку.'}</p>{p.assessment&&(seen?<StudentHint dismissible={false} key="exit" target='[data-guide=training-exit]'><b>Обучение пройдено</b><p>Нажмите «К списку происшествий», чтобы закрыть карточку. Учебные билеты — в разделе {tickets}.</p></StudentHint>:<StudentHint dismissible={false} key="result" target='[data-guide=training-result]'><b>Посмотрите результат</b><p>Здесь появится оценка и разбор работы. Во время анализа доступны минивопросы для тренировки.</p></StudentHint>)}</section>;
+ }
  if(!dds){
   if(p.state.call==='ringing'){if(!phoneOpen)phone('Нажмите на телефон, чтобы открыть входящий вызов.',1);else point('[data-guide="accept"]','Нажмите «Принять звонок» и прослушайте первое сообщение заявителя.',1);}
 
