@@ -150,9 +150,26 @@ def parse_create(text,services):
         elif re.search(r'с пострадавш|есть пострадавш|пострадал',t):slots['victims']='yes'
     service=match_service(text,services)
     if service:slots['own_service']=service
-    topic=re.search(r'\b(?:про|об|о|на тему|по теме|тема)\s+(.+?)(?=\s+(?:на|для|с|без|уровн|сложн|режим|в режиме|звезд|\d|для)\b|[,.;!?]|$)',t)
+    address=parse_address(text)
+    if address:slots['address']=address
+    topic=re.search(r'\b(?:про|об|о|на тему|по теме|тема)\s+(.+?)(?=\s+(?:на|для|с|без|уровн|сложн|режим|в режиме|звезд|\d|для|по адресу|адрес\w*|на улице|улиц\w*|ул\.|проспект|переулок)\b|[,.;!?]|$)',t)
     if topic:slots['incident_query']=topic.group(1).strip(' «»"')
     return slots
+
+ADDRESS_START=r'(?:по адресу|адрес(?:а|ом|у)?[:\s]|место происшествия[:\s]|на улице|улица|ул\.|проспект|пр-т|переулок|пер\.|шоссе|бульвар|площадь|набережная|проезд|тупик|аллея)'
+ADDRESS_STOP=r'(?=\s+(?:на \d|для|с пострадавш|без|уровн|сложн|режим|в режиме|звезд|служб|пострадавш|про\b)|[;!?]|$)'
+def parse_address(text):
+    """Street and house from the phrase («по адресу улица Ленина 5», «на улице Садовой, дом 3»); a bare «на улице» is a trait, not an address."""
+    t=re.sub(r'\s+',' ',str(text)).strip()
+    found=re.search(ADDRESS_START+r'\s*(.+?)'+ADDRESS_STOP,t,flags=re.I)
+    if not found:return ''
+    keyword=t[found.start():found.start()+len(found.group(0))-len(found.group(1))].strip(' :')
+    value=found.group(1).strip(' ,.«»"')
+    if not re.search(r'[А-ЯЁа-яё]{3,}',value):return ''
+    if re.match(r'(?:по адресу|адрес\w*|место происшествия)$',keyword,flags=re.I):return value[:160]
+    # The keyword itself is part of the address: «улица Ленина 5», «проспект Мира 10».
+    word={'на улице':'улица','ул.':'улица','пр-т':'проспект','пер.':'переулок'}.get(keyword.lower(),keyword.lower())
+    return (word+' '+value)[:160]
 
 def ask_model(text,services,db):
     """The local model extracts only the incident wording; the server still validates it."""
@@ -196,7 +213,8 @@ def options_for(slot,services,own_service=None):
         return [{'value':tag,'label':tag} for tag in service_tags(service)] if service else []
     if slot=='mode':return [{'value':'dds','label':'Диспетчер службы'},{'value':'112','label':'Оператор 112'}]
     if slot=='difficulty':return [{'value':n,'label':'★'*n+'☆'*(5-n)} for n in range(1,6)]
-    if slot=='victims':return [{'value':'unknown','label':'Пока неизвестно'},{'value':'no','label':'Нет'},{'value':'yes','label':'Есть'}]
+    if slot=='victims':return [{'value':'no','label':'Нет'},{'value':'unknown','label':'Пока неизвестно'},{'value':'yes:1','label':'Один'},{'value':'yes:2','label':'Двое'},{'value':'yes:3','label':'Трое'},{'value':'yes','label':'Больше'}]
+    if slot=='victims_count':return [{'value':n,'label':str(n)} for n in (1,2,3,4,5,6,8,10)]
     return []
 
 QUESTIONS={'own_service':'Для какой службы создаём билет?','incident_type':'Какое происшествие? Выберите тег службы или напишите тип из классификатора.','mode':'Кого обучаем: диспетчера службы или оператора 112?','difficulty':'Какая сложность билета, от 1 до 5 звёзд?','victims':'Есть ли пострадавшие?','victims_count':'Сколько пострадавших?'}
@@ -207,6 +225,8 @@ def create_step(slots,text,answer_slot,u,db):
     if test_catalog_blocked():return reply('create_ticket',TEST_CATALOG_MESSAGE)
     services=active_services(db)
     slots={k:v for k,v in slots.items() if k!='answer_slot'}
+    # A button «Один», «Двое», «Трое» answers both questions about victims at once.
+    if isinstance(slots.get('victims'),str) and slots['victims'].startswith('yes:'):slots['victims'],slots['victims_count']='yes',int(slots['victims'][4:])
     if answer_slot and answer_slot in slots:pass  # a button answered the question: the value is already in the slots
     elif answer_slot:
         value=answer_value(answer_slot,text,services,db)
@@ -254,21 +274,22 @@ def create_step(slots,text,answer_slot,u,db):
         if slot not in slots:
             return reply('create_ticket',QUESTIONS[slot],slots=slots,missing=[{'slot':slot,'question':QUESTIONS[slot],'options':options_for(slot,services,slots.get('own_service'))}])
     if slots['victims']=='yes' and not slots.get('victims_count'):
-        return reply('create_ticket',QUESTIONS['victims_count'],slots=slots,missing=[{'slot':'victims_count','question':QUESTIONS['victims_count']}])
+        return reply('create_ticket',QUESTIONS['victims_count'],slots=slots,missing=[{'slot':'victims_count','question':QUESTIONS['victims_count'],'options':options_for('victims_count',services)}])
     recipients=list(dict.fromkeys([slots['own_service']]+([slots['tag_service']] if slots.get('tag_service') else [])))
     slots['services']=recipients
     victims=VICTIM_LABELS[slots['victims']]+(f', {slots["victims_count"]} чел.' if slots['victims']=='yes' else '')
     preview=(f'Создам черновик билета:\n• служба: {slots["own_service"]}\n• происшествие: {slots["incident_type"]}\n• режим: {MODE_LABELS[slots["mode"]]}\n'
              f'• сложность: {"★"*slots["difficulty"]}{"☆"*(5-slots["difficulty"])}\n• пострадавшие: {victims}\n'
              +(f'• признаки: {", ".join(slots["traits"])}\n' if slots.get('traits') else '')
+             +(f'• адрес: {slots["address"]}\n' if slots.get('address') else '')
              +f'• получатели: {", ".join(recipients)} (службы по фактам сценария добавятся автоматически)\n'
-             'Адрес и описание подберёт мастер; черновик покажу перед сохранением. '+model_status_line()+' Выполнить?')
+             +('Описание подберёт мастер' if slots.get('address') else 'Адрес и описание подберёт мастер')+'; черновик покажу перед сохранением. '+model_status_line()+' Выполнить?')
     return reply('create_ticket',preview,slots=slots,confirm=confirm_token(u,'create_ticket',slots))
 
 def execute_create(slots,u,db):
     from .scenario_wizard import wizard, WizardIn
     if test_catalog_blocked():m.fail(TEST_CATALOG_MESSAGE)
-    try:data=WizardIn(incident_type=slots['incident_type'],mode=slots['mode'],victims_state=slots['victims'],victims_count=int(slots.get('victims_count') or 0),own_service=slots['own_service'],services=list(slots.get('services') or [slots['own_service']]),difficulty_stars=int(slots['difficulty']),traits=list(slots.get('traits') or [])[:12])
+    try:data=WizardIn(incident_type=slots['incident_type'],mode=slots['mode'],victims_state=slots['victims'],victims_count=int(slots.get('victims_count') or 0),own_service=slots['own_service'],services=list(slots.get('services') or [slots['own_service']]),difficulty_stars=int(slots['difficulty']),traits=list(slots.get('traits') or [])[:12],address=str(slots.get('address') or '')[:160])
     except (KeyError,ValueError,TypeError) as error:m.fail('Недостаточно данных для билета: '+str(error))
     draft=wizard(data,u,db)['data'];task=draft['tasks'][0]
     from .assistant import confirm_token
