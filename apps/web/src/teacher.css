@@ -86,5 +86,3 @@
 .teacher-error-summary>p{max-width:850px;line-height:1.55}.teacher-error-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.teacher-error-list article{padding:16px;border:1px solid #c5cfd4;background:#f7f9fa}.teacher-error-list h3{font-size:16px;margin:0 0 8px}.teacher-error-list p{font-size:14px;line-height:1.5;margin:0}
 
 .teacher-title-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.student-create-dialog{max-width:560px}.student-create-dialog form>label{display:block;margin-bottom:18px}.student-create-dialog input,.student-create-dialog select{display:block;width:100%;margin-top:7px}.student-create-dialog footer{display:flex;justify-content:flex-end;gap:10px}.student-created-result{white-space:pre-wrap;line-height:1.7}
-
-.wiki-shortcuts{overflow:auto}.wiki-shortcuts table{width:100%;min-width:440px}.wiki-shortcuts td:first-child{width:34%;white-space:nowrap}.wiki-shortcuts th{text-align:left}.wiki-shortcuts summary{cursor:pointer}.wiki-shortcuts>section{margin-top:22px}

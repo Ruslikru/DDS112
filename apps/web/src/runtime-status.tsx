@@ -21,7 +21,7 @@ export function RuntimeStatus(){
 function RuntimeStrip(){
  const [value,setValue]=useState<Obj>(),[offline,setOffline]=useState(false);
  useEffect(()=>{let live=true,timer:ReturnType<typeof setTimeout>;const poll=async()=>{try{const result=await api('/voice/call-status');if(live){setValue(result);setOffline(false);}}catch{if(live)setOffline(true);}finally{if(live)timer=setTimeout(poll,2000);}};void poll();return()=>{live=false;clearTimeout(timer);};},[]);
- return <aside className="runtime-status-strip" aria-label="Состояние нейросетей" aria-live="off"><span className="runtime-machine">ИИ · сервер</span>{[['cards','Qwen 4B'],['stt','GigaAM'],['tts','Piper']].map(([id,label])=>{
+ return <aside className="runtime-status-strip" aria-label="Состояние нейросетей" aria-live="off">{[['cards','Qwen 4B'],['stt','GigaAM'],['tts','Piper']].map(([id,label])=>{
   const model=value?.models[id],state=offline?'cold':model?.state||'warming',description=offline?'нет связи с сервером':states[state]||state;
   return <span key={id} data-model={id} data-state={state} aria-label={`${label}: ${description}`} title={`${label}: ${description}; ${model?.model||''}; ${String(model?.mode||'cpu').toUpperCase()}; потоков: ${model?.threads??'—'}`}><i className={'runtime-dot '+state}/>{label} <b>{model?.threads??'—'}</b> п.</span>;
  })}<span className="runtime-cpu" title="Общая загрузка процессора сервера, а не отдельной модели">ЦП {offline||value?.cpu_percent==null?'—':Math.round(value.cpu_percent)+'%'}</span></aside>;
