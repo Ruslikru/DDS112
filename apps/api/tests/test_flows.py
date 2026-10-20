@@ -286,11 +286,12 @@ def test_versions_assignment_gating_and_conflict():
         login(c,'admin'); original_again=next(v for v in c.get('/api/tickets').json() if v['id']==original['id']); assert original_again['data']['title']==original['data']['title']
 
 
-def test_ticket_cannot_be_selected_or_started_until_voice_is_ready():
+def test_ticket_not_voiced_yet_runs_as_text():
+    """Sending is allowed; an attempt started before the voicing is complete runs entirely as text and says so."""
     from apps.api.app import voice
     with TestClient(app) as c:
         login(c,'admin')
-        version=next(v for v in c.get('/api/tickets').json() if v['published'] and voice.keys({'tasks':[v['data']['tasks'][0]]}))
+        version=next(v for v in c.get('/api/tickets').json() if v['published'] and v['data']['tasks'][0]['mode']=='dds' and voice.keys({'tasks':[v['data']['tasks'][0]]}))
         student=next(u for u in c.get('/api/users').json() if u['login']=='student')
         key=next(iter(voice.keys({'tasks':[version['data']['tasks'][0]]})))
         with SessionLocal() as db:
@@ -298,19 +299,27 @@ def test_ticket_cannot_be_selected_or_started_until_voice_is_ready():
         current=next(v for v in c.get('/api/tickets').json() if v['id']==version['id'])
         assert current['voice']['ready'] is False
         body={'version_id':version['id'],'students':[student['id']],'start_mode':'self','training':True}
-        assert post(c,'/assignments',body).status_code==409
-        assert post(c,'/lessons',{'title':'Проверка готовности звука','students':[student['id']],'versions':[version['id']],'training':True}).status_code==409
-        with SessionLocal() as db:
-            db.get(voice.VoiceJob,key).status='ready';db.commit()
-        assert post(c,'/assignments',body).status_code==200
-        with SessionLocal() as db:
-            db.get(voice.VoiceJob,key).status='pending';db.commit()
+        assert post(c,'/assignments',body).status_code==200,'not voiced yet is no longer a refusal'
+        assert post(c,'/lessons',{'title':'Проверка готовности звука','students':[student['id']],'versions':[version['id']],'training':True}).status_code==200
         login(c,'student')
-        assigned=next(a for a in c.get('/api/assignments').json() if a['title']==version['data']['title'] and a['tasks'][0]['voice']['ready'] is False)
-        assert post(c,f'/assignments/{assigned["id"]}/start').status_code==409
+        assigned=next(a for a in c.get('/api/assignments').json() if a['title']==version['data']['title'] and a['tasks'][0]['voice']['ready'] is False and not a['attempts'])
+        started=post(c,f'/assignments/{assigned["id"]}/start');assert started.status_code==200,started.text
+        p=started.json()
+        assert p['state']['text_only'] and p['state']['voice_at_start']['total']>=1
+        assert all(not contact.get('greeting_audio') for contact in p['task'].get('contacts',[]))
         with SessionLocal() as db:
             db.get(voice.VoiceJob,key).status='ready';db.commit()
-        assert post(c,f'/assignments/{assigned["id"]}/start').status_code==200
+        again=c.get('/api/attempts/'+str(p['id'])).json()
+        assert again['state']['text_only'] and all(not contact.get('greeting_audio') for contact in again['task'].get('contacts',[])),'an attempt keeps the mode it started with'
+        login(c,'admin')
+        listed=[x for a in c.get('/api/assignments').json() for x in a['attempts'] if x['id']==p['id']]
+        assert listed and listed[0]['text_only']
+        assert any(row['id']==p['id'] and row['text_only'] for row in c.get('/api/registry').json())
+        assert post(c,'/assignments',body).status_code==200
+        login(c,'student')
+        fresh=next(a for a in c.get('/api/assignments').json() if a['title']==version['data']['title'] and not a['attempts'] and a['tasks'][0]['voice']['ready'])
+        started=post(c,f'/assignments/{fresh["id"]}/start').json()
+        assert not started['state'].get('text_only'),'a fully voiced ticket starts with sound'
 
 def test_auth_csrf_media_and_user_creation():
     with TestClient(app) as c:

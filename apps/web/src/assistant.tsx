@@ -32,7 +32,7 @@ function Text({text}:{text:string}){
 const VOICE_YES=/^(?:да[,\s]+)?(создай|создать|отправь|отправить|опубликуй|да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|сохрани|сохранить|ок|окей|хорошо)(?:[,\s]+(?:пожалуйста|да|его|её|это))?[\s.,!?]*$/i;
 const VOICE_NO=/^(нет|отмена|отмени|отменить|не надо|не нужно|стоп|не выполняй)(?=[\s.,!?]|$)/i;
 const HINTS=['Что умеешь?','Журнал','Проверить работы','Кто сейчас в классе?','Новый билет'];
-const DIALOG_INTENTS=['create_ticket','edit_ticket','open_ticket','save_ticket','create_group','open_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'];
+const DIALOG_INTENTS=['create_ticket','edit_ticket','open_ticket','ticket_status','save_ticket','create_group','open_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'];
 const HISTORY_KEY='training112:assistant-history';
 const HISTORY_SIZE=10;
 const WELCOME:Message={who:'assistant',text:'Напишите или скажите команду: «открой журнал», «где сидит Кузнецов», «создай билет про пожар на 3 звезды». Переходы выполняются сразу, билеты создаются и меняются только после вашего подтверждения.'};

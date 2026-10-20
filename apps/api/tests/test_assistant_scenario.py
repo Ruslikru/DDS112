@@ -70,7 +70,7 @@ def test_incident_answer_gives_scene_and_service(teacher):
     r=ask(teacher,'пожар: подъезд',{'intent':r['intent'],'slots':{**r['slots'],'incident_type':'пожар: подъезд','answer_slot':'incident_type'}})
     assert r['slots']['own_service']=='Служба 101' and r['missing'][0]['slot']=='difficulty',r
 
-def test_ticket_still_being_voiced_is_explained_before_confirmation(teacher,monkeypatch):
+def test_ticket_still_being_voiced_is_sent_with_a_warning(teacher,monkeypatch):
     from apps.api.app import main
     tickets=main.tickets
     def unready(u,db):
@@ -82,4 +82,4 @@ def test_ticket_still_being_voiced_is_explained_before_confirmation(teacher,monk
     source=next(v for v in teacher.get('/api/tickets').json() if v['published'] and not v['archived'] and all(t['mode']=='dds' for t in v['data']['tasks']))
     version=post(teacher,'/tickets',{**source['data'],'title':'Ещё озвучивается'}).json()['id']
     r=ask(teacher,'Отправь билет Морозову',version_id=version)
-    assert not r['confirm_required'] and 'озвучивается: готово 1 из 18' in r['preview'] and 'Опубликовать и отправить' in r['preview'],r['preview']
+    assert r['confirm_required'] and 'Озвучка 1 из 18' in r['preview'] and 'без озвучки, текстом' in r['preview'] and 'черновик' in r['preview'],r['preview']

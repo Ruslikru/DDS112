@@ -82,6 +82,20 @@ def keys(data):
     return {e['voice_key'] for t in data.get('tasks',[]) for e in speech_items(t) if e.get('voice_key')}
 
 
+def pace(db):
+    """Seconds one line took lately (median of the last 20 recordings), for a rough waiting time."""
+    seconds=sorted(j.data.get('seconds') for j in db.scalars(select(VoiceJob).where(VoiceJob.status=='ready').order_by(VoiceJob.priority.desc()).limit(200)) if isinstance(j.data.get('seconds'),(int,float)))[-20:]
+    return seconds[len(seconds)//2] if seconds else None
+
+def waiting_label(lines,db):
+    """«около 3 минут» for so many lines at the recent pace; empty when there is no measurement yet."""
+    step=pace(db)
+    if not step or not lines:return ''
+    total=step*lines
+    if total<60:return 'меньше минуты'
+    minutes=round(total/60)
+    return f'около {minutes} мин'
+
 def readiness(data,db):
     required=keys(data)
     if not required:return {'ready':True,'generated':0,'total':0,'failed':0}
@@ -91,11 +105,15 @@ def readiness(data,db):
     return {'ready':generated==len(required),'generated':generated,'total':len(required),'failed':failed}
 
 
-def attach_audio(data,db):
+def attach_audio(data,db,text_only=False):
+    """Call sounds always; recorded lines unless the attempt runs as text (voicing was not complete at its start)."""
     result=copy.deepcopy(data)
     for task in result.get('tasks',[result]):
         from .call_audio import prepare_task
         prepare_task(task)
+        if text_only:
+            for contact in task.get('contacts',[]):contact['greeting_audio']=None
+            continue
         for event in speech_items(task):
             job=db.get(VoiceJob,event.get('voice_key',''))
             if job and job.status=='ready':event['audio_id']=job.audio_id
@@ -156,11 +174,13 @@ def recover():
                 for c,n in zip(original.get('contacts',[]),updated.get('contacts',[])):c['voice_lines']=n['voice_lines']
                 a.snapshot=original
         restore_builtin(db)
-        for a in db.scalars(select(Attempt).where(Attempt.status.notin_(['completed','aborted']))):a.snapshot=attach_audio(a.snapshot,db)
+        for a in db.scalars(select(Attempt).where(Attempt.status.notin_(['completed','aborted']))):a.snapshot=attach_audio(a.snapshot,db,text_only=bool((a.state or {}).get('text_only')))
         db.commit()
 
 
-def ensure_ready(data,db):
+def ensure_ready(data,db,text_ok=False):
+    """Call sounds must exist. Recorded lines: refused unless `text_ok` — then the not-ready state is returned
+    and the attempt runs as text. Either way the missing lines go to the front of the queue."""
     from .call_audio import prepare_task,ensure_assets
     try:
         for task in data.get('tasks',[data]):
@@ -169,8 +189,10 @@ def ensure_ready(data,db):
     status=readiness(data,db)
     if not status['ready']:
         with urgent_lock:urgent.update(keys(data))
+        if text_ok:return status
         label='Ошибка генерации звука. Попросите преподавателя проверить очередь.' if status['failed'] else 'Звук для билета ещё генерируется.'
         m.fail(f"{label} Готово {status['generated']} из {status['total']} записей.",409)
+    return status
 
 def next_job(db):
     """Lines a teacher is waiting for, then the most recently requested ticket, then the background backlog."""

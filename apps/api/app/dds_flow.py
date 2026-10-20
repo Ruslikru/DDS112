@@ -9,9 +9,11 @@ from .domain import EMPTY_CARD
 
 
 def create_attempt(db, assignment, task, index, delivered_at=None, flow='sequential', preview=False):
-    from .voice import ensure_ready,attach_audio
-    if not preview:ensure_ready({"tasks":[task]},db)
-    task=attach_audio(task,db)
+    from .voice import ensure_ready,attach_audio,readiness
+    # A ticket whose voicing is not complete runs entirely as text: no half-voiced calls, the student is told so.
+    sound=readiness({"tasks":[task]},db) if preview else ensure_ready({"tasks":[task]},db,text_ok=True)
+    text_only=not preview and not sound['ready']
+    task=attach_audio(task,db,text_only=text_only)
     # Give simulated callers distinct numbers; preserve any authored number.
     if task.get('phone') in (None,'','+7 (000) 000-00-01'):
         import hashlib
@@ -29,6 +31,7 @@ def create_attempt(db, assignment, task, index, delivered_at=None, flow='sequent
            'lesson_id':assignment.lesson_id,'flow':flow,'paused_seconds':0,
            'brigade_pacing':'timed' if assignment.lesson_id and db.get(Lesson,assignment.lesson_id).config.get('delivery_mode') in ('sprint','dds_stream','cooperative') else 'sequential'}
     if task.get('onboarding'):state.update(teacher_assisted=True,guided=True)
+    if text_only:state.update(text_only=True,voice_at_start={'generated':sound['generated'],'total':sound['total']})
     if not dds:
         from .classroom_models import Workstation
         station=db.scalar(select(Workstation).where(Workstation.user_id==assignment.student_id,Workstation.approved==True,Workstation.blocked==False).order_by(Workstation.last_seen.desc()))

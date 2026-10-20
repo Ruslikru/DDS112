@@ -63,7 +63,7 @@ def build_draft(data,db,fixed=None,meta=None):
     known_type=bool(db.scalar(select(Classifier.code).where(Classifier.title==data.incident_type).limit(1)))
     service_tag=any(data.incident_type.casefold() in {tag.strip().casefold() for tag in (service.config or {}).get('tags',[])}
                     for service in active_services if service.name in data.services)
-    if not known_type and not service_tag:m.fail('Выберите тип из классификатора или тег выбранной службы')
+    if not known_type and not service_tag and not fixed.get('trusted_type'):m.fail('Выберите тип из классификатора или тег выбранной службы')
     if data.victims_state=='yes' and data.victims_count<1:m.fail('Укажите количество пострадавших')
     facts=base_facts(data.incident_type)
     if data.address.strip():

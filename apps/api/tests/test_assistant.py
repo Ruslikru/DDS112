@@ -92,7 +92,7 @@ def test_video_creation_commands(teacher,classroom):
 
 def test_assign_ticket_to_named_student(teacher,classroom,monkeypatch):
     from apps.api.app import voice
-    monkeypatch.setattr(voice,'ensure_ready',lambda *args:None)
+    monkeypatch.setattr(voice,'ensure_ready',lambda *args,**kwargs:None)
     command=ask(teacher,'Отправь билет студенту Кузнецову')
     assert command['intent']=='assign_ticket' and command['confirm_required'],command
     assert command['slots']['student_id']==classroom['kuz']
@@ -297,7 +297,7 @@ def test_new_voice_commands(teacher,classroom):
 
 def test_assign_multiple_students(teacher,classroom,monkeypatch):
     from apps.api.app import voice
-    monkeypatch.setattr(voice,'ensure_ready',lambda *args:None)
+    monkeypatch.setattr(voice,'ensure_ready',lambda *args,**kwargs:None)
     result=ask(teacher,'Отправь билет Кузнецову и Ёлкиной')
     assert result['confirm_required'],result
     assert set(result['slots']['student_ids'])=={classroom['kuz'],classroom['elk']}
