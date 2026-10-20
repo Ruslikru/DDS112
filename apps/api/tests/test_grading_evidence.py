@@ -37,6 +37,19 @@ def test_report_uses_confirmed_grades_and_does_not_invent_missing_records():
     assert 'решение преподавателя' in summarize(pending)['summary']
 
 
+def test_old_generated_acceptance_comment_is_not_required_by_specification():
+    p=attempt();p.snapshot['scenario']['version']=2
+    p.snapshot['criteria']=[
+        {'id':'accept','kind':'status','label':'Принятие','expected':'Принята','weight':10,'critical':True},
+        {'id':'accept-record','kind':'manual','label':'Запись о принятии карточки',
+         'expected':'Карточка принята, сведения прочитаны.','weight':5,'critical':False,
+         'evidence_source':'written','required_record':True,'status':'Принята'}]
+    p.state['services']['Служба 101']=[{'status':'Принята','comment':'','actor_role':'learner','at':at(1)}]
+    result=assess(p)
+    assert result['passed'] and result['missing_required_records']==0
+    assert all(c['id']!='accept-record' for c in result['criteria'])
+
+
 def test_background_review_waits_for_end_of_exercise_not_each_phone_reply():
     from apps.api.app.conversation_review import ready_for_review
     p=attempt()

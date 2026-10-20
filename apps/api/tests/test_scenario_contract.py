@@ -31,7 +31,8 @@ def test_every_source_and_difficulty_is_playable(source,stars):
     assert stages[1]['id']=='approach' and stages[1]['status']==''
     assert stages[2]['id']=='arrived' and stages[2]['status']=='Прибытие'
     assert all(c['phone'] for c in task['contacts'])
-    assert len([c for c in task['criteria'] if c['required_record']])==6
+    assert len([c for c in task['criteria'] if c['required_record']])==5
+    assert all(c['id']!='accept-record' for c in task['criteria'])
 
 
 def test_other_service_source_is_an_actual_visible_record():

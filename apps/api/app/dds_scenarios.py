@@ -108,9 +108,6 @@ def generated_dds(config, facts, meta, reports=None):
                        'trigger_contact':'brigade','who':contacts[0]['name'],'text':stage['report']})
     criteria = [{'id':'accept','kind':'status','label':'Карточка принята своей службой','expected':'Принята','weight':10,'critical':True,'skill':'Принятие карточки'},
                 {'id':'dispatch','kind':'contact','label':'Связь со старшим бригады','expected':'brigade','weight':10,'skill':'Организация реагирования'}]
-    criteria.append({'id':'accept-record','kind':'manual','label':'Запись о принятии карточки',
-                     'expected':'Карточка принята, сведения прочитаны.','weight':5,'skill':'Комментарии ДДС',
-                     'evidence_source':'written','required_record':True,'status':'Принята'})
     for stage in stages:
         if stage['status']:
             criteria.append({'id':'status-'+stage['id'],'kind':'status','label':stage['status'],'expected':stage['status'],

@@ -73,12 +73,13 @@ def test_generated_flow_sources_dispatch_approach_and_records_are_distinct():
         assert not is_learner(message)
         assert 'Учебный ответ службы' not in source['comment']
 
-        p=command(c,p,'status',{'status':'Принята','comment':'Карточка принята, сведения прочитаны.',
+        p=command(c,p,'status',{'status':'Принята','comment':'',
             'actor_role':'brigade','report_id':'report-done','stage_id':'done'})
         own=p['task']['own_service']
         initial=p['state']['services'][own][-1]
         assert initial['actor_role']=='learner' and not initial.get('report_id')
-        assert grade(p['id'],'accept-record')['passed'] is None
+        assert all(c['id']!='accept-record' for c in task['criteria'])
+        assert grade(p['id'],'accept')['passed'] is True
         p=command(c,p,'contact',{'id':'brigade','text':'Москва, Берзарина, 21. Горит контейнер.',
             'actor_role':'service','report_id':'report-done','stage_id':'done','call_end':False})
         spoken,response=p['state']['messages'][-2:]
@@ -134,7 +135,7 @@ def test_clicking_all_statuses_without_reports_and_comments_cannot_pass():
         p=command(c,p,'finish')
         assessment=p['assessment']
         records=[item for item in assessment['criteria'] if item.get('required_record')]
-        assert len(records)==6
+        assert len(records)==5
         assert all(item['passed'] is False and item['credit']==0 for item in records)
         assert all(item['passed'] is False for item in assessment['criteria'] if item['id'].startswith('status-'))
         assert assessment['score']<20 and not assessment['passed']

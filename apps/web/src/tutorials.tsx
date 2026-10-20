@@ -27,8 +27,8 @@ export function TutorialCoach({p,card,phoneOpen,editingStatus,contactId,contactT
   const select=document.querySelector<HTMLSelectElement>('.arm-status-form select[name="status"]');
   const comment=document.querySelector<HTMLInputElement>('.arm-status-form input[name="comment"]');
   if(select?.value!==name)point('.arm-status-form select[name="status"]',`Откройте список и выберите «${name}».`,num);
-  else if(!comment?.value.trim())point('.arm-status-form input[name="comment"]',`Запишите комментарий: «${message}»`,num);
-  else point('button[title="Сохранить статус"]','Нажмите галочку, чтобы сохранить статус и комментарий.',num);
+  else if(name!=='Принята'&&!comment?.value.trim())point('.arm-status-form input[name="comment"]',`Запишите комментарий: «${message}»`,num);
+  else point('button[title="Сохранить статус"]',name==='Принята'?'Нажмите галочку, чтобы принять карточку. Комментарий не обязателен.':'Нажмите галочку, чтобы сохранить статус и комментарий.',num);
  };
  const contact=(message:string,num:number)=>{
   const phase=document.querySelector('.dds-voice-call,.avaya-simulator')?.getAttribute('data-phase')||'idle';

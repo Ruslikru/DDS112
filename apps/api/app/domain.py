@@ -44,6 +44,11 @@ def assess(attempt):
     state=attempt.state
     results=[]
     for c in task['criteria']:
+        if (task.get('scenario',{}).get('version')==2 and c['id']=='accept-record'
+                and c.get('label')=='Запись о принятии карточки'
+                and c.get('expected')=='Карточка принята, сведения прочитаны.'
+                and c.get('status')=='Принята' and c.get('required_record')):
+            continue  # Retired generated requirement; acceptance itself is assessed by status.
         kind=c['kind']; actual=None; passed=False; details={}
         if kind=='field':
             actual=attempt.card.get(c['field'],'')

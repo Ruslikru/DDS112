@@ -43,7 +43,11 @@ def seed(db):
         if task.get('mode')=='dds' and task.get('onboarding') and not task.get('service_events'):
             task['service_events']=[{'kind':'incoming_call','contact_id':'brigade','trigger_contact':'brigade','who':'Старший бригады','stage':stage,'respect_delay':True,'after':delay,'text':text} for stage,delay,text in [('arrived',10,'Мы прибыли. Обстановка соответствует заявке.'),('done',35,'Работы завершены. Опасность устранена.')]]
         if task.get('onboarding') and not any(c['id']=='tutorial-comments' for c in task.get('criteria',[])):
-            task.setdefault('criteria',[]).append({'id':'tutorial-comments','kind':'manual','field':'','label':'Содержание комментариев о ходе реагирования','expected':'Приём карточки, выезд бригады, прибытие, ход работ и устранение опасности отражены в соответствующих комментариях. Нет противоречий докладам.','weight':30,'skill':'Комментарии ДДС'})
+            task.setdefault('criteria',[]).append({'id':'tutorial-comments','kind':'manual','field':'','label':'Содержание комментариев о ходе реагирования','expected':'Выезд бригады, прибытие, ход работ и устранение опасности отражены в соответствующих комментариях. При принятии карточки комментарий не обязателен. Нет противоречий докладам.','weight':30,'skill':'Комментарии ДДС'})
+        if task.get('onboarding'):
+            for criterion in task.get('criteria',[]):
+                if criterion['id']=='tutorial-comments' and criterion.get('expected')=='Приём карточки, выезд бригады, прибытие, ход работ и устранение опасности отражены в соответствующих комментариях. Нет противоречий докладам.':
+                    criterion['expected']='Выезд бригады, прибытие, ход работ и устранение опасности отражены в соответствующих комментариях. При принятии карточки комментарий не обязателен. Нет противоречий докладам.'
         if task.get('onboarding'):task['criteria']=[Criterion.model_validate(c).model_dump() for c in task.get('criteria',[])]
         return task
     for v in db.scalars(select(TicketVersion)):
