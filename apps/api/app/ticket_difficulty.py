@@ -52,34 +52,11 @@ def apply_difficulty(ticket, facts, stars):
             q=next(q for q in task['questions'] if q['id']==key);q['required']=True
             task['criteria'].append({'id':'clarify-'+key,'kind':'question','expected':key,'label':q['question'],'weight':10,'skill':'Уточнение сведений'})
     else:
-        # Difficulty describes decisions and changing circumstances, not a shorter timer.
+        # All DDS criteria refer to actions available in the read-only received card.
+        # Source selection is part of generated_dds; difficulty changes pacing, not truth.
         task['limit_seconds']=300
-        card=task['initial_card'];caller=next(c for c in task['contacts'] if c['id']=='caller')
-        # Restore the complete starting information for lower levels.
-        if stars<=3:card['address_note']=facts['address_note']
-        if stars>=4:
-            card['house']='';card['address_note']='Номер дома и подход к месту требуют уточнения.'
-            task['expected_card'].update(house=facts['house'],address_note=facts['address_note'])
-            task['intro']=f"Получена карточка: {facts['city']}, {facts['street']}. {card['description']} Номер дома и подход к месту уточните у заявителя."
-            caller['questions']=[{'id':'address','question':'Уточните номер дома и подход к месту.','answer':f"{address}. {facts['address_note']}"}]
-            task['criteria'] += [
-                {'id':'clarify-caller','kind':'contact','expected':'caller','label':'Уточнены сведения у заявителя','weight':10,'skill':'Уточнение сведений'},
-                {'id':'clarify-house','kind':'field','field':'house','expected':facts['house'],'label':'Уточнён номер дома','weight':10,'critical':True,'skill':'Точность адреса'}]
-        delays={1:[35,80,130],2:[30,70,120],3:[25,60,105],4:[25,75,145],5:[25,85,160]}[stars]
-        for event,delay in zip(task['service_events'],delays):event['after']=delay
-        if stars>=4:
-            report='Попали в пробку и задерживаемся. Уточните свободный подъезд к месту и зафиксируйте задержку.'
-            task['service_events'].insert(1,{'kind':'incoming_call','contact_id':'brigade','trigger_contact':'brigade','who':task['contacts'][0]['name'],'after':50,'text':report})
-            task['contacts'][0]['updates'].insert(1,report)
-            for criterion in task['criteria']:
-                if criterion['id']=='comments':criterion['expected']=' | '.join(e['text'] for e in task['service_events'])
-            task['criteria'].append({'id':'delay-report','kind':'manual','label':'Зафиксирована задержка и передано уточнение бригаде','expected':'В комментариях отражена задержка бригады; после обращения к заявителю бригаде передан ориентир: '+facts['address_note'],'weight':15,'skill':'Координация бригады'})
-        if stars==5:
-            service=next((s for s in task['services'] if s!=task['own_service']),None)
-            if service:
-                message=f'{service}: На участке по адресу заявки временно отключено электроснабжение. Сверьте сведения с карточкой и передайте бригаде.'
-                task['contacts'].append({'id':'related-dds','name':'Диспетчер '+service,'kind':'service','service':service,'phone':'1003','response':message})
-                task['service_events'].insert(2,{'kind':'incoming_call','contact_id':'related-dds','trigger_contact':'brigade','who':'Диспетчер '+service,'after':110,'text':message})
-                task['criteria'].append({'id':'cross-service-report','kind':'manual','label':'Сверены сведения другой службы','expected':message,'weight':15,'skill':'Координация служб'})
+        delays={1:[35,80,125,170],2:[30,75,120,165],3:[25,65,105,145],4:[25,75,125,175],5:[25,85,145,205]}[stars]
+        calls=[event for event in task['service_events'] if event.get('kind')=='incoming_call']
+        for event,delay in zip(calls,delays):event['after']=delay
     task['criteria']=[c for c in task['criteria'] if c['kind']!='time']
     task['criteria'].append({'id':'time','kind':'time','label':f"Учебный срок: {task['limit_seconds']} секунд",'expected':task['limit_seconds'],'weight':10,'skill':'Время'})

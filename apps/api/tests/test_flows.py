@@ -255,7 +255,8 @@ def test_dds_rejection_reason_and_immutable_completion():
         body={'command_id':str(uuid.uuid4()),'revision':p['revision'],'type':'status','payload':{'status':'Не принята'}}
         assert post(c,f'/attempts/{p["id"]}/command',body).status_code==400
         p=command(c,p,'status',{'status':'Не принята','comment':'Дом обслуживает УК Учебная, сведения переданы диспетчеру УК.'})
-        p=command(c,p,'finish'); assert p['assessment']['score']==100
+        p=command(c,p,'finish'); assert p['assessment']['score']<100 and p['assessment']['pending']
+        assert p['assessment']['score_is_provisional'] and not p['assessment']['passed']
         body['revision']=p['revision']; assert post(c,f'/attempts/{p["id"]}/command',body).status_code==400
 
 def test_dds_progress_and_restart_snapshot():
@@ -266,7 +267,8 @@ def test_dds_progress_and_restart_snapshot():
         p=command(c,p,'pause'); assert p['status']=='paused'
         p=command(c,p,'resume'); assert p['status']=='active'
         p=command(c,p,'status',{'status':'Работы завершены','comment':'Утечка устранена'})
-        p=command(c,p,'finish'); assert p['assessment']['score']==100
+        p=command(c,p,'finish'); assert p['assessment']['score']<100 and p['assessment']['pending']
+        assert p['assessment']['score_is_provisional'] and not p['assessment']['passed']
 
 def test_versions_assignment_gating_and_conflict():
     with TestClient(app) as c:

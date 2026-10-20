@@ -64,7 +64,7 @@ def attempt_view(a,u):
     if a.status not in ['completed','aborted']:
         task['questions']=caller_questions(task)
     if u.role=='student' and not a.assessment:
-        for k in ['expected_card','criteria','routing','service_events','validation_note','scenario_details']: task.pop(k,None)
+        for k in ['expected_card','criteria','routing','service_events','validation_note','scenario_details','scenario']: task.pop(k,None)
         task['contacts']=[{k:v for k,v in c.items() if k not in ['response','updates','questions','voice_lines']} for c in task.get('contacts',[])]
         task['questions']=[{'id':q['id'],'question':q['question']} for q in task['questions']]
         if a.status=='ringing': task['intro']=''; task['intro_audio']=None
@@ -91,13 +91,28 @@ def process_events(db):
             state.setdefault('messages',[]).append({'text':data.get('text') or f"Получены сведения: {data.get('status','')}. Зарегистрируйте статус самостоятельно.",'at':now()})
             a.state=state;a.revision+=1
             continue
-        if 'service' in data: state.setdefault('services',{}).setdefault(data['service'],[]).append({'status':data['status'],'at':now(),'comment':'Учебный ответ службы'})
+        if 'service' in data:
+            stamp=now()
+            history=state.setdefault('services',{}).setdefault(data['service'],[])
+            status=data.get('status') or (history[-1]['status'] if history else 'Получена службой')
+            comment_only=data.get('kind')=='service_report' and data.get('status')=='Комментарий'
+            if comment_only:
+                status=history[-1]['status'] if history else 'Получена службой'
+            comment=data.get('comment') or data.get('text') or ''
+            metadata={key:data[key] for key in ('report_id','stage_id') if data.get(key)}
+            history.append({'status':status,'at':stamp,'comment':comment,'unit':data.get('unit',''),
+                              'actor_role':'service','author':data.get('who') or data['service'],
+                              'comment_only':comment_only,**metadata})
+            if comment:
+                state.setdefault('messages',[]).append({'who':data.get('who') or data['service'],
+                    'text':comment,'at':stamp,'actor_role':'service','service':data['service'],
+                    'direction':'service_report','status':status,**metadata})
         elif data.get('kind')=='incoming_call':
             if state.get('brigade_pacing')=='sequential':
                 state['brigade_next_at']=time.time()+30
                 state['brigade_waiting_record']=event.id
             state.setdefault('incoming_calls',[]).append({'id':event.id,'contact_id':data.get('contact_id'),'who':data.get('who','Старший бригады'),'received_at':now(),'call_audio':data.get('call_audio',{})})
-        else: state.setdefault('messages',[]).append({**data,'who':data.get('who') or 'Бригада','audio':None if state.get('text_only') else data.get('audio_id'),'at':now()})
+        else: state.setdefault('messages',[]).append({**data,'who':data.get('who') or 'Бригада','actor_role':'brigade','audio':None if state.get('text_only') else data.get('audio_id'),'at':now()})
         a.state=state; a.revision+=1
         db.add(AttemptEvent(attempt_id=a.id,kind='simulation',data=data)); audit(db,None,'simulation',a.id,data)
     db.commit()
@@ -341,6 +356,9 @@ def publish(id:int,u=Depends(current),db:Session=Depends(getdb)):
     if not v: fail('Билет не найден',404)
     if v.published: return {'ok':True}
     for task in v.data['tasks']:
+        from .scenario_contract import validate_scenario
+        issues=validate_scenario(task)
+        if issues:fail('Проверьте сценарий: '+'; '.join(issues))
         if not task['criteria']: fail('У каждого задания нужны критерии оценки')
         if task['mode']=='112' and not any(task['type_options']): fail('Для задания 112 укажите хотя бы один тип происшествия')
         if task['mode']=='dds':
@@ -479,8 +497,8 @@ def apply_command(id,c,u,db,_trusted_ai=False):
         from .caller import caller_gender
         state['voice_gender']=caller_gender(task)
         if q: state['asked'].append(q['id'])
-        state['dialogue'] += [{'who':'Оператор','text':payload['text'] if kind=='ai_question' else q['question']},
-                             {'who':'Заявитель','text':q['answer'] if q else payload.get('voice_reply') or 'Я не понял вопрос. Уточните, пожалуйста.',
+        state['dialogue'] += [{'who':'Оператор','actor_role':'learner','at':now(),'text':payload['text'] if kind=='ai_question' else q['question']},
+                             {'who':'Заявитель','actor_role':'caller','at':now(),'text':q['answer'] if q else payload.get('voice_reply') or 'Я не понял вопрос. Уточните, пожалуйста.',
                               'audio':q.get('audio_id') if q else None}]
     elif kind=='validate_card':
         fail('ДДС не контролирует заполнение карточки 112. Используйте статусы и комментарии.')
@@ -496,7 +514,11 @@ def apply_command(id,c,u,db,_trusted_ai=False):
             from .voice import VoiceJob
             job=db.get(VoiceJob,event.data['voice_key'])
             if job and job.status=='ready':event.data={**event.data,'audio_id':job.audio_id}
-        state['messages'].append({'who':incoming['who'],'text':event.data['text'],'at':now(),'direction':'incoming','event_id':event.id,'audio':None if state.get('text_only') else event.data.get('audio_id'),'contact_id':incoming.get('contact_id'),'call_audio':incoming.get('call_audio',{})})
+        caller=next((c for c in task.get('contacts',[]) if c['id']==incoming.get('contact_id')), {})
+        state['messages'].append({'who':incoming['who'],'text':event.data['text'],'at':now(),
+            'actor_role':caller.get('kind','brigade'),
+            **{key:event.data[key] for key in ('report_id','stage_id','status') if key in event.data},
+            'direction':'incoming','event_id':event.id,'audio':None if state.get('text_only') else event.data.get('audio_id'),'contact_id':incoming.get('contact_id'),'call_audio':incoming.get('call_audio',{})})
         state.setdefault('received_calls',[]).append(event.id)
         if event.data.get('stage'):state.setdefault('received_stages',[]).append(event.data['stage'])
         if incoming.get('contact_id'): state.setdefault('contacts',[]).append(incoming['contact_id'])
@@ -536,11 +558,17 @@ def apply_command(id,c,u,db,_trusted_ai=False):
         from .voice import response_audio
         audio=None if state.get('text_only') else response_audio(contact,answer,db)
         if _trusted_ai and not state.get('text_only'):audio=payload.get('live_audio') or audio
-        state['messages'] += [{'who':'Диспетчер → '+contact['name'],'text':text,'at':now()},
-                              {'who':contact['name'],'text':answer,'at':now(),'audio':audio,'direction':'outgoing_answer',
+        state['messages'] += [{'who':'Диспетчер → '+contact['name'],'actor_role':'learner','text':text,'at':now()},
+                              {'who':contact['name'],'actor_role':contact.get('kind','brigade'),'text':answer,'at':now(),'audio':audio,'direction':'outgoing_answer',
                                'contact_id':contact['id'],'dispatch':dispatch,'call_end':bool(payload.get('call_end')) if _trusted_ai else dispatch,
                                'ai':payload.get('ai',{}) if _trusted_ai else {}}]
         state['messages'][-2]['contact_id']=contact['id']
+        if task.get('scenario',{}).get('version')==2:
+            if dispatch and contact['id']=='brigade':
+                stage=next((s for s in task['scenario']['stages'] if s['id']=='dispatch'),None)
+                if stage:state['messages'][-1].update(report_id=stage['report_id'],stage_id=stage['id'],status=stage['status'])
+            if contact['kind']=='caller' and payload.get('question_id')=='access':
+                state['messages'][-1].update(report_id='caller-access',stage_id='access-source')
     elif kind=='draft':
         if task['mode']=='dds': fail('Полученная карточка доступна для чтения')
         if state['call']=='ringing': fail('Сначала примите звонок')
@@ -574,7 +602,13 @@ def apply_command(id,c,u,db,_trusted_ai=False):
         if state.get('brigade_pacing')=='sequential' and state.get('brigade_waiting_record') in state.get('received_calls',[]) and (comment or task.get('onboarding')):
             state['brigade_next_at']=time.time()+2
             state.pop('brigade_waiting_record',None)
-        hist.append({'status':status,'comment':comment[:2000],'unit':str(payload.get('unit',''))[:100],'at':now()})
+        reports=[message for message in state.get('messages',[]) if message.get('report_id')
+                 and message.get('actor_role')=='brigade']
+        related=next((message for message in reversed(reports)
+                      if kind=='worklog' or message.get('status')==status),{})
+        hist.append({'status':status,'comment':comment[:2000],'unit':str(payload.get('unit',''))[:100],'at':now(),
+                     'actor_role':'learner','operator_id':u.id,'comment_only':kind=='worklog',
+                     **{key:related[key] for key in ('report_id','stage_id') if key in related}})
     elif kind=='hint':
         if not state['training']: fail('В экзамене подсказки отключены')
         state['hint']='Уточните адрес и угрозы, выберите тип происшествия и службы. В ДДС подтвердите приём, фиксируйте сообщения и обоснуйте отказ.'; state['hints']=state.get('hints',0)+1

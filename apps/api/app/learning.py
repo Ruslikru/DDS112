@@ -83,6 +83,9 @@ def seed_catalog(db):
     db.commit()
     from .initial_library import seed_reference_content
     seed_reference_content(db)
+    from .classifier_routing import seed_services
+    seed_services(db)
+    db.commit()
     from .dictation import seed as seed_dictation
     seed_dictation(db)
 
@@ -136,8 +139,13 @@ def service_save(data:ServiceIn,u=Depends(m.current),db=Depends(m.getdb)):
     m.audit(db,u,'service_updated',data.name);db.commit();return {'ok':True}
 
 def automatic_services(db,card):
+    from .classifier_routing import resolve
     from .scenario_facts import semantic_services
     active=list(db.scalars(select(ServiceDefinition).where(ServiceDefinition.active==True)))
+    routing=resolve(card)
+    if routing['matched']:
+        available={s.name for s in active}
+        return [s for s in routing['services'] if s in available]
     result=semantic_services(active,card)
     for service in active:
         rules=(service.config or {}).get('rules',[])
@@ -152,7 +160,11 @@ def automatic_services(db,card):
 @router.post('/services/suggest')
 def suggest_services(card:dict,u=Depends(m.current),db=Depends(m.getdb)):
     m.staff(u)
-    return {'services':automatic_services(db,card)}
+    from .classifier_routing import resolve
+    routing=resolve(card)
+    available={s.name for s in db.scalars(select(ServiceDefinition).where(ServiceDefinition.active==True))}
+    routing['unavailable']=[s for s in routing['services'] if s not in available]
+    return {'services':automatic_services(db,card),'routing':routing}
 
 class MiniIn(BaseModel):
     prompt:str=Field(min_length=3,max_length=1000)

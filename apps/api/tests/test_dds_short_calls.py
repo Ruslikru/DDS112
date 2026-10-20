@@ -10,8 +10,8 @@ def state(report=REPORT,previous=None):
 def no_model(*args,**kwargs):pytest.fail('This short call must not wait for Qwen')
 
 @pytest.mark.parametrize('text,fragment',[
- ('Подъезд с правой стороны втором.','подъезд уточнили'),('Второй подъезд.','подъезд уточнили'),
- ('Подъезд с правой стороны дома.','подъезд уточнили'),('Заезжайте через двор.','подъезд уточнили'),
+ ('Подъезд с правой стороны втором.','Проверим подъезд'),('Второй подъезд.','Проверим подъезд'),
+ ('Подъезд с правой стороны дома.','Проверим подъезд'),('Заезжайте через двор.','Проверим подъезд'),
  ('Я не знаю как подъехать, данных нет.','сами найдём'),('Данных нет.','сами найдём'),
  ('Карту посмотрите или людей поспрашивайте.','на месте'),('Уточните у местных.','на месте'),
 ])
@@ -38,3 +38,12 @@ def test_new_incoming_call_gets_its_own_turn_budget():
 def test_hold_request_is_respected():
  value=reply('Не вешайте трубку, подождите.',{},CONTACT,state(previous='Секунду.'),[],lambda *a,**kw:({'text':'Ожидаю.'},{'model':'test'}))
  assert not value['call_end']
+
+
+@pytest.mark.parametrize('kind',['caller','service'])
+def test_access_question_uses_available_contact_facts_without_model(kind):
+ contact={'id':'source','kind':kind,'name':'Источник','response':'На связи.'}
+ options=[{'id':'access','question':'Как подъехать к месту происшествия?','answer':'Проезд закрыт. Въезд со двора.'}]
+ value=reply('Подскажите как проехать к дому?',{},contact,{},options,no_model)
+ assert value['answer']=='Проезд закрыт. Въезд со двора.'
+ assert value['question_id']=='access' and value['call_end']

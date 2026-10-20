@@ -1,3 +1,4 @@
+import {ScenarioPlan} from './scenario-plan';
 import {ArmDialog} from './arm-ui';
 import {VoiceDraft} from './voice';
 import { TextCheck } from './shared';
@@ -213,7 +214,7 @@ export function TicketEditor() {
     // ?section=card opens the editor on a tab (used by the assistant for edits made by hand).
     [section, setSection] = useState(["story","card","routing","contacts","criteria"].includes(params.get("section")||"")?params.get("section")!:"story"),
     [showAllCardFields, setShowAllCardFields] = useState(false),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),[confirmRebuild,setConfirmRebuild]=useState(false);
   useEffect(() => {
     if (id === "new") {
       setVersion(null);
@@ -260,6 +261,11 @@ export function TicketEditor() {
       task[key].map((x: Obj, n: number) => (n === i ? { ...x, [k]: v } : x)),
     );
   }
+  async function rebuildScenario(){
+    setBusy(true);setError('');
+    try{const result=await api('/ai/scenario/rebuild','POST',{task,stars:ticketStars(data!)});setData(current=>({...current!,tasks:current!.tasks.map((t:Obj,i:number)=>i===index?result.task:t)}));setConfirmRebuild(false);}
+    catch(e:any){setError(e.message);}finally{setBusy(false);}
+  }
   async function save(publish = false) {
     setBusy(true);
     setError("");
@@ -290,6 +296,7 @@ export function TicketEditor() {
           <div className="panel form-panel" key={t.id}>
             <Badge>{t.mode === "112" ? "Оператор 112" : "Диспетчер ДДС"}</Badge>
             <h2>{t.title}</h2>
+            {u.role!=='student'&&<ScenarioPlan task={t}/>}
             <p>{t.intro}</p>
             <p>
               {t.source} · {t.method_note}
@@ -437,6 +444,8 @@ export function TicketEditor() {
             </div>
             {section === "story" && (
               <div className="editor-section">
+                <ScenarioPlan task={task}/>
+                {task.mode==='dds'&&!readonly&&<><button type="button" disabled={busy} onClick={()=>setConfirmRebuild(true)}>Пересобрать события по карточке</button>{confirmRebuild&&<div role="alertdialog" aria-label="Пересборка сценария" className="scenario-plan"><p>События, звонки и критерии этого черновика будут созданы заново по текущим сведениям карточки. Поля карточки сохранятся.</p><button type="button" disabled={busy} onClick={rebuildScenario}>Пересобрать</button><button type="button" disabled={busy} onClick={()=>setConfirmRebuild(false)}>Отмена</button></div>}</>}
                 <Field label="Первое сообщение / описание ситуации">
                   <textarea
                     rows={5}
@@ -643,7 +652,7 @@ export function TicketEditor() {
                         }
                       />
                     </Field>
-                    <Field label="Канал"><select value={v.kind||'message'} onChange={e=>updateItem('service_events',i,'kind',e.target.value)}><option value="message">Текстовое сообщение</option><option value="incoming_call">Входящий звонок</option></select></Field>
+                    <Field label="Канал"><select value={v.kind||'message'} onChange={e=>updateItem('service_events',i,'kind',e.target.value)}><option value="message">Текстовое сообщение</option><option value="service_report">Запись другой службы</option><option value="incoming_call">Входящий звонок</option></select></Field>
                     {v.kind!=='incoming_call'&&<label><input type="checkbox" checked={!!v.spoken} onChange={e=>updateItem('service_events',i,'spoken',e.target.checked)}/>Озвучивать сообщение</label>}<Field label="Голос"><select value={v.voice_gender||'male'} onChange={e=>updateTask('service_events',task.service_events.map((x:Obj,n:number)=>n===i||v.contact_id&&x.contact_id===v.contact_id?{...x,voice_gender:e.target.value}:x))}><option value="male">Мужской</option><option value="female">Женский</option></select></Field>
                     <Field label="Отсчёт времени"><select value={v.trigger_contact||''} onChange={e=>updateItem('service_events',i,'trigger_contact',e.target.value)}><option value="">С поступления карточки</option>{(task.contacts||[]).map((c:Obj)=><option key={c.id} value={c.id}>С передачи заявки: {c.name}</option>)}</select></Field>
                     {v.kind==='incoming_call'&&<Field label="Кто звонит"><select value={v.contact_id||''} onChange={e=>{const c=task.contacts.find((c:Obj)=>c.id===e.target.value);updateTask('service_events',task.service_events.map((x:Obj,n:number)=>n===i?{...x,contact_id:c?.id,who:c?.name}:x));}}><option value="">Выберите абонента</option>{(task.contacts||[]).map((c:Obj)=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>}

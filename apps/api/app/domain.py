@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from .writing import address_checks
+from .evidence import status_evidence, written_records, speech_messages, speech_context
 
 SERVICES = ['Служба 101','Служба 102','Служба 103','Служба 104','ДДС района','Мослифт','ЦОДД','Мосводоканал','Деп. ЖКХ','ЦЭМП']
 CARD_FIELDS = ['name','caller_status','phone','contact_phone','site_phone','country','region','city','district','area','object','street','house','building','structure','apartment','entrance','floor','code','address_note','description','incident_type','victims','victims_count','traits','medical_refusal','blocked','no_contact','call_lost']
@@ -43,7 +44,7 @@ def assess(attempt):
     state=attempt.state
     results=[]
     for c in task['criteria']:
-        kind=c['kind']; actual=None; passed=False
+        kind=c['kind']; actual=None; passed=False; details={}
         if kind=='field':
             actual=attempt.card.get(c['field'],'')
             expected=c['expected']
@@ -54,8 +55,9 @@ def assess(attempt):
         elif kind=='service':
             actual=list(state.get('services',{})); passed=c['expected'] in actual
         elif kind=='status':
-            actual=[h['status'] for h in state.get('services',{}).get(task['own_service'],[])]
-            passed=c['expected'] in actual
+            actual=[h['status'] for h in state.get('services',{}).get(task['own_service'],[]) if h['status']==c['expected']]
+            passed,reason=status_evidence(state,task,c)
+            if reason:details['evidence_reason']=reason
         elif kind=='time':
             if task['mode']=='dds':
                 history=state.get('services',{}).get(task['own_service'],[])
@@ -68,26 +70,40 @@ def assess(attempt):
         elif kind=='validation':
             actual=state.get('validation',{}).get('comment',''); passed=None
         elif kind=='manual':
-            actual=attempt.card.get('description','') if not c['field'] else attempt.card.get(c['field'],'')
-            if task['mode']=='dds': actual='; '.join(h.get('comment','') for h in state.get('services',{}).get(task['own_service'],[]))+' | Связь: '+'; '.join(m.get('text','') for m in state.get('messages',[]) if m.get('who','').startswith('Диспетчер'))
-            passed=None
-        results.append({**c,'actual':actual,'passed':passed})
-    dialogue=state.get('dialogue',[]) if task['mode']=='112' else state.get('messages',[])
-    spoken=[m for m in dialogue if m.get('who','').startswith(('Оператор','Диспетчер'))]
+            source=c.get('evidence_source') or ('speech' if c.get('field')=='conversation' else 'written')
+            if source=='speech':
+                spoken=speech_messages(state,task,c)
+                actual='\n'.join(m.get('text','') for m in spoken)
+                details['evidence_context']=speech_context(state,task,spoken)
+            elif task['mode']=='dds':
+                rows=written_records(state,task,c)
+                actual='\n'.join(h['comment'] for h in rows)
+                details['evidence_context']={'mode':'dds','source':'written','records':rows,
+                    'rule':'Оценивайте только письменные записи ученика. Разговор не заменяет запись события.'}
+            else:
+                actual=attempt.card.get(c.get('field') or 'description','')
+            passed=None if str(actual).strip() else False
+            if passed is False:
+                details.update(credit=0,evidence_reason='Нет письменной записи ученика.' if source=='written' else 'Нет реплики ученика по этому этапу.')
+        results.append({**c,**details,'actual':actual,'passed':passed})
+    spoken=speech_messages(state,task)
     if spoken and not any(c['id']=='phone_conversation' for c in results):
-        expected=task.get('expected_card',{}) or task.get('initial_card',{})
-        results.append({'id':'phone_conversation','kind':'manual','field':'conversation','label':'Телефонный разговор: сведения и передача заявки','skill':'Опрос и передача информации','weight':20,'critical':False,'actual':'\n'.join(m.get('who','')+': '+m.get('text','') for m in spoken),'expected':'Оцените только реплики ученика: для 112 уточнены существенные сведения, для ДДС переданы адрес и обстоятельства. Не требуйте повторно спрашивать сведения, которые заявитель уже сообщил. Не засчитывайте слова абонента как слова ученика. Факты билета: '+str(expected),'passed':None})
+        context=speech_context(state,task,spoken)
+        results.append({'id':'phone_conversation','kind':'manual','field':'conversation','evidence_source':'speech','label':'Телефонный разговор: сведения и передача заявки','skill':'Опрос и передача информации','weight':20,'critical':False,'actual':'\n'.join(m.get('text','') for m in spoken),'expected':'Оцените только реплики ученика: для 112 уточнены существенные сведения, для ДДС переданы доступные адрес и обстоятельства. Не требуйте повторно спрашивать сведения, которые заявитель уже сообщил. Не засчитывайте слова абонента как слова ученика. Проверяйте ответы по фактам, доступным на момент реплики, не по будущим докладам.','evidence_context':context,'passed':None})
     measured=state.get('ack_seconds') if task['mode']=='dds' else state.get('fill_seconds',duration(attempt))
     return score({'criteria':results,'duration':duration(attempt),'norm_seconds':task['limit_seconds'],'measured_seconds':measured,'measurement':'Первичное решение ДДС' if task['mode']=='dds' else 'Заполнение карточки','deviation_seconds':measured-task['limit_seconds'] if measured is not None else None,'text_checks':text_checks(attempt.card.get('description','')+' '+ ' '.join(h.get('comment','') for h in state.get('services',{}).get(task['own_service'],[]))),'assisted':bool(state.get('teacher_assisted')), 'reviews':[], 'address_checks':address_checks(attempt.card,task.get('expected_card',{}))})
 
 def score(result):
     checked=[c for c in result['criteria'] if c['passed'] is not None]
-    total=sum(c['weight'] for c in checked)
+    total=sum(c['weight'] for c in result['criteria'])
     result['score']=round(100*sum(c['weight']*c.get('credit',1 if c['passed'] else 0) for c in checked)/total) if total else None
+    result['score_is_provisional']=any(c['passed'] is None for c in result['criteria'])
     result['pending']=any(c['passed'] is None for c in result['criteria'])
     result['critical_errors']=sum(c['critical'] and c['passed'] is False for c in result['criteria'])
     result['ai_preliminary']=any(c.get('ai_evaluation') and not c.get('teacher_reviewed') for c in result['criteria'])
-    result['passed']=not result['pending'] and result['score'] is not None and result['score']>=70 and not result['critical_errors']
+    result['missing_required_records']=sum(bool(c.get('required_record') and not str(c.get('actual') or '').strip()
+                                               and c['passed'] is not True) for c in result['criteria'])
+    result['passed']=not result['pending'] and result['score'] is not None and result['score']>=70 and not result['critical_errors'] and not result['missing_required_records']
     return result
 
 

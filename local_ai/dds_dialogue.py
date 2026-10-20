@@ -39,7 +39,7 @@ def short_incoming_reply(text, report, turns):
         if re.search(r'не знаю|неизвест|нет (?:данных|сведений|информации)|данных нет|сведений нет|информации нет|не могу (?:сказать|подсказать|уточнить)',words):
             return 'Понял, тогда сами найдём подъезд. До связи.'
         if re.search(r'справ|слева|правой|левой|сторон|подъезд|подьезд|двор|арку|ворот|въезд|заезд|объезд|обьезд|проезж|поверн|поворач|обогн|второ|перв|свобод|открыт|закрыт|перекрыт|пешком|сзади|спереди',words):
-            return 'Понял, подъезд уточнили. Дальше сориентируемся на месте. До связи.'
+            return 'Принял информацию. Проверим подъезд на месте. До связи.'
         if turns>=2:return 'Понял, уточним подъезд на месте. До связи.'
         return ''
     if turns>=2:return 'Понял вас. Продолжаем по обстановке, об изменениях доложим. До связи.'
@@ -80,6 +80,9 @@ def reply(text, task, contact, state, options, complete):
         accepted=accepted_response(contact['response'])
         return result('dispatch' if accepted else 'unknown',contact['response'],accepted)
     catalog={q['id']:q for q in options}
+    if contact.get('kind') in ('caller','service') and 'access' in catalog and re.search(
+            r'подъе[хз]|подьезд|прое[хз]|въезд|заех|заезд|как (?:пройти|добраться)|вход|ориентир',text,re.I):
+        return result('access',catalog['access']['answer'],True)
     normalized=lambda s:re.sub(r'[^а-яёa-z0-9]+',' ',s.casefold()).strip()
     for q in options:
         if q['id']!='dispatch' and normalized(q['question'])==normalized(text):

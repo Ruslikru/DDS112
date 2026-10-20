@@ -1,8 +1,5 @@
 """Small-step authoring: explicit facts constrain the locally generated draft."""
-import json
-import logging
 import re
-import secrets
 from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -14,7 +11,7 @@ from local_ai.engine import engine as text_engine
 def complete(*args,**kwargs):
     try:return text_engine.complete(*args,**kwargs)
     except Exception as e:m.fail(str(e),503)
-from .dds_scenarios import generated_dds, default_brigade_reports
+from .dds_scenarios import generated_dds
 from .schemas import TicketData
 from .scenario_facts import base_facts, clean_story, enrich_facts, GEOGRAPHY_PROMPT, scene_seed, scene_matches
 from .ticket_difficulty import assess_wizard, legacy_level, apply_difficulty, DIFFICULTY_HINTS
@@ -33,6 +30,7 @@ class WizardIn(BaseModel):
     affiliation:str=''
     difficulty_stars:int=Field(default=0,ge=0,le=5)
     address:str=Field(default='',max_length=160)
+    access_source:Literal['auto','card','service_history','caller','unknown']='auto'
 
 def split_address(value):
     """«улица Ленина, дом 5» → («улица Ленина», «5»); without a number the street is kept and the house stays random."""
@@ -52,8 +50,8 @@ def wizard(data:WizardIn,u=Depends(m.current),db=Depends(m.getdb)):
 
 def build_draft(data,db,fixed=None,meta=None):
     """One draft from explicit facts. `fixed` holds facts the author already gave
-    (description, caller_name, object, seed — the scene the model rewrites); with a fixed description
-    the model only writes brigade reports."""
+    (description, caller_name, object, seed — the scene the model rewrites).
+    With a fixed description, all derived stages are built without another model call."""
     fixed=fixed or {}
     active_services=db.scalars(select(ServiceDefinition).where(ServiceDefinition.active==True)).all()
     available={service.name for service in active_services}
@@ -85,11 +83,18 @@ def build_draft(data,db,fixed=None,meta=None):
         keys=['description']
         schema={'type':'object','properties':{k:{'type':'string'} for k in keys},'required':keys,'additionalProperties':False}
         seed=fixed.get('seed') or scene_seed(data.incident_type,data.traits)
-        prompt=seed+' Признаки: '+', '.join(data.traits) if data.traits else seed
-        generated,meta=complete(GEOGRAPHY_PROMPT+' Rewrite the supplied Russian witness report in natural Russian, 2 or 3 short sentences. Preserve its specific object and visible signs. Do not add an address, casualties, responders or rescue actions. Return JSON with one field: description.',prompt,schema,tokens=220,temperature=.2)
+        prompt=(seed or ('Тип происшествия: '+data.incident_type))+(' Признаки: '+', '.join(data.traits) if data.traits else '')
+        instruction=(' Rewrite the supplied Russian witness report in natural Russian, 2 or 3 short sentences. Preserve its specific object and visible signs.' if seed else
+                     ' Create a fictional Russian training report of 2 or 3 short sentences for the supplied incident subtype. Describe a concrete object and observable signs; preserve the incident subtype exactly. Do not merely repeat its title or claim that circumstances are unknown.')
+        try:
+            generated,meta=complete(GEOGRAPHY_PROMPT+instruction+' Do not add an address, casualties, responders or rescue actions. Return JSON with one field: description.',prompt,schema,tokens=220,temperature=.2)
+        except Exception:
+            if not seed:m.fail('Для этого типа нет готового сценария. Опишите конкретные обстоятельства происшествия и повторите создание.',422)
+            raise
         if any(not isinstance(generated.get(k),str) or not generated[k].strip() for k in keys):m.fail('Модель вернула неполный черновик. Повторите.',502)
         facts['description']=clean_story(generated['description'])
         if len(facts['description'])<12 or not scene_matches(data.incident_type,data.traits,facts['description']) or re.search(r'\b(?:район|округ)',facts['description'].casefold()):
+            if not seed:m.fail('Не удалось составить конкретные обстоятельства для этого типа. Добавьте описание происшествия.',422)
             facts['description']=seed
     victims=f"Пострадавших людей: {data.victims_count}." if data.victims_state=='yes' else 'Пострадавших людей нет.' if data.victims_state=='no' else 'Наличие пострадавших людей неизвестно.'
     if data.animals:victims+=' Есть пострадавшие животные.'
@@ -100,40 +105,17 @@ def build_draft(data,db,fixed=None,meta=None):
     facts.update({key:place[key] for key in ('apartment','entrance','floor') if place.get(key)})
     facts['title']=f"{data.incident_type}: {facts['street']}, дом {facts['house']}"[:200]
     from .learning import automatic_services
-    data.services=list(dict.fromkeys(data.services+automatic_services(db,{'incident_type':data.incident_type,'description':facts['description'],'traits':facts['traits'],'victims':data.victims_state,'object':facts['object']})))
+    data.services=list(dict.fromkeys(data.services+automatic_services(db,{'incident_type':data.incident_type,'description':facts['description'],'traits':facts['traits'],'victims':data.victims_state,'victims_count':data.victims_count,'object':facts['object'],
+        **{key:facts.get(key,'') for key in ('city','region','district','area')}})))
     stars,reason=assess_wizard(data,facts,data.services)
     if data.difficulty_stars:stars=data.difficulty_stars;reason=DIFFICULTY_HINTS[stars]
     facts.update(difficulty_stars=stars,difficulty_reason=reason,difficulty=legacy_level(stars))
     reports=None
     if data.mode=='dds':
-        defaults=default_brigade_reports(data,facts)
-        report_schema={'type':'object','properties':{key:{'type':'string','maxLength':180} for key in ('approach','on_scene','outcome')},
-                       'required':['approach','on_scene','outcome'],'additionalProperties':False}
-        report_context={'service':data.own_service,'incident':data.incident_type,'description':facts['description'],
-                        'victims':victims,'traits':facts['traits'],'address':f"{facts['city']}, {facts['street']}, дом {facts['house']}"}
-        # An explicit floor keeps the model from taking an apartment number for it.
-        report_context.update({key:facts[key] for key in ('floor','apartment') if place.get(key)})
-        try:
-            generated_reports,_=complete(
-                'Напиши на русском три коротких, разных и живых доклада старшего бригады диспетчеру по телефону. '
-                'Это учебный сценарий. 1 approach: бригада едет к адресу, при необходимости сообщает конкретную помеху в пути; '
-                '2 on_scene: бригада прибыла, описывает проверенное наблюдение и действие; '
-                '3 outcome: сообщает конкретный результат и дальнейшее действие. '
-                'Используй только факты JSON, не меняй происшествие, адрес и число пострадавших, не выдумывай диагноз. '
-                'Госпитализацию упоминай только для скорой помощи и только если пострадавшие есть. '
-                'Каждый доклад — одно предложение до 120 символов. Не повторяй адрес: он уже известен диспетчеру. '
-                'Избегай одинаковых шаблонных фраз и названий полей. Верни только JSON.',
-                json.dumps(report_context,ensure_ascii=False),report_schema,tokens=900,temperature=.25)
-            ordered=[generated_reports.get(key) for key in ('approach','on_scene','outcome')]
-            if all(isinstance(value,str) and 25<=len(value.strip())<=350 for value in ordered) and len({value.strip().casefold() for value in ordered})==3:
-                text=' '.join(ordered).casefold()
-                unrelated_tram='трамва' in data.incident_type.casefold() and bool(re.search(r'лестниц|ступен|квартир',text))
-                hospital=bool(re.search(r'госпитал|в больниц|в стационар',text))
-                if (not hospital or data.own_service=='Служба 103' and data.victims_state=='yes') and not unrelated_tram:
-                    reports=[defaults[0]]+[value.strip() for value in ordered]
-        except Exception as error:
-            logging.warning('Brigade report generation fell back: %s',error)
-        meta['brigade_reports']='model' if reports else 'fallback'
+        if data.access_source=='service_history' and not any(s!=data.own_service for s in data.services):
+            m.fail('Для сведений из истории другой службы добавьте вторую службу.')
+        # The scenario defines outcomes before prose: no unconstrained second model call.
+        meta['brigade_reports']='scenario'
     ticket=generated_dds(data,facts,meta,reports=reports).model_dump();ticket['difficulty']=facts['difficulty'];task=ticket['tasks'][0]
     classifier=db.scalar(select(Classifier).where(Classifier.title==data.incident_type).limit(1))
     incident_name=data.incident_type.casefold()
@@ -143,9 +125,13 @@ def build_draft(data,db,fixed=None,meta=None):
     elif data.victims_state=='no':selected_signs.append('Нет пострадавших')
     task['traits']=list(dict.fromkeys(selected_signs))
     task['initial_card'].update(traits=facts['traits'],victims_count=str(data.victims_count) if data.victims_state=='yes' else '')
+    from .classifier_routing import resolve
+    from .scenario_contract import scenario_fact_snapshot
+    task['scenario']['facts'].update(scenario_fact_snapshot(task['initial_card']))
+    task['scenario']['routing']=resolve(task['initial_card'])
     if data.mode=='112':
         expected=task['initial_card'].copy()
-        task.update(mode='112',title=facts['title'],intro=facts['description'],initial_card={},expected_card=expected,
+        task.update(mode='112',scenario={},title=facts['title'],intro=facts['description'],initial_card={},expected_card=expected,
             questions=[{'id':'address','question':'Где это произошло?','answer':f"{facts['city']}, {facts['street']}, дом {facts['house']}"+(f", район {facts['area']}" if facts['area'] else '')+f". {facts['address_note']}"},
                        {'id':'name','question':'Как вас зовут?','answer':facts['caller_name']},
                        {'id':'phone','question':'По какому номеру можно с вами связаться?','answer':facts['phone']},
@@ -162,7 +148,11 @@ def build_draft(data,db,fixed=None,meta=None):
         if data.animals:task['scenario_details']['animals']='Есть пострадавшие животные.'
         ticket['tasks'][0]=enrich_task(task)
         ticket['title']=facts['title']
-    if data.difficulty_stars:apply_difficulty(ticket,facts,data.difficulty_stars)
+    apply_difficulty(ticket,facts,stars)
+    if data.mode=='dds':
+        from .scenario_contract import validate_scenario
+        problems=validate_scenario(ticket['tasks'][0])
+        if problems:m.fail('Сценарий требует исправления: '+'; '.join(problems),422)
     return TicketData.model_validate(ticket).model_dump(),meta
 
 @router.post('/attempts/{id}/routing-preview')

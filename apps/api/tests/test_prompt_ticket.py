@@ -63,13 +63,15 @@ def test_stated_facts_are_kept_and_the_draft_publishes(author,monkeypatch):
         row=db.scalars(select(Audit).where(Audit.action=='prompt_draft_generated').order_by(Audit.id.desc())).first()
         assert row and row.detail['incident']=='пожар' and 'школе' in row.detail['prompt']
 
-def test_dds_draft_uses_model_reports(author,monkeypatch):
+def test_dds_draft_uses_one_consistent_scenario(author,monkeypatch):
     model(monkeypatch,empty(incident='задымление',description='В подъезде жилого дома густой дым. На лестнице пахнет гарью.'))
     body=generate(author,'Задымление в подъезде, пострадавших нет, для службы 101')
     ticket,meta=body['data'],body['meta'];task=ticket['tasks'][0]
     assert task['mode']=='dds' and task['own_service']=='Служба 101' and meta['sources']['mode']=='default'
     assert task['initial_card']['victims']=='no' and 'дым' in task['initial_card']['description']
-    assert meta['brigade_reports']=='model' and any('разведку' in e['text'] for e in task['service_events'])
+    assert meta['brigade_reports']=='scenario' and any('разведку' in e['text'] for e in task['service_events'])
+    assert task['scenario']['version']==2
+    assert len(task['scenario']['stages'])==5
     assert 1<=ticket['difficulty_stars']<=5 and meta['sources']['difficulty']=='computed'
     assert post(author,'/tickets',ticket).status_code==200
 
@@ -121,7 +123,7 @@ def test_without_model_rules_and_template_still_give_a_draft(author,monkeypatch)
     meta=body['meta'];task=body['data']['tasks'][0]
     assert meta['model']=='rules' and meta['warnings'] and meta['sources']['description']=='prompt'
     assert meta['slots']['incident_type']=='лифт' and meta['sources']['incident_type']=='prompt'
-    assert body['data']['difficulty_stars']==2 and meta['brigade_reports']=='fallback'
+    assert body['data']['difficulty_stars']==2 and meta['brigade_reports']=='scenario'
     assert 'лифт, застряли двое' in task['initial_card']['description'].casefold() and 'звезд' not in task['initial_card']['description']
     template=generate(author,'Нужен билет, 3 звезды')['meta']
     assert template['sources']['description']=='template' and template['sources']['incident_type']=='random'
@@ -183,3 +185,26 @@ def test_model_story_loses_invented_districts_and_casualty_sentences(author,monk
     model(monkeypatch,empty(incident='пожар',description='Горит квартира в районе Северный, округе Боровицкий. Из окон идёт дым. Есть пострадавшие.'))
     card=generate(author,'Пожар в квартире, из окон идёт дым, двое пострадавших')['data']['tasks'][0]['initial_card']
     assert card['description'].startswith('Горит квартира. Из окон идёт дым. Пострадавших людей: 2.'),card['description']
+
+
+def test_wizard_auto_and_explicit_same_stars_have_same_required_actions(author,monkeypatch):
+    from apps.api.app import scenario_wizard
+    calls=[]
+    def story_only(system,prompt,schema,**kwargs):
+        calls.append(schema)
+        assert set(schema['properties'])=={'description'}
+        return {'description':'В подъезде жилого дома дым из мусоропровода. Пахнет гарью.'},{'model':'test'}
+    monkeypatch.setattr(scenario_wizard,'complete',story_only)
+    config={'incident_type':'задымление','mode':'dds','victims_state':'no','own_service':'Служба 101',
+            'services':['Служба 101','Служба 103'],'access_source':'service_history'}
+    automatic=post(author,'/ai/wizard',config)
+    assert automatic.status_code==200,automatic.text
+    first=automatic.json()['data']
+    explicit=post(author,'/ai/wizard',{**config,'difficulty_stars':first['difficulty_stars']})
+    assert explicit.status_code==200,explicit.text
+    second=explicit.json()['data']
+    a,b=first['tasks'][0],second['tasks'][0]
+    assert a['criteria']==b['criteria']
+    assert a['service_events']==b['service_events']
+    assert a['scenario']['access']==b['scenario']['access']
+    assert len(calls)==2

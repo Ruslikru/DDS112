@@ -83,7 +83,7 @@ function AssessmentContent({
     <div className="panel assessment" data-review-open={u.role!=='student'?p.id:undefined}>
       <div className="assessment-top">
         <div className="score-ring">
-          {a.score ?? "—"}
+          {a.pending ? "—" : a.score ?? "—"}
           <small>из 100</small>
         </div>
         <div>
@@ -104,13 +104,14 @@ function AssessmentContent({
           <p>
             {a.duration} сек. · Критических ошибок: {a.critical_errors} ·{" "}
             {a.pending
-              ? "Балл предварительный: свободный текст ещё не оценён."
+              ? "Итоговый балл появится после проверки всех критериев."
               : a.ai_preliminary ? "Комментарии оценены локальной моделью. Преподаватель может уточнить оценку." : "Проверка завершена."}
             {p.state?.text_only&&<small className="text-only-mark" title="Озвучка билета не была готова при запуске, попытка прошла текстом">без звука</small>}
           </p>
         </div>
       </div>
       <p>{a.measurement||'Время выполнения'}: {a.measured_seconds??'—'} сек. · Норматив: {a.norm_seconds??p.task.limit_seconds} сек. · Отклонение: {a.deviation_seconds===null?'нет первичного решения':`${a.deviation_seconds>0?'+':''}${a.deviation_seconds??a.duration-p.task.limit_seconds} сек.`}</p>
+      {a.missing_required_records>0&&<Notice>Не оформлено обязательных событий: {a.missing_required_records}. Работа не зачтена.</Notice>}
       {a.assisted&&<Notice>{p.state.guided?'Пошаговое обучение с подсказками.':'Работа выполнена с помощью преподавателя.'} Не учитывается при расчёте самостоятельного уровня.</Notice>}
       {a.address_checks?.length>0&&<details open><summary>Точность адреса</summary>{a.address_checks.map((x:Obj,i:number)=><p key={i}>{x.message}: «{x.fragment}». Ожидалось: «{x.expected}».</p>)}</details>}
       {a.text_checks?.length>0&&<details><summary>Замечания к оформлению текста ({a.text_checks.length})</summary><p>Локальные правила. Не заменяют проверку смысла и грамматики преподавателем.</p>{a.text_checks.map((x:Obj,i:number)=><p key={i}>{x.message}: «{x.fragment}»</p>)}</details>}
@@ -161,6 +162,7 @@ function AssessmentContent({
                       ? "Верно"
                       : "Ошибка"}
                 </Badge>
+                {c.evidence_reason&&<p className="semantic-explanation">{c.evidence_reason}</p>}
                 {c.ai_evaluation&&<div className="semantic-explanation"><small>{c.teacher_reviewed?'Проверено преподавателем; первичный разбор ИИ:':'Первичная оценка локальной модели:'}</small><p>{c.ai_evaluation.reason}</p>{c.ai_evaluation.warning&&<small>{c.ai_evaluation.warning}</small>}{c.ai_evaluation.evidence&&<blockquote>«{c.ai_evaluation.evidence}»</blockquote>}<small>{c.teacher_reviewed?'':`Начислено: ${c.passed===null?'ожидает решения':Math.round(c.weight*(c.credit||0))+' из '+c.weight}`}</small></div>}
               </td>
               {u.role !== "student" && (

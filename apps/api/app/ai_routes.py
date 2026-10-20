@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from local_ai.engine import engine as ai, AIUnavailable
 from local_ai.model_catalog import CARD_MODEL
 from . import main as m
-from .schemas import Command, TicketData
+from .schemas import Command, TicketData, Task
 from .caller import caller_questions, contact_questions
 
 router=APIRouter(prefix='/api/ai')
@@ -69,6 +69,19 @@ class GenerateIn(BaseModel):
     services: list[str]=Field(default_factory=list,max_length=30)
     district: str=Field(default='',max_length=160)
     affiliation: str=Field(default='',max_length=200)
+
+class RebuildScenarioIn(BaseModel):
+    task: Task
+    stars: int=Field(default=3,ge=1,le=5)
+
+@router.post('/scenario/rebuild')
+def rebuild_scenario(data:RebuildScenarioIn,u=Depends(m.current)):
+    m.staff(u)
+    from .scenario_contract import rebuild_scenario as rebuild
+    try:
+        return {'task':rebuild(data.task.model_dump(),data.stars)}
+    except ValueError as error:
+        m.fail(str(error))
 
 class ContactQuestionIn(QuestionIn):
     text: str=Field(min_length=1,max_length=500)
@@ -304,9 +317,13 @@ def generate(data:GenerateIn,u=Depends(m.current),db:Session=Depends(m.getdb)):
     if data.mode=='112' and not operator_112_enabled(db):m.fail('Режим 112 отключён администратором')
     m.staff(u)
     if data.mode=='dds':
-        if not db.scalar(m.select(m.Classifier).where(m.Classifier.title==data.incident_type)):
-            m.fail('Для ДДС выберите тип происшествия из классификатора')
-        if not data.district.strip(): m.fail('Укажите район обслуживания для сценария ДДС')
+        from .scenario_wizard import WizardIn, build_draft
+        config=WizardIn(incident_type=data.incident_type,own_service=data.own_service,
+                        services=data.services or [data.own_service],district=data.district,
+                        affiliation=data.affiliation)
+        ticket,meta=build_draft(config,db,fixed={'description':data.topic})
+        m.audit(db,u,'ai_draft_generated',detail={'mode':'dds','topic':data.topic,**meta});db.commit()
+        return {'data':ticket,'meta':meta}
     keys=['title','intro','caller_name','city','street','house','victims','description']
     if data.mode=='dds': keys+=['victims_state']
     schema={'type':'object','properties':{k:{'type':'string'} for k in keys},'required':keys,'additionalProperties':False}

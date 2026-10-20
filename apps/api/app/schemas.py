@@ -21,6 +21,11 @@ class Criterion(BaseModel):
     weight: int = Field(default=10, ge=1, le=100)
     critical: bool = False
     skill: str = 'Полнота карточки'
+    evidence_source: str = ''
+    required_record: bool = False
+    stage_id: str = ''
+    report_id: str = ''
+    status: str = ''
 
 class Contact(BaseModel):
     voice_tts: Literal["piper-denis","piper-irina","piper-ruslan"] | None = None
@@ -39,6 +44,7 @@ class Contact(BaseModel):
 class Task(BaseModel):
     workplace: dict[str,str] = Field(default_factory=dict)
     caller_gender: Literal['male','female'] | None = None
+    scenario: dict = Field(default_factory=dict)
     scenario_details: dict[str,str] = Field(default_factory=dict)
     onboarding: Literal["112-1","112-2","dds-1","dds-2"] | None = None
     id: str
