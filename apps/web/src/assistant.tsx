@@ -30,10 +30,11 @@ function Text({text}:{text:string}){
  return <p>{text.split('\n').map((line,i)=>{const m=/^([А-ЯЁ][а-яё]+):\s(.+)$/.exec(line);return <React.Fragment key={i}>{i>0&&<br/>}{m?<><b>{m[1]}:</b> {m[2]}</>:line}</React.Fragment>;})}</p>;
 }
 /** Spoken answers to an open confirmation card are handled on the client, without the server. JS \b ignores Cyrillic, hence the lookahead. */
-const VOICE_YES=/^(создай|создать|отправь|отправить|опубликуй|да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|сохрани|сохранить|ок|окей|хорошо)(?=[\s.,!?]|$)/i;
+/** A short answer to an open card is «yes»; «Отправь билет 2 Кузнецову» is a new command even though it starts with «отправь». */
+const VOICE_YES=/^(?:да[,\s]+)?(создай|создать|отправь|отправить|опубликуй|да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|сохрани|сохранить|ок|окей|хорошо)(?:[,\s]+(?:пожалуйста|да|его|её|это))?[\s.,!?]*$/i;
 const VOICE_NO=/^(нет|отмена|отмени|отменить|не надо|не нужно|стоп|не выполняй)(?=[\s.,!?]|$)/i;
 const HINTS=['Что умеешь?','Журнал','Проверить работы','Кто сейчас в классе?','Новый билет'];
-const DIALOG_INTENTS=['create_ticket','edit_ticket','save_ticket','create_group','open_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'];
+const DIALOG_INTENTS=['create_ticket','edit_ticket','open_ticket','ticket_status','save_ticket','create_group','open_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'];
 const HISTORY_KEY='training112:assistant-history';
 const HISTORY_SIZE=10;
 const WELCOME:Message={who:'assistant',text:'Напишите или скажите команду: «открой журнал», «где сидит Кузнецов», «создай билет про пожар на 3 звезды». Переходы выполняются сразу, билеты создаются и меняются только после вашего подтверждения.'};
@@ -52,7 +53,8 @@ function collected(slots:Obj):string[]{
  else if(slots.victims==='unknown')out.push('пострадавшие неизвестны');
  else if(slots.victims==='yes')out.push(slots.victims_count?`пострадавших: ${slots.victims_count}`:'есть пострадавшие');
  if(Array.isArray(slots.traits)&&slots.traits.length)out.push(slots.traits.join(', '));
- if(slots.address)out.push(String(slots.address));
+ if(slots.address)out.push([slots.story?.place?.city,String(slots.address)].filter(Boolean).join(', '));
+ if(slots.story?.caller_name)out.push('заявитель: '+slots.story.caller_name);
  return out;
 }
 
@@ -68,14 +70,18 @@ type VoiceSource='checking'|'bridge'|'server'|'none';
 
 /** Header button: the window itself is mounted once in App, so the shortcut is registered once. */
 export function AssistantButton(){
- const u=useContext(UserContext);
- if(!allowed(u.role))return null;
+ const u=useContext(UserContext),location=useLocation();
+ // While the teacher plays a ticket the corner belongs to the training phone («Завершить»); Ctrl+Space still opens the assistant.
+ if(!allowed(u.role)||location.pathname.startsWith('/attempts/'))return null;
  return <button type="button" className="assistant-button" title="Ассистент преподавателя (Ctrl+Space)" aria-label="Открыть AI ассистента" onClick={()=>window.dispatchEvent(new Event(TOGGLE))}><Sparkles size={24}/><span>AI</span></button>;
 }
 
 export function TeacherAssistant(){
- const u=useContext(UserContext),[open,setOpen]=useState(()=>{try{return localStorage.getItem(OPEN_KEY)==='1';}catch{return false;}});
+ const u=useContext(UserContext),location=useLocation(),[open,setOpen]=useState(()=>{try{return localStorage.getItem(OPEN_KEY)==='1';}catch{return false;}});
  useEffect(()=>{try{localStorage.setItem(OPEN_KEY,open?'1':'0');}catch{}},[open]);
+ // A remembered open panel would cover the training workspace: it closes when the teacher starts playing a ticket.
+ const playing=location.pathname.startsWith('/attempts/');
+ useEffect(()=>{if(playing)setOpen(false);},[playing]);
  const [messages,setMessages]=useState<Message[]>([WELCOME]),[dialog,setDialog]=useState<Dialog>(null);
  /** The phrase that opened the current slot form (for «Составить заново») and the last create confirmation (for «Сгенерировать заново»). */
  const origin=useRef(''),creation=useRef<Confirm|null>(null),autoRecord=useRef(false),holding=useRef(false);
@@ -152,6 +158,7 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const finish=(action:Obj|undefined)=>{
   if(action?.kind==='navigate'){setDialog(null);go(action.to);return true;}
   if(action?.kind==='close'){onClose();return true;}
+  if(action?.kind==='event'){window.dispatchEvent(new Event(action.name));return true;}
   if(action?.kind==='logout'){api('/logout','POST').finally(()=>{window.dispatchEvent(new Event('auth-expired'));navigate('/');});onClose();return true;}
   return false;
  };

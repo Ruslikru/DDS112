@@ -16,7 +16,7 @@ def complete(*args,**kwargs):
     except Exception as e:m.fail(str(e),503)
 from .dds_scenarios import generated_dds, default_brigade_reports
 from .schemas import TicketData
-from .scenario_facts import base_facts, enrich_facts, GEOGRAPHY_PROMPT, scene_seed, scene_matches
+from .scenario_facts import base_facts, clean_story, enrich_facts, GEOGRAPHY_PROMPT, scene_seed, scene_matches
 from .ticket_difficulty import assess_wizard, legacy_level, apply_difficulty, DIFFICULTY_HINTS
 
 router=APIRouter(prefix='/api')
@@ -63,7 +63,7 @@ def build_draft(data,db,fixed=None,meta=None):
     known_type=bool(db.scalar(select(Classifier.code).where(Classifier.title==data.incident_type).limit(1)))
     service_tag=any(data.incident_type.casefold() in {tag.strip().casefold() for tag in (service.config or {}).get('tags',[])}
                     for service in active_services if service.name in data.services)
-    if not known_type and not service_tag:m.fail('Выберите тип из классификатора или тег выбранной службы')
+    if not known_type and not service_tag and not fixed.get('trusted_type'):m.fail('Выберите тип из классификатора или тег выбранной службы')
     if data.victims_state=='yes' and data.victims_count<1:m.fail('Укажите количество пострадавших')
     facts=base_facts(data.incident_type)
     if data.address.strip():
@@ -72,6 +72,10 @@ def build_draft(data,db,fixed=None,meta=None):
         facts['street']=street
         if house:facts['house']=house
     if fixed.get('caller_name'):facts['caller_name']=fixed['caller_name']
+    place=fixed.get('place') or {}
+    if place.get('city') and place['city'].casefold()!='москва':
+        # Another city: the Moscow district and okrug from the table would contradict it.
+        facts.update(city=place['city'],region='',district='',area='')
     data.district=facts['area']
     db.rollback()
     if fixed.get('description'):
@@ -84,14 +88,16 @@ def build_draft(data,db,fixed=None,meta=None):
         prompt=seed+' Признаки: '+', '.join(data.traits) if data.traits else seed
         generated,meta=complete(GEOGRAPHY_PROMPT+' Rewrite the supplied Russian witness report in natural Russian, 2 or 3 short sentences. Preserve its specific object and visible signs. Do not add an address, casualties, responders or rescue actions. Return JSON with one field: description.',prompt,schema,tokens=220,temperature=.2)
         if any(not isinstance(generated.get(k),str) or not generated[k].strip() for k in keys):m.fail('Модель вернула неполный черновик. Повторите.',502)
-        facts.update(generated)
-        if not scene_matches(data.incident_type,data.traits,facts['description']) or re.search(r'\b(?:район|округ)\b',facts['description'].casefold()):
+        facts['description']=clean_story(generated['description'])
+        if len(facts['description'])<12 or not scene_matches(data.incident_type,data.traits,facts['description']) or re.search(r'\b(?:район|округ)',facts['description'].casefold()):
             facts['description']=seed
     victims=f"Пострадавших людей: {data.victims_count}." if data.victims_state=='yes' else 'Пострадавших людей нет.' if data.victims_state=='no' else 'Наличие пострадавших людей неизвестно.'
     if data.animals:victims+=' Есть пострадавшие животные.'
+    if fixed.get('victims_note'):victims+=' '+fixed['victims_note']
     facts.update(victims=victims,victims_state=data.victims_state)
     enrich_facts(facts,data)
     if fixed.get('object'):facts['object']=fixed['object']
+    facts.update({key:place[key] for key in ('apartment','entrance','floor') if place.get(key)})
     facts['title']=f"{data.incident_type}: {facts['street']}, дом {facts['house']}"[:200]
     from .learning import automatic_services
     data.services=list(dict.fromkeys(data.services+automatic_services(db,{'incident_type':data.incident_type,'description':facts['description'],'traits':facts['traits'],'victims':data.victims_state,'object':facts['object']})))
@@ -105,6 +111,8 @@ def build_draft(data,db,fixed=None,meta=None):
                        'required':['approach','on_scene','outcome'],'additionalProperties':False}
         report_context={'service':data.own_service,'incident':data.incident_type,'description':facts['description'],
                         'victims':victims,'traits':facts['traits'],'address':f"{facts['city']}, {facts['street']}, дом {facts['house']}"}
+        # An explicit floor keeps the model from taking an apartment number for it.
+        report_context.update({key:facts[key] for key in ('floor','apartment') if place.get(key)})
         try:
             generated_reports,_=complete(
                 'Напиши на русском три коротких, разных и живых доклада старшего бригады диспетчеру по телефону. '
@@ -120,7 +128,8 @@ def build_draft(data,db,fixed=None,meta=None):
             if all(isinstance(value,str) and 25<=len(value.strip())<=350 for value in ordered) and len({value.strip().casefold() for value in ordered})==3:
                 text=' '.join(ordered).casefold()
                 unrelated_tram='трамва' in data.incident_type.casefold() and bool(re.search(r'лестниц|ступен|квартир',text))
-                if ('госпитал' not in text or data.own_service=='Служба 103' and data.victims_state=='yes') and not unrelated_tram:
+                hospital=bool(re.search(r'госпитал|в больниц|в стационар',text))
+                if (not hospital or data.own_service=='Служба 103' and data.victims_state=='yes') and not unrelated_tram:
                     reports=[defaults[0]]+[value.strip() for value in ordered]
         except Exception as error:
             logging.warning('Brigade report generation fell back: %s',error)
@@ -137,10 +146,10 @@ def build_draft(data,db,fixed=None,meta=None):
     if data.mode=='112':
         expected=task['initial_card'].copy()
         task.update(mode='112',title=facts['title'],intro=facts['description'],initial_card={},expected_card=expected,
-            questions=[{'id':'address','question':'Где это произошло?','answer':f"{facts['city']}, {facts['street']}, дом {facts['house']}, район {facts['area']}. {facts['address_note']}"},
+            questions=[{'id':'address','question':'Где это произошло?','answer':f"{facts['city']}, {facts['street']}, дом {facts['house']}"+(f", район {facts['area']}" if facts['area'] else '')+f". {facts['address_note']}"},
                        {'id':'name','question':'Как вас зовут?','answer':facts['caller_name']},
                        {'id':'phone','question':'По какому номеру можно с вами связаться?','answer':facts['phone']},
-                       {'id':'access','question':'Как пройти к месту происшествия?','answer':facts['address_note']+('. Подъезд '+facts['entrance']+', этаж '+facts['floor']+', домофон '+facts['code'] if facts.get('entrance') else '')},
+                       {'id':'access','question':'Как пройти к месту происшествия?','answer':facts['address_note']+('. Подъезд '+facts['entrance'] if facts.get('entrance') else '')+(', этаж '+facts['floor'] if facts.get('floor') else '')+(', домофон '+facts['code'] if facts.get('code') else '')},
                        {'id':'victims','question':'Есть пострадавшие?','answer':victims},
                        {'id':'details','question':'Что произошло?','answer':facts['description']}],
             service_events=[],contacts=[],limit_seconds=300,

@@ -1,8 +1,11 @@
+import {ManagementConfirm} from './management';
 import React,{useEffect,useState} from 'react';
 import {api,Obj,uuid} from './shared';
-import {ManagementConfirm} from './management';
 type Entry={id:string,user:number,attempt:string,type:string,payload:Obj,draft?:Obj,draftId:string};
-let processing=false,offline=false,notice='',rejected=false;
+let processing:Promise<void>|null=null,offline=false,notice='',rejected=false;
+// Отказ сервера по существу действия (4xx, кроме входа и конфликта ревизии) повтором не исправить: действие снимается с очереди, а ошибка уходит вызвавшему.
+const failures=new Map<string,any>();
+const refused=(e:any)=>!e.network&&e.status>=400&&e.status<500&&e.status!==401&&e.status!==409;
 const key=(user:number)=>'training112:outbox:'+user;
 const read=(user:number):Entry[]=>{try{return JSON.parse(localStorage.getItem(key(user))||'[]');}catch{return [];}};
 const emit=()=>window.dispatchEvent(new Event('training-network'));
@@ -11,33 +14,42 @@ export function markNetworkFailure(){offline=true;notice='Проблемы с л
 export async function submitAttempt(user:number,attempt:string,type:string,payload:Obj,draft?:Obj){
  const items=read(user);let entry=items.find(x=>x.attempt===attempt&&x.type===type&&JSON.stringify(x.payload)===JSON.stringify(payload)&&JSON.stringify(x.draft)===JSON.stringify(draft));
  if(!entry){entry={id:uuid(),draftId:uuid(),user,attempt,type,payload,draft};save(user,[...items,entry]);}
- const failure=await flush(user);
- if(failure?.id===entry.id&&[400,403,404,422].includes(failure.error.status)){
-  save(user,read(user).filter(x=>x.id!==entry!.id));rejected=false;notice='';emit();throw failure.error;
- }
+ waiting.add(entry.id);
+ try{await flush(user);}finally{waiting.delete(entry.id);}
+ const error=failures.get(entry.id);
+ if(error){failures.delete(entry.id);throw error;}
  return read(user).some(x=>x.id===entry!.id)?null:api('/attempts/'+attempt);
 }
-async function flush(user:number){
- if(processing)return;processing=true;let failedEntry:Entry|undefined;
+const waiting=new Set<string>();
+function flush(user:number):Promise<void>{
+ // Клик во время фоновой отправки ждёт её, а не возвращается молча с действием в очереди.
+ if(processing)return processing.then(()=>read(user).length?flush(user):undefined);
+ processing=run(user).finally(()=>{processing=null;});
+ return processing;
+}
+async function run(user:number){
  try{
   const me=await api('/me');if(me.id!==user)return;
   const restored=offline;offline=false;rejected=false;
   if(restored){notice=read(user).length?'Подключение восстановлено. Отправка очереди билетов на проверку…':'Подключение восстановлено.';emit();}
   for(const entry of read(user)){
-   failedEntry=entry;
-   for(const stage of [...(entry.draft?[{type:'draft',payload:entry.draft,id:entry.draftId}]:[]),{type:entry.type,payload:entry.payload,id:entry.id}]){
-    let done=false;
-    for(let retry=0;retry<3&&!done;retry++){
-     const p=await api('/attempts/'+entry.attempt);
-     try{await api('/attempts/'+entry.attempt+'/command','POST',{command_id:stage.id,revision:p.revision,type:stage.type,payload:stage.payload});done=true;}
-     catch(e:any){if(e.status!==409||retry===2)throw e;}
+   try{
+    for(const stage of [...(entry.draft?[{type:'draft',payload:entry.draft,id:entry.draftId}]:[]),{type:entry.type,payload:entry.payload,id:entry.id}]){
+     let done=false;
+     for(let retry=0;retry<3&&!done;retry++){
+      const p=await api('/attempts/'+entry.attempt);
+      try{await api('/attempts/'+entry.attempt+'/command','POST',{command_id:stage.id,revision:p.revision,type:stage.type,payload:stage.payload});done=true;}
+      catch(e:any){if(e.status!==409||retry===2)throw e;}
+     }
     }
+   }catch(e:any){
+    if(!refused(e))throw e;
+    if(waiting.has(entry.id))failures.set(entry.id,e);else notice='Действие не принято сервером и снято с очереди: '+e.message;
    }
    save(user,read(user).filter(x=>x.id!==entry.id));
    if(restored)notice='Подключение восстановлено. Сохранённые изменения отправлены, билеты переданы на проверку.';emit();
   }
- }catch(e:any){if(e.network)markNetworkFailure();else if(e.status!==401){rejected=true;notice='Очередь сохранена. Не удалось передать действие: '+e.message;emit();}return {id:failedEntry?.id,error:e};}
- finally{processing=false;}
+ }catch(e:any){if(e.network)markNetworkFailure();else if(e.status!==401){rejected=true;notice='Очередь сохранена. Не удалось передать действие: '+e.message;emit();}}
 }
 export function NetworkStatus({user}:{user:number}){
  const [,setTick]=useState(0);

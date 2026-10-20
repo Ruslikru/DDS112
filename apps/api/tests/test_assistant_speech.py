@@ -26,7 +26,7 @@ def test_quotes_and_student_names_stay_as_written():
     assert fix_keywords('где сидит Сетин',['Сетин'])=='где сидит Сетин'
 
 def test_whisper_prompt_lists_commands():
-    for word in ('журнал','билеты','классе','закрой'):assert word in SPEECH_PROMPT
+    for word in ('журнал','работы','билет','закрой'):assert word in SPEECH_PROMPT.lower()
 
 def test_interpret_corrects_mis_heard_command():
     with TestClient(app) as c:
@@ -56,5 +56,9 @@ def test_spoken_numbers_become_digits(spoken,cleaned):
 
 def test_whisper_prompt_lists_services_and_digits():
     from test_flows import SessionLocal
-    with SessionLocal() as db:prompt=speech_prompt(db)
-    assert 'Служба 101' in prompt and 'на 3 звезды' in prompt and 'билете 12' in prompt
+    from apps.api.app.db import User
+    from sqlalchemy import select
+    with SessionLocal() as db:
+        teacher=db.scalar(select(User).where(User.login=='teacher'))
+        prompt=speech_prompt(db,teacher)
+    assert 'Служба 101' in prompt and 'Создай билет ДДС' in prompt and 'Ученики:' in prompt

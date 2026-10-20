@@ -44,7 +44,7 @@ def student_profile(db, user):
     if os.getenv('DEMO_CLASSROOM')=='1' and not attempts and user.login in {'student1','student2','student3','student4','student5'}:
         index=int(user.login[-1])-1
         scores=[None,72,83,91,97];levels=[0,1,2,3,4]
-        mistakes=['Точность адреса','Опрос заявителя','Координация служб','Комментарии ДДС','Время принятия решения']
+        mistakes=['Точность адреса','Опрос заявителя','Координация служб','Время принятия решения','Комментарии ДДС']
         score=scores[index];skill=mistakes[index]
         result.update(demo=True,recommended_stars=index+1,score=score,confirmed=0 if index==0 else 12+index*3,completed=0 if index==0 else 12+index*3,mastered_stars=levels[index],seconds=42+index*19,
             errors=[{'label':skill,'errors':index+1,'total':12,'percent':round((index+1)/12*100)}] if index else [],

@@ -56,7 +56,7 @@ def attempt_view(a,u):
     state=a.state
     from .voice import attach_audio
     with SessionLocal() as voice_db:
-        task=attach_audio(a.snapshot,voice_db)
+        task=attach_audio(a.snapshot,voice_db,text_only=bool(a.state.get('text_only')))
         if a.snapshot.get('onboarding') and state.get('guided_source')!='requested' and not onboarding_needed(voice_db,a.student_id):state={**state,'guided':False}
     if a.status not in ['completed','aborted']:
         task['questions']=caller_questions(task)
@@ -94,7 +94,7 @@ def process_events(db):
                 state['brigade_next_at']=time.time()+30
                 state['brigade_waiting_record']=event.id
             state.setdefault('incoming_calls',[]).append({'id':event.id,'contact_id':data.get('contact_id'),'who':data.get('who','Старший бригады'),'received_at':now(),'call_audio':data.get('call_audio',{})})
-        else: state.setdefault('messages',[]).append({**data,'audio':data.get('audio_id'),'at':now()})
+        else: state.setdefault('messages',[]).append({**data,'audio':None if state.get('text_only') else data.get('audio_id'),'at':now()})
         a.state=state; a.revision+=1
         db.add(AttemptEvent(attempt_id=a.id,kind='simulation',data=data)); audit(db,None,'simulation',a.id,data)
     db.commit()
@@ -341,7 +341,7 @@ def save_ticket(data:TicketData,ticket_id:int|None=None,u=Depends(current),db:Se
     if not t: fail('Билет не найден',404)
     db.add(t); db.flush(); number=(db.scalar(select(func.max(TicketVersion.number)).where(TicketVersion.ticket_id==t.id)) or 0)+1
     from .voice import prepare
-    v=TicketVersion(ticket_id=t.id,number=number,data=prepare(data.model_dump(),db,u.id)); db.add(v); db.flush(); audit(db,u,'ticket_version_created',v.id); db.commit(); return {'id':v.id}
+    v=TicketVersion(ticket_id=t.id,number=number,data=prepare(data.model_dump(),db,u.id,soon=True)); db.add(v); db.flush(); audit(db,u,'ticket_version_created',v.id); db.commit(); return {'id':v.id}
 @app.post('/api/tickets/{id}/publish')
 def publish(id:int,u=Depends(current),db:Session=Depends(getdb)):
     staff(u); v=db.get(TicketVersion,id)
@@ -395,7 +395,7 @@ def assignments(u=Depends(current),db:Session=Depends(getdb)):
         v=db.get(TicketVersion,a.version_id); student=db.get(User,a.student_id)
         if not catalog_available(v.data) or (not allow_112 and any(task.get('mode')!='dds' for task in v.data.get('tasks',[]))):continue
         attempts=db.scalars(select(Attempt).where(Attempt.assignment_id==a.id).order_by(Attempt.id.desc())).all()
-        out.append({'id':a.id,'lesson_id':a.lesson_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'onboarding':t.get('onboarding'),'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment} for p in attempts]})
+        out.append({'id':a.id,'lesson_id':a.lesson_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'onboarding':t.get('onboarding'),'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment,'text_only':bool((p.state or {}).get('text_only'))} for p in attempts]})
     return out
 @app.post('/api/assignments')
 def assign(data:AssignmentIn,u=Depends(current),db:Session=Depends(getdb)):
@@ -405,7 +405,7 @@ def assign(data:AssignmentIn,u=Depends(current),db:Session=Depends(getdb)):
     if not operator_112_enabled(db) and any(task.get('mode')!='dds' for task in v.data.get('tasks',[])):fail('Режим 112 отключён администратором')
     if not catalog_available(v.data):fail('В тестовом каталоге доступны только два билета ДДС')
     from .voice import ensure_ready
-    ensure_ready(v.data,db)
+    ensure_ready(v.data,db,text_ok=True)  # not voiced yet: the students' attempts start as text
     for id in set(data.students):
         s=db.get(User,id)
         if not s or s.role!='student' or not visible(db,u,id): fail('Ученик недоступен',403)
@@ -499,11 +499,11 @@ def apply_command(id,c,u,db,_trusted_ai=False):
         if not event or event.attempt_id!=id: fail('Звонок недоступен')
         state['incoming_calls'].remove(incoming)
         if state.get('brigade_pacing')=='sequential' and state.get('brigade_waiting_record')==event.id:state['brigade_next_at']=time.time()+30
-        if not event.data.get('audio_id') and event.data.get('voice_key'):
+        if not event.data.get('audio_id') and event.data.get('voice_key') and not state.get('text_only'):
             from .voice import VoiceJob
             job=db.get(VoiceJob,event.data['voice_key'])
             if job and job.status=='ready':event.data={**event.data,'audio_id':job.audio_id}
-        state['messages'].append({'who':incoming['who'],'text':event.data['text'],'at':now(),'direction':'incoming','event_id':event.id,'audio':event.data.get('audio_id'),'contact_id':incoming.get('contact_id'),'call_audio':incoming.get('call_audio',{})})
+        state['messages'].append({'who':incoming['who'],'text':event.data['text'],'at':now(),'direction':'incoming','event_id':event.id,'audio':None if state.get('text_only') else event.data.get('audio_id'),'contact_id':incoming.get('contact_id'),'call_audio':incoming.get('call_audio',{})})
         state.setdefault('received_calls',[]).append(event.id)
         if event.data.get('stage'):state.setdefault('received_stages',[]).append(event.data['stage'])
         if incoming.get('contact_id'): state.setdefault('contacts',[]).append(incoming['contact_id'])
@@ -539,7 +539,7 @@ def apply_command(id,c,u,db,_trusted_ai=False):
         if 'question_id' not in payload or question:
             state.setdefault('contacts',[]).append(contact['id'])
         from .voice import response_audio
-        audio=response_audio(contact,answer,db)
+        audio=None if state.get('text_only') else response_audio(contact,answer,db)
         state['messages'] += [{'who':'Диспетчер → '+contact['name'],'text':text,'at':now()},
                               {'who':contact['name'],'text':answer,'at':now(),'audio':audio,'direction':'outgoing_answer'}]
     elif kind=='draft':

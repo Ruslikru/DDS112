@@ -52,6 +52,7 @@ import {
   Empty,
   Heading,
 } from "./shared";
+const replicas=(n:number)=>n+' '+(n%10===1&&n%100!==11?'реплика':n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?'реплики':'реплик');
 function AssessmentContent({
   p,
   onUpdate,
@@ -105,6 +106,7 @@ function AssessmentContent({
             {a.pending
               ? "Балл предварительный: свободный текст ещё не оценён."
               : a.ai_preliminary ? "Комментарии оценены локальной моделью. Преподаватель может уточнить оценку." : "Проверка завершена."}
+            {p.state?.text_only&&<small className="text-only-mark" title="Озвучка билета не была готова при запуске, попытка прошла текстом">без звука</small>}
           </p>
         </div>
       </div>
@@ -114,7 +116,7 @@ function AssessmentContent({
       {a.text_checks?.length>0&&<details><summary>Замечания к оформлению текста ({a.text_checks.length})</summary><p>Локальные правила. Не заменяют проверку смысла и грамматики преподавателем.</p>{a.text_checks.map((x:Obj,i:number)=><p key={i}>{x.message}: «{x.fragment}»</p>)}</details>}
       {semantic?.status==='error'&&<Notice>Не удалось оценить комментарии: {semantic.error}. Ошибка модели не считается ошибкой ученика.</Notice>}
       {needsAI&&!aiWaiting&&<button onClick={async()=>{try{onUpdate?.(await api(`/ai/attempts/${p.id}/analyze-comments`,'POST'));}catch(e:any){setError(e.message);}}}>Повторить анализ комментариев</button>}
-      <details className="result-conversation"><summary>Телефонные разговоры ({(p.state.dialogue?.length||0)+(p.state.messages?.length||0)} реплик)</summary>{[...(p.state.dialogue||[]),...(p.state.messages||[])].map((m:Obj,i:number)=><article key={i}><b>{m.who||'Служба'}</b> <small>{m.at?new Date(m.at).toLocaleTimeString('ru'):''}</small><p>{m.text||m.message}</p></article>)}</details>
+      <details className="result-conversation"><summary>Телефонные разговоры ({replicas((p.state.dialogue?.length||0)+(p.state.messages?.length||0))})</summary>{[...(p.state.dialogue||[]),...(p.state.messages||[])].map((m:Obj,i:number)=><article key={i}><b>{m.who||'Служба'}</b> <small>{m.at?new Date(m.at).toLocaleTimeString('ru'):''}</small><p>{m.text||m.message}</p></article>)}</details>
       <table>
         <thead>
           <tr>

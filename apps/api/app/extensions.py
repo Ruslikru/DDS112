@@ -79,7 +79,7 @@ def create_lesson(data:LessonIn,u=Depends(current),db=Depends(getdb)):
         if not v or not v.published or db.get(Ticket,v.ticket_id).archived: fail('Билет должен быть опубликован')
         if not allow_112 and any(task.get('mode')!='dds' for task in v.data.get('tasks',[])):fail('Режим 112 отключён администратором')
         if not catalog_available(v.data):fail('В тестовом каталоге доступны только два билета ДДС')
-        ensure_ready(v.data,db)
+        ensure_ready(v.data,db,text_ok=True)  # not voiced yet: the attempts start as text
         tasks += [{**copy.deepcopy(t),'difficulty_level':(v.data.get('difficulty_stars') or {'Базовый':1,'Средний':3,'Сложный':5}.get(v.data.get('difficulty'),1))} for t in v.data['tasks'] if not data.categories or t['category'] in data.categories]
     if data.delivery_mode in ('adaptive','sprint') and len(tasks)>100:tasks=random.SystemRandom().sample(tasks,100)
     if not tasks or len(tasks)>100: fail('Выберите от 1 до 100 заданий')
@@ -249,7 +249,7 @@ def registry(u=Depends(current),db=Depends(getdb)):
         if not visible(db,u,p.student_id) or (not allow_112 and p.snapshot.get('mode')!='dds'): continue
         out.append({**journal_fields(p),'id':p.id,'student':db.get(User,p.student_id).name,'mode':p.snapshot['mode'],'started_at':p.started_at,'status':p.status,
           'incident_type':p.card.get('incident_type',''),'address':', '.join(str(p.card.get(k,'')) for k in ['city','street','house'] if p.card.get(k)),
-          'description':p.card.get('description',''),'services':{k:v[-1]['status'] for k,v in p.state.get('services',{}).items() if v}})
+          'description':p.card.get('description',''),'services':{k:v[-1]['status'] for k,v in p.state.get('services',{}).items() if v},'text_only':bool(p.state.get('text_only'))})
     return out
 
 

@@ -150,7 +150,8 @@ export function Assignments() {
                   {a.tasks.map((t: Obj, i: number) => {
                     const p = a.attempts.find((x: Obj) => x.task_index === i);
                     const inProgress=p&&!["completed", "aborted"].includes(p.status);
-                    const waitingForAudio=t.voice?.ready===false&&!inProgress;
+                    // Not voiced yet: the attempt still starts, entirely as text.
+                    const textOnly=t.voice?.ready===false&&!inProgress;
                     if(!operator112&&t.mode!=='dds')return null;
                     if(operator112&&mode&&t.mode!==mode)return null;
                     return (
@@ -158,17 +159,15 @@ export function Assignments() {
                         {operator112&&<span className="task-mode">
                           {t.mode === "112" ? "112" : "ДДС"}
                         </span>}
-                        <span>{t.title}{waitingForAudio&&<small role="status">{t.voice.failed?'Ошибка генерации звука — сообщите преподавателю':`Генерируется звук: ${t.voice.generated}/${t.voice.total}`}</small>}</span>
+                        <span>{t.title}{textOnly&&<small role="status">{`Озвучка ${t.voice.generated} из ${t.voice.total}`}{t.voice.failed?', есть ошибки':''} — билет запустится текстом, без звука</small>}{p?.text_only&&!textOnly&&<small className="text-only-mark">без звука</small>}</span>
                         {u.role === "student" ? (
                           <button
                             className="small"
-                            disabled={!a.released||waitingForAudio}
-                            title={waitingForAudio?'Билет станет доступен после генерации всех записей':undefined}
+                            disabled={!a.released}
+                            title={textOnly?'Озвучка ещё не готова: билет пройдёт текстом, сообщения приходят в историю связи':undefined}
                             onClick={() => start(a.id, i)}
                           >
-                            {waitingForAudio
-                              ? "Ожидание звука"
-                              : !a.released
+                            {!a.released
                               ? "Ожидание запуска"
                               : p &&
                                   !["completed", "aborted"].includes(p.status)
@@ -183,7 +182,7 @@ export function Assignments() {
                             className="button small"
                             to={"/attempts/" + p.id}
                           >
-                            Открыть попытку
+                            Открыть попытку{p.text_only?" · без звука":""}
                           </Link>
                         ) : (
                           <small>Ещё не начато</small>
@@ -221,6 +220,8 @@ function AssignmentForm({ done }: { done: () => void }) {
       onSubmit={async (e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);
+        const v = t?.find((x: Obj) => x.id === Number(f.get("version")));
+        if (v?.voice?.ready === false && !confirm(`Озвучка ${v.voice.generated} из ${v.voice.total}: у учеников билет запустится без озвучки, текстом, потому что она ещё не готова. Отправить?`)) return;
         try {
           await api("/assignments", "POST", {
             version_id: Number(f.get("version")),
@@ -242,8 +243,8 @@ function AssignmentForm({ done }: { done: () => void }) {
             {t
               ?.filter((v: Obj) => v.published && !v.archived)
               .map((v: Obj) => (
-                <option key={v.id} value={v.id} disabled={v.voice?.ready===false}>
-                  {v.data.title} · v{v.number}{v.voice?.ready===false?` · звук ${v.voice.generated}/${v.voice.total}`:''}
+                <option key={v.id} value={v.id}>
+                  {v.data.title} · v{v.number}{v.voice?.ready===false?` · озвучка ${v.voice.generated} из ${v.voice.total} — запустится текстом`:''}
                 </option>
               ))}
           </select>

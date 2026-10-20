@@ -28,7 +28,8 @@ def test_transcribe_length_limit_and_missing_module(monkeypatch):
         assert r.status_code==400 and 'слишком длинная' in r.json()['detail']
         monkeypatch.setattr(voice.runtime,'transcribe',lambda content,**options:(_ for _ in ()).throw(RuntimeError('Голосовой модуль не установлен рядом с приложением (local_ai/voice).')))
         r=post(c,'/voice/transcribe',{'audio':'QUJD'})
-        assert r.status_code==503 and 'Голосовой модуль не установлен' in r.json()['detail']
+        assert r.status_code==503 and 'Повторите попытку' in r.json()['detail']
+        assert 'local_ai/voice' not in r.json()['detail']
 
 def test_empty_recording_is_not_reported_as_outage(monkeypatch):
     """Whisper reports silence as an error string; the teacher gets a hint about holding the button, not a 503."""

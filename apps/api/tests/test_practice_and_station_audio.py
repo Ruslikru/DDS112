@@ -31,7 +31,8 @@ def test_two_practice_cases_are_separate_and_can_be_assigned_to_a_beginner(class
     login(classroom,'teacher')
     library=classroom.get('/api/tickets').json()
     assert all(not any(t.get('onboarding') for t in v['data']['tasks']) for v in library)
-    practice=[v for v in library if v['data']['tasks'][0]['id'].startswith('practice-')]
+    from apps.api.app.test_catalog import TITLES
+    practice=[v for v in library if v['published'] and v['data']['title'] in TITLES and v['data']['tasks'][0]['id'].startswith('practice-')]
     assert len(practice)==2
     assert all(v['voice']['ready'] for v in practice)
     assert all(len(v['data']['tasks'][0]['criteria'])>=4 for v in practice)

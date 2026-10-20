@@ -1,6 +1,6 @@
 import React,{useState,useEffect,useRef} from 'react';
 import {useNavigate} from 'react-router-dom';
-import {api,useLoad,Notice,Obj} from './shared';
+import {api,useLoad,Notice,Obj,UserContext} from './shared';
 import {StudentHint} from './student-hint';
 import './tutorials.css';
 

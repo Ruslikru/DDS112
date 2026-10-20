@@ -47,3 +47,5 @@
 .network-status{position:fixed;top:0;left:0;right:0;z-index:9000;background:#dcebf0;color:#173e51;padding:10px 16px;display:flex;align-items:center;gap:16px;border-bottom:2px solid #187fa8}.network-status.offline{background:#fff0c7;border-color:#bd8d20}.network-status span{flex:1}.network-status button{padding:4px 12px}
 
 .review-confirmation{z-index:3100!important}.review-confirmation .arm-dialog{width:min(620px,94vw);max-height:90vh;overflow:auto}.review-confirmation p{line-height:1.5}.review-confirmation .toolbar{display:flex;gap:12px;flex-wrap:wrap}
+.phone-text-only{margin:0 0 6px;padding:4px 6px;background:#fff3cf;border:1px solid #d8bc67;font-size:11px}
+.text-only-mark{display:inline-block;margin-left:6px;padding:0 5px;border:1px solid #d8bc67;background:#fff3cf;color:#6b5414;font-size:11px;border-radius:3px}

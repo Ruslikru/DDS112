@@ -201,7 +201,7 @@ export function DDSVoiceCall({disabled,contacts,contactId,service,textOnly=false
  const cancel=()=>{generation.current++;locked.current=false;stop.current?.();stop.current=undefined;audio.current?.pause();closeMicrophone();resources.current.forEach(releaseAudio);resources.current.clear();tone.current?.close().catch(()=>{});tone.current=null;engine?.hangup();onEnd?.();setPhase('idle');};
  useEffect(()=>()=>{generation.current++;stop.current?.();audio.current?.pause();closeMicrophone();resources.current.forEach(releaseAudio);resources.current.clear();tone.current?.close().catch(()=>{});onEnd?.();},[]);
  async function call(c:Obj){
-  if(locked.current||disabled)return;document.querySelectorAll('audio').forEach(a=>a.pause());locked.current=true;const run=++generation.current;onSelect(c.id);setError('');setPhase('dialing');
+  if(locked.current||disabled)return;if(textOnly){onSelect(c.id);return;}document.querySelectorAll('audio').forEach(a=>a.pause());locked.current=true;const run=++generation.current;onSelect(c.id);setError('');setPhase('dialing');
   let timer:ReturnType<typeof setInterval>|undefined;
   try{
    setHeard('');primeMicrophone(run);

@@ -57,6 +57,12 @@ import {
   Empty,
   Heading,
 } from "./shared";
+/** Voicing of a ticket: complete, in progress (runs as text meanwhile) or failed; nothing to voice — no badge. */
+function VoiceBadge({ voice }: { voice?: Obj }) {
+  if (!voice?.total) return null;
+  if (voice.ready) return <Badge tone="green">Озвучен</Badge>;
+  return <span title="Пока озвучка не готова, у учеников билет запустится текстом, без звука"><Badge tone={voice.failed ? "red" : "blue"}>{voice.failed ? `Ошибка озвучки · ${voice.generated} из ${voice.total}` : `Озвучка ${voice.generated} из ${voice.total}`}</Badge></span>;
+}
 export function Tickets() {
   const operator112=useOperator112();
   const { data, error, load } = useLoad("/tickets"),
@@ -66,6 +72,7 @@ export function Tickets() {
     [service, setService] = useState(""),
     [mode, setMode] = useState(""),
     [difficulty, setDifficulty] = useState(""),
+    [voiced, setVoiced] = useState(""),
     [order, setOrder] = useState("newest"),
     [importing, setImporting] = useState(false),
     [err, setErr] = useState("");
@@ -74,6 +81,8 @@ export function Tickets() {
   const wizardInitial = (useLocation().state as Obj|null)?.wizard as Obj|undefined;
   const [assistantOpen, setAssistantOpen] = useState(!!wizardInitial);
   const [promptOpen, setPromptOpen] = useState(false);
+  // «Закрой мастер» from the assistant dismisses the creation windows without the confirmation step.
+  useEffect(()=>{const close=()=>{setAssistantOpen(false);setPromptOpen(false);};window.addEventListener('training112:close-dialogs',close);return()=>window.removeEventListener('training112:close-dialogs',close);},[]);
   // «Уточнить в мастере» from the description form hands its facts to the wizard.
   const [wizardSeed, setWizardSeed] = useState<Obj|undefined>(wizardInitial);
   const [trial,setTrial]=useState<Obj|null>(null);
@@ -85,7 +94,8 @@ export function Tickets() {
     `${item.ticket_id} ${item.data.title}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase()) &&
     (!service || item.data.tasks.some((task: Obj) => (task.services || []).includes(service) || task.own_service === service)) &&
     (!operator112 || !mode || item.data.tasks.some((task: Obj) => task.mode === mode)) &&
-    (!difficulty || ticketStars(item.data) === Number(difficulty)));
+    (!difficulty || ticketStars(item.data) === Number(difficulty)) &&
+    (!voiced || (voiced === "ready" ? item.voice?.ready !== false : item.voice?.ready === false)));
   visible.sort((a, b) => order === "oldest" ? a.ticket_id - b.ticket_id : order === "title" ? a.data.title.localeCompare(b.data.title, "ru") : order === 'difficulty-asc' ? ticketStars(a.data)-ticketStars(b.data) || a.ticket_id-b.ticket_id : order === 'difficulty-desc' ? ticketStars(b.data)-ticketStars(a.data) || b.ticket_id-a.ticket_id : b.ticket_id - a.ticket_id);
   async function importJson(file?: File) {
     if (!file) return;
@@ -114,12 +124,13 @@ export function Tickets() {
         <select aria-label="Служба" value={service} onChange={event=>setService(event.target.value)}><option value="">Все службы</option>{serviceNames.map(name=><option key={name}>{name}</option>)}</select>
         {operator112&&<select aria-label="Режим" value={mode} onChange={event=>setMode(event.target.value)}><option value="">112 и ДДС</option><option value="112">112</option><option value="dds">ДДС</option></select>}
         <select aria-label="Сложность" value={difficulty} onChange={event=>setDifficulty(event.target.value)}><option value="">Любая сложность</option>{[1,2,3,4,5].map(stars=><option key={stars} value={stars}>{starLabel(stars)}</option>)}</select>
+        {u.role !== "student" && <select aria-label="Озвучка" value={voiced} onChange={event=>setVoiced(event.target.value)}><option value="">Любая озвучка</option><option value="ready">Озвучены</option><option value="pending">Не озвучены</option></select>}
         <select aria-label="Порядок" value={order} onChange={event=>setOrder(event.target.value)}><option value="newest">Новые сначала</option><option value="oldest">По номеру</option><option value="title">По названию</option><option value="difficulty-asc">Сначала проще ★→★★★★★</option><option value="difficulty-desc">Сначала сложнее ★★★★★→★</option></select>
       </div>
       <div className="ticket-grid">
         {visible.map((v: Obj) => (
             <div className="panel ticket-card" key={v.id}>
-              <div className="ticket-card-top"><strong>Билет № {v.ticket_id}</strong>{!v.published && <Badge tone="amber">Черновик</Badge>}</div>
+              <div className="ticket-card-top"><strong>Билет № {v.ticket_id}</strong>{!v.published && <Badge tone="amber">Черновик</Badge>}{u.role !== "student" && <VoiceBadge voice={v.voice}/>}</div>
               <h3>{v.data.title}</h3>
               <p>{ticketSummary(v.data)}</p>
               <span className="ticket-difficulty" aria-label={`Сложность: ${ticketStars(v.data)} из 5`} title={v.data.difficulty_reason||''}>{starLabel(ticketStars(v.data))}</span>
