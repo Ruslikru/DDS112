@@ -310,14 +310,15 @@ def test_assign_multiple_students(teacher,classroom,monkeypatch):
         assert {classroom['kuz'],classroom['elk']}<=assigned
 
 
-def test_publish_draft_command(teacher):
+@pytest.mark.parametrize('phrase',['Сохрани и опубликуй эту карточку','Сохраняй и опубликовывай билет.','Сохраняй билеты и опубликовывай'])
+def test_publish_draft_command(teacher,phrase):
     with SessionLocal() as db:
         original=next(v for v in db.scalars(select(TicketVersion)) if v.data['tasks'][0]['mode']=='dds' and not v.data['tasks'][0].get('onboarding'))
         payload=dict(original.data);payload['title']='Проверка публикации '+uuid.uuid4().hex[:8]
     draft=post(teacher,'/tickets',payload)
     assert draft.status_code==200,draft.text
     version=draft.json()
-    result=ask(teacher,'Сохрани и опубликуй эту карточку',page=f'/tickets/{version["id"]}')
+    result=ask(teacher,phrase,page=f'/tickets/{version["id"]}')
     assert result['intent']=='publish_ticket' and result['confirm_required'],result
     done=post(teacher,'/assistant/execute',{'intent':result['intent'],'slots':result['slots'],'confirm_token':result['confirm_token']})
     assert done.status_code==200,done.text

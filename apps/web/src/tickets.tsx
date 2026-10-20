@@ -236,6 +236,12 @@ export function TicketEditor() {
         })
         .catch((e) => setError(e.message));
   }, [id]);
+  useEffect(()=>{
+    if(!data||u.role==='student'||(version&&!version.editable))return;
+    const handle=(event:Event)=>{const detail=(event as CustomEvent).detail;if(detail.version_id!==Number(id))return;detail.result=save(true);};
+    window.addEventListener('training112:publish-editor',handle);
+    return()=>window.removeEventListener('training112:publish-editor',handle);
+  },[data,version,busy,id,u.role]);
   if (!data)
     return (
       <div className="page">
@@ -267,6 +273,7 @@ export function TicketEditor() {
     catch(e:any){setError(e.message);}finally{setBusy(false);}
   }
   async function save(publish = false) {
+    if(busy)return {ok:false,error:"Дождитесь завершения сохранения билета."};
     setBusy(true);
     setError("");
     try {
@@ -277,8 +284,10 @@ export function TicketEditor() {
       );
       if (publish) await api(`/tickets/${v.id}/publish`, "POST");
       nav(publish?"/tickets":"/tickets/"+v.id);
+      return {ok:true,version_id:v.id};
     } catch (e: any) {
       setError(e.message);
+      return {ok:false,error:e.message};
     } finally {
       setBusy(false);
     }

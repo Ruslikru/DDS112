@@ -262,6 +262,16 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   push({who:'user',text:label});setBusy(confirm.intent==='create_ticket'?'generate':'run');
   if(confirm.intent==='create_ticket')creation.current=confirm;
   try{
+   if(confirm.intent==='publish_ticket'&&location.pathname==='/tickets/'+confirm.slots.version_id){
+    const detail:{version_id:number,result?:Promise<Obj>}={version_id:Number(confirm.slots.version_id)};
+    window.dispatchEvent(new CustomEvent('training112:publish-editor',{detail}));
+    if(!detail.result)throw new Error('Редактор ещё не готов или этот билет недоступен для редактирования.');
+    const result=await detail.result;
+    if(!result.ok)throw new Error(result.error||'Не удалось сохранить и опубликовать билет.');
+    sessionStorage.setItem('assistant:last-version',String(result.version_id));
+    push({who:'assistant',text:'Текущие изменения сохранены, билет опубликован. Теперь его можно назначить студентам.'});
+    setDialog(null);creation.current=null;return;
+   }
    const r:Obj=await api('/assistant/execute','POST',{intent:confirm.intent,slots:confirm.slots,confirm_token:confirm.token});
    const savedVersion=r.version_id||r.slots?.version_id||r.action?.to?.match(/^\/tickets\/(\d+)(?:[?#]|$)/)?.[1];
    if(savedVersion)sessionStorage.setItem('assistant:last-version',String(savedVersion));

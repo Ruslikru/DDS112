@@ -84,3 +84,13 @@ PHRASES=sorted({(p,want) for table in (FIRST,SYNONYMS) for want,phrases in table
 @pytest.mark.parametrize('phrase,intent',PHRASES)
 def test_phrase_reaches_its_command(phrase,intent):
     assert detect(fix_keywords(clean_speech(phrase),NAMES))==intent
+
+
+@pytest.mark.parametrize('phrase',[
+    'Сохраняй и опубликовывай билет.',
+    'Сохраняй билеты и опубликовывай',
+    'Сохрани и опубликуй билет',
+    'Опубликовать текущий билет',
+])
+def test_publish_imperatives_do_not_open_ticket_list(phrase):
+    assert detect(fix_keywords(clean_speech(phrase),NAMES))=='publish_ticket'

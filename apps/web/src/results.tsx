@@ -67,9 +67,19 @@ function AssessmentContent({
     [review, setReview] = useState<Obj>({}),
     [reason, setReason] = useState(""),
     [error, setError] = useState("");
+  const reviewRoot=useRef<HTMLDivElement>(null);
+  const requestConfirmation=()=>{
+    const missing=p.assessment.criteria.find((c:Obj)=>c.passed===null&&review[c.id]===undefined);
+    if(missing){
+      setError('Выберите «Зачесть» или «Не зачесть» для критерия «'+missing.label+'», затем подтвердите оценку.');
+      const select=Array.from(reviewRoot.current?.querySelectorAll<HTMLSelectElement>('select[data-review-criterion]')||[]).find(el=>el.dataset.reviewCriterion===missing.id);
+      select?.scrollIntoView({block:'center',behavior:'smooth'});select?.focus({preventScroll:true});return;
+    }
+    setError('');setConfirming(true);
+  };
   const [confirming,setConfirming]=useState(false),[saved,setSaved]=useState(''),[saving,setSaving]=useState(false);
   const saveReview=async()=>{if(saving)return;if(p.assessment.criteria.some((c:Obj)=>c.passed===null&&review[c.id]===undefined)){setError('Сначала оцените все критерии.');return;}setSaving(true);try{const next=await api(`/attempts/${p.id}/review`,'POST',{criteria:review,confirm:true,reason:reason.trim()||'Оценка по всем критериям подтверждена преподавателем.'});onUpdate?.(next);setReview({});setReason('');setConfirming(false);setSaved('Оценка подтверждена.');onConfirmed?.();}catch(e:any){setError(e.message);setConfirming(false);}finally{setSaving(false);}};
-  useEffect(()=>{if(u.role==='student')return;const handler=(event:Event)=>{const command=(event as CustomEvent).detail?.command;if(command==='confirm'&&confirming)void saveReview();else setConfirming(true);};window.addEventListener('training112:review-command',handler);return()=>window.removeEventListener('training112:review-command',handler);},[confirming,saving,review,reason,p.id]);
+  useEffect(()=>{if(u.role==='student')return;const handler=(event:Event)=>{const command=(event as CustomEvent).detail?.command;if(command==='confirm'&&confirming)void saveReview();else requestConfirmation();};window.addEventListener('training112:review-command',handler);return()=>window.removeEventListener('training112:review-command',handler);},[confirming,saving,review,reason,p.id]);
   const [elapsed,setElapsed]=useState(0);
   useEffect(()=>{const t=setInterval(()=>setElapsed(x=>x+1),1000);return()=>clearInterval(t);},[p.id]);
   const a = p.assessment;
@@ -84,7 +94,7 @@ function AssessmentContent({
   useEffect(()=>{if(!aiWaiting||!onUpdate)return;const timer=setInterval(()=>api('/attempts/'+p.id).then(onUpdate).catch(()=>{}),1000);return()=>clearInterval(timer);},[p.id,aiWaiting,onUpdate]);
   if(reportWaiting)return <div className="panel assessment assessment-loading" role="status" aria-live="polite"><h2>{reportJob.status==='error'?'Не удалось подготовить отчёт ИИ':'Анализ данных ИИ…'}</h2><p>{reportJob.status==='error'?reportJob.error:'Проверяем карточку, действия и телефонные разговоры. Результат появится автоматически.'}</p>{reportJob.status!=='error'?<div className="analysis-progress"><div className="analysis-track" aria-label="Анализ данных ИИ"/><p>{semantic?.status==='running'?'Проверяем реплики и комментарии по эталону':reportJob.status==='running'?'Формируем итог и рекомендации':'Ожидаем свободный вычислительный модуль'} · {elapsed} с</p><small>Можно закрыть окно: проверка продолжится в фоне.</small></div>:u.role!=='student'?<button onClick={async()=>{try{onUpdate?.(await api(`/ai/attempts/${p.id}/review`,'POST'));}catch(e:any){setError(e.message);}}}>Повторить анализ</button>:<p>Обратитесь к преподавателю для повторного запуска анализа.</p>}<Notice>{error}</Notice></div>;
   return (
-    <div className="panel assessment" data-review-open={u.role!=='student'?p.id:undefined}>
+    <div ref={reviewRoot} className="panel assessment" data-review-open={u.role!=='student'?p.id:undefined}>
       <TeacherReviewMark assessment={a} details/><div className="assessment-top">
         <div className="score-ring">
           {hasScore ? a.score : "—"}
@@ -171,7 +181,7 @@ function AssessmentContent({
               </td>
               {u.role !== "student" && (
                 <td>
-                  <select aria-label={"Оценка: "+c.label}
+                  <select aria-label={"Оценка: "+c.label} data-review-criterion={c.id} aria-invalid={c.passed===null&&review[c.id]===undefined}
                     value={
                       review[c.id] === undefined ? "" : String(review[c.id])
                     }
@@ -182,10 +192,11 @@ function AssessmentContent({
                       setReview(next);
                     }}
                   >
-                    <option value="">Без изменения</option>
+                    <option value="">{c.passed===null?'Выберите оценку':'Без изменения'}</option>
                     <option value="true">Зачесть</option>
                     <option value="false">Не зачесть</option>
                   </select>
+                  {c.passed===null&&review[c.id]===undefined&&<small className="review-needed">Нужно решение преподавателя: зачесть или не зачесть.</small>}
                 </td>
               )}
             </tr>
@@ -196,15 +207,16 @@ function AssessmentContent({
       {u.role !== "student" && (
         <form
           className="review-form"
-          onSubmit={e=>{e.preventDefault();setConfirming(true);}}
+          onSubmit={e=>{e.preventDefault();requestConfirmation();}}
         >
+          {a.criteria.some((c:Obj)=>c.passed===null&&review[c.id]===undefined)&&<p className="review-pending-hint" role="status">Выберите оценку для критериев «На проверке». Кнопка подтверждения поможет найти первый из них.</p>}
           <input
             placeholder="Комментарий к проверке"
             aria-label="Комментарий к проверке"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
-          <button className="primary" disabled={saving||a.criteria.some((c:Obj)=>c.passed===null&&review[c.id]===undefined)}>{Object.keys(review).length||reason.trim()?'Сохранить и подтвердить':'Подтвердить оценку'}</button>
+          <button className="primary" disabled={saving}>{Object.keys(review).length||reason.trim()?'Сохранить и подтвердить':'Подтвердить оценку'}</button>
         </form>
       )}
       {saved&&<p role="status">{saved}</p>}

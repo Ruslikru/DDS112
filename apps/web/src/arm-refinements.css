@@ -49,3 +49,5 @@
 .review-confirmation{z-index:3100!important}.review-confirmation .arm-dialog{width:min(620px,94vw);max-height:90vh;overflow:auto}.review-confirmation p{line-height:1.5}.review-confirmation .toolbar{display:flex;gap:12px;flex-wrap:wrap}
 .phone-text-only{margin:0 0 6px;padding:4px 6px;background:#fff3cf;border:1px solid #d8bc67;font-size:11px}
 .text-only-mark{display:inline-block;margin-left:6px;padding:0 5px;border:1px solid #d8bc67;background:#fff3cf;color:#6b5414;font-size:11px;border-radius:3px}
+
+.assessment .review-form{flex-wrap:wrap}.assessment .review-pending-hint{flex:0 0 100%;margin:0;color:#865b22}.assessment .review-needed{display:block;color:#865b22;margin-top:7px}.assessment select[data-review-criterion][aria-invalid=true]{border-color:#c39b59;background:#fff9ec}
