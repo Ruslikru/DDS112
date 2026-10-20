@@ -300,3 +300,24 @@ def test_closed_clarification_does_not_turn_wrong_route_into_correct_speech():
         'evidence':'Заезжайте слева.'},record['actual'],{})
     apply_evaluation(record,evaluation)
     assert record['passed'] is False and record['credit']==0
+
+
+def test_uncertain_conversation_keeps_preliminary_score_and_pending_review():
+    from apps.api.app.result_report import summarize
+    criteria=[
+        {'id':'confirmation','weight':30,'passed':False,'critical':True},
+        {'id':'rejection','weight':25,'passed':True,'critical':True},
+        {'id':'record','weight':35,'passed':False,'credit':.5,'critical':False,
+         'ai_evaluation':{'verdict':'partial'}},
+        {'id':'time','weight':10,'passed':True,'critical':False},
+        {'id':'phone_conversation','weight':20,'passed':None,'critical':False,
+         'ai_evaluation':{'verdict':'uncertain'}}]
+    for criterion in criteria:criterion['label']=criterion['id']
+    grade=score({'criteria':criteria})
+    assert grade['score']==44
+    assert grade['pending'] and grade['ai_preliminary'] and grade['score_is_provisional']
+    assert not grade['passed'] and grade['critical_errors']==1
+    report=summarize(grade)
+    assert 'Предварительная оценка: 44 из 100.' in report['summary']
+    assert 'решение преподавателя' in report['summary']
+    assert grade['criteria'][-1]['passed'] is None

@@ -58,7 +58,7 @@ def summarize(assessment):
     """Report established grades without asking the model to reassess them."""
     a=score(copy.deepcopy(assessment))
     if a['pending']:
-        summary='Для завершения проверки требуется решение преподавателя по оставшимся критериям.'
+        summary=(f"Предварительная оценка: {a['score']} из 100. " if a['score'] is not None and any(c['passed'] is not None for c in a['criteria']) else '')+'Для завершения проверки требуется решение преподавателя по оставшимся критериям.'
     elif a['score'] is None:
         summary='Нет оценённых критериев для итогового результата.'
     else:

@@ -73,6 +73,9 @@ function AssessmentContent({
   const [elapsed,setElapsed]=useState(0);
   useEffect(()=>{const t=setInterval(()=>setElapsed(x=>x+1),1000);return()=>clearInterval(t);},[p.id]);
   const a = p.assessment;
+  const checkedCount=a.criteria.filter((c:Obj)=>c.passed!==null).length;
+  const hasScore=a.score!=null&&checkedCount>0;
+  const provisional=hasScore&&(a.pending||a.ai_preliminary);
   const semantic=a.semantic_review;
   const needsAI=a.criteria.some((c:Obj)=>c.kind==='manual'&&c.passed===null&&!c.teacher_reviewed);
   const reportJob=a.report_job;
@@ -84,28 +87,28 @@ function AssessmentContent({
     <div className="panel assessment" data-review-open={u.role!=='student'?p.id:undefined}>
       <TeacherReviewMark assessment={a} details/><div className="assessment-top">
         <div className="score-ring">
-          {a.pending ? "—" : a.score ?? "—"}
+          {hasScore ? a.score : "—"}
           <small>из 100</small>
         </div>
         <div>
           <Badge tone={a.pending ? "amber" : a.passed ? "green" : "red"}>
-            {a.pending
+            {provisional ? (a.ai_preliminary?"Предварительно · ИИ":"Предварительно") : a.pending
               ? "Ожидает проверки"
-              : a.ai_preliminary ? "Предварительно · ИИ" : a.passed
+              : a.passed
                 ? "Зачтено"
                 : "Требуется повторение"}
           </Badge>
           <h2>
-            {a.pending
+            {provisional ? (a.ai_preliminary?"Предварительная оценка ИИ":"Предварительная оценка") : a.pending
               ? (aiWaiting?"Нейросеть проверяет комментарии":"Нужна проверка преподавателя")
-              : a.ai_preliminary ? "Предварительная оценка ИИ" : a.passed
+              : a.passed
                 ? "Задание выполнено"
                 : "Разберите ошибки и попробуйте снова"}
           </h2>
           <p>
             Критических ошибок: {a.critical_errors} ·{" "}
             {a.pending
-              ? "Итоговый балл появится после проверки всех критериев."
+              ? (hasScore?`Оценено критериев: ${checkedCount} из ${a.criteria.length}. Баллы за остальные пока не начислены. ${aiWaiting?'Анализ продолжается.':'Оставшиеся критерии проверит преподаватель.'}`:"Итоговый балл появится после проверки всех критериев.")
               : a.ai_preliminary ? "Комментарии оценены локальной моделью. Преподаватель может уточнить оценку." : "Проверка завершена."}
             {p.state?.text_only&&<small className="text-only-mark" title="Озвучка билета не была готова при запуске, попытка прошла текстом">без звука</small>}
           </p>
@@ -327,7 +330,7 @@ export function Results() {
                       }
                     >
                       {p.assessment.pending
-                        ? "На проверке"
+                        ? "Предварительно · нужна проверка"
                         : p.assessment.ai_preliminary ? "Предварительно · ИИ" : p.assessment.passed
                           ? "Зачтено"
                           : "Не зачтено"}
