@@ -44,7 +44,11 @@ def scene(task,contact,event=None):
     """Явное место важнее типа ЧП. Классификация выполняется до звонка."""
     incoming=event is not None
     event=event or {};explicit=(event.get('call_audio') or {}) if incoming else (contact.get('call_audio') or {})
-    if explicit.get('backgrounds'):return explicit
+    departure=not incoming and contact.get('kind')=='brigade' and re.search('выезжа|выезд|выех',contact.get('response',''),re.I) and explicit.get('siren')!='off'
+    if explicit.get('backgrounds'):
+        result={**explicit,'events_after_reply':[dict(e) for e in explicit.get('events_after_reply',[])]}
+        if departure and not any(e['id']=='fx_siren_start' for e in result['events_after_reply']):result['events_after_reply'].append({'id':'fx_siren_start','seconds':0,'duration':1})
+        return result
     words=str(event.get('text','')).casefold()
     incident=str(task.get('initial_card',{}).get('incident_type') or task.get('category','')).casefold()
     service=task.get('own_service','')
@@ -60,7 +64,7 @@ def scene(task,contact,event=None):
     else:backgrounds=['bg_fire_station' if '101' in service else 'bg_dispatch_office']
     if explicit.get('siren')=='on':backgrounds.append('bg_siren_distant')
     if explicit.get('horn') is True:ambient=['fx_car_horn']
-    if explicit.get('siren')=='departure':effects=[{'id':'fx_siren_start','seconds':.8}]
+    if departure or explicit.get('siren')=='departure':effects=[{'id':'fx_siren_start','seconds':0,'duration':1}]
     return {'backgrounds':backgrounds,'ambient_events':ambient,'events_after_reply':effects}
 
 def prepare_task(task):

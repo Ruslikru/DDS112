@@ -37,6 +37,9 @@ def seed(db):
     from .db import ScheduledEvent
     def upgrade(task):
         task=copy.deepcopy(task)
+        if task.get('onboarding')=='dds-2':
+            for contact in task.get('contacts',[]):
+                if contact.get('id')=='brigade':contact['voice_tts']='piper-ruslan'
         if task.get('mode')=='dds' and task.get('onboarding') and not task.get('service_events'):
             task['service_events']=[{'kind':'incoming_call','contact_id':'brigade','trigger_contact':'brigade','who':'Старший бригады','stage':stage,'respect_delay':True,'after':delay,'text':text} for stage,delay,text in [('arrived',10,'Мы прибыли. Обстановка соответствует заявке.'),('done',35,'Работы завершены. Опасность устранена.')]]
         if task.get('onboarding') and not any(c['id']=='tutorial-comments' for c in task.get('criteria',[])):

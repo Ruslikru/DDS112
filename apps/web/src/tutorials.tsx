@@ -12,7 +12,7 @@ export function TutorialCatalog({revisit=false}:{revisit?:boolean}){
 }
 
 export function TutorialCoach({p,card,phoneOpen,editingStatus,contactId,contactText,selected,trainingMenu,statusError}:{p:Obj,card:Obj,phoneOpen:boolean,editingStatus:boolean,contactId:string,contactText:string,selected:string[],trainingMenu:boolean,statusError?:string}){
- const [read,setRead]=useState(sessionStorage.getItem('tutorial-read:'+p.id)==='yes');
+ const [read,setRead]=useState(p.task.onboarding==='dds-2'||sessionStorage.getItem('tutorial-read:'+p.id)==='yes');
  const [,setTick]=useState(0);
  const activity=useRef(performance.now()),stage=useRef({key:'',at:performance.now()}),seenScript=useRef(false);
  useEffect(()=>{const active=()=>{activity.current=performance.now();};const events=['pointerdown','keydown','input','change'];events.forEach(name=>document.addEventListener(name,active,true));return()=>events.forEach(name=>document.removeEventListener(name,active,true));},[p.id]);
@@ -27,17 +27,16 @@ export function TutorialCoach({p,card,phoneOpen,editingStatus,contactId,contactT
   const select=document.querySelector<HTMLSelectElement>('.arm-status-form select[name="status"]');
   const comment=document.querySelector<HTMLInputElement>('.arm-status-form input[name="comment"]');
   if(select?.value!==name)point('.arm-status-form select[name="status"]',`Откройте список и выберите «${name}».`,num);
-  else if(statusError?.startsWith('Проверьте комментарий.'))point('.arm-status-form input[name="comment"]',statusError,num);
   else if(!comment?.value.trim())point('.arm-status-form input[name="comment"]',`Запишите комментарий: «${message}»`,num);
   else point('button[title="Сохранить статус"]','Нажмите галочку, чтобы сохранить статус и комментарий.',num);
  };
  const contact=(message:string,num:number)=>{
   const phase=document.querySelector('.dds-voice-call')?.getAttribute('data-phase')||'idle';
-  if(['ready','starting','recording','sending'].includes(phase))callScript=message;
+  if(['ready','starting','recording','recognizing','sending'].includes(phase))callScript=message;
   if(phase==='idle')point('[data-guide="voice-contact"]','Нажмите «Позвонить» рядом со «Старший бригады».',num);
   else if(phase==='dialing'||phase==='greeting')point('.dds-voice-call .phone-phase',phase==='dialing'?'Идёт соединение. Дождитесь ответа бригады.':'Прослушайте приветствие бригады.',num);
   else if(phase==='recording')point('.dds-voice-call .voice-mic','Говорите, удерживая кнопку. Закончив сообщение, отпустите её.',num);
-  else if(phase==='sending')point('.dds-voice-call .phone-phase','Сообщение отправляется. Прослушайте ответ бригады.',num);
+  else if(phase==='recognizing'||phase==='sending')point('.dds-voice-call .phone-phase',phase==='recognizing'?'Распознаём вашу речь.':'Сообщение отправляется. Прослушайте ответ бригады.',num);
   else point('.dds-voice-call .voice-mic','Удерживайте микрофон и передайте заявку бригаде.',num);
  };
  const incoming=(message:string,num:number)=>point(p.state.incoming_calls?.length?'[data-guide=accept]':'[data-guide=phone]',p.state.incoming_calls?.length?'Бригада звонит. Примите звонок и прослушайте доклад.':message,num);

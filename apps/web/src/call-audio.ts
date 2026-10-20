@@ -86,7 +86,14 @@ export class CallAudioEngine {
   this.later(()=>void next(),5000);
  }
  async finishWaiting(){this.waiting=false;await this.filler;}
- replyEnded(){const epoch=this.epoch;for(const event of this.scene.events_after_reply||[])this.later(()=>{if(epoch===this.epoch)void this.play(event.id);},(event.seconds||.8)*1000);this.scene={...this.scene,events_after_reply:[]};}
+ async replyEnded(){
+  const epoch=this.epoch,events=this.scene.events_after_reply||[];this.scene={...this.scene,events_after_reply:[]};
+  for(const event of events){
+   const delay=Number(event.seconds??0);if(delay>0)await new Promise(resolve=>setTimeout(resolve,delay*1000));
+   if(epoch!==this.epoch)return;await this.buffer(event.id);if(epoch!==this.epoch)return;
+   await this.play(event.id,false,false,.7,Number(event.duration??1));
+  }
+ }
  hangup(){this.stop();void this.signal('hangup');}
  dispose(){this.stop();this.closed=true;void this.context?.close();this.buffers.clear();}
 }

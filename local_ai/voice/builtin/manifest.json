@@ -488,5 +488,33 @@
     "tts": "piper",
     "file": "77bc2d58c12e53eee66f2fbb74b5fc8238021806fc1706ee3585088ebfaa3155.wav",
     "duration": 0.87
+  },
+  {
+    "text": "Мы прибыли. Обстановка соответствует заявке.",
+    "gender": "male",
+    "tts": "piper-ruslan",
+    "file": "e7c13a6a62593ce4b3b6d7f79a464c13a5bf6cf42ef73ef2142feb7ba7833d88.wav",
+    "duration": 2.21
+  },
+  {
+    "text": "Работы завершены. Опасность устранена.",
+    "gender": "male",
+    "tts": "piper-ruslan",
+    "file": "b42d3ee07fac27a70777d18f19b2f5fcf32f37a65443071673d8b6ba351149b1.wav",
+    "duration": 1.99
+  },
+  {
+    "text": "Заявку приняли. Выезжаем по указанному адресу.",
+    "gender": "male",
+    "tts": "piper-ruslan",
+    "file": "60b6402fad9b90a624fa80dfe73bd39aeb07d9bc400ae91c4d5ce241604ef154.wav",
+    "duration": 2.11
+  },
+  {
+    "text": "Старший бригады. ДДС района на связи. Слушаю вас.",
+    "gender": "male",
+    "tts": "piper-ruslan",
+    "file": "19877d81d6c9d89ba64877a693512f6b1a08accd3f02edbb7e803f81be73ee30.wav",
+    "duration": 2.61
   }
 ]

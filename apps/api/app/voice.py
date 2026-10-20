@@ -39,6 +39,7 @@ def prepare(data,db,owner,preserve=False):
             old=next((db.get(VoiceJob,line['voice_key']) for c in task.get('contacts',[]) for line in c.get('voice_lines',[]) if line.get('voice_key') and db.get(VoiceJob,line['voice_key'])),None)
             if old:cfg=old.data['settings']
         speakers={c['id']:c.get('voice_gender','male') for c in task.get('contacts',[])}
+        voices={c['id']:c.get('voice_tts') for c in task.get('contacts',[])}
         for contact in task.get('contacts',[]):
             contact['voice_lines']=[{'text':text,'spoken':True,'contact_id':contact['id'],'voice_gender':contact.get('voice_gender','male')} for text in dict.fromkeys([contact.get('response',''),*contact.get('updates',[]),*[q['answer'] for q in contact.get('questions',[])]]) if text.strip()]
         for contact in task.get('contacts',[]):
@@ -52,7 +53,7 @@ def prepare(data,db,owner,preserve=False):
             speaker=event.get('contact_id') or event.get('who','brigade')
             gender=speakers.setdefault(speaker,event.get('voice_gender','male'))
             event['voice_gender']=gender
-            spec={'speaker_id':speaker,'text':event['text'],'gender':gender,'settings':cfg,'revision':'voice-v1'}
+            spec={'speaker_id':speaker,'text':event['text'],'gender':gender,'settings':{**cfg,**({'tts':voices[speaker]} if voices.get(speaker) else {})},'revision':'voice-v1'}
             key=hashlib.sha256(json.dumps(spec,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
             event['voice_key']=key
             if not db.get(VoiceJob,key):db.add(VoiceJob(id=key,data={**spec,'owner':owner},status='pending'))

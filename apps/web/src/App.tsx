@@ -13,7 +13,7 @@ import {TeacherJournal} from './teacher-journal';
 import {MiniQuestions} from './mini-questions';
 import {ArmConsole} from './arm-journal';
 import {AssistantButton,TeacherAssistant} from './assistant';
-const demoLaunchExample = new URL('./launch-shortcuts.svg', import.meta.url).href;
+const demoLaunchExample = new URL('./launch-local-shortcut.png', import.meta.url).href;
 import { Library, Registry } from './library';
 import { Lessons } from './lessons';
 import { DDSQueue } from './dds-queue';
@@ -226,7 +226,7 @@ function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
 function DemoTeacherWelcome({user}:{user:Obj}){
   const [visible,setVisible]=useState(()=>localStorage.getItem('training112:demo-role')==='server'&&user.role==='teacher'&&sessionStorage.getItem('training112:demo-teacher-welcome')==='true');
   if(!visible)return null;
-  return <div className="demo-setup-backdrop" data-no-capture><section className="demo-setup-dialog demo-teacher-welcome" role="dialog" aria-modal="true" aria-labelledby="demo-teacher-welcome-title"><h2 id="demo-teacher-welcome-title">Теперь запустите рабочее место</h2><p>Не закрывая это окно, снова откройте ярлык «На одном ПК» в папке программы. Режим запуска выбирать не нужно.</p><p>Откроется рабочее место студента. Здесь вы сможете проверить, как ученик работает с тренажёром.</p><p>Чтобы открыть ещё несколько рабочих мест, запустите этот же ярлык повторно.</p><img src={demoLaunchExample} alt="Повторно откройте ярлык «На одном ПК»"/><div className="demo-setup-actions"><button type="button" className="primary" onClick={()=>{sessionStorage.removeItem('training112:demo-teacher-welcome');setVisible(false);}}>Продолжить</button></div></section></div>;
+  return <div className="demo-setup-backdrop" data-no-capture><section className="demo-setup-dialog demo-teacher-welcome" role="dialog" aria-modal="true" aria-labelledby="demo-teacher-welcome-title"><h2 id="demo-teacher-welcome-title">Теперь запустите рабочее место</h2><p>Не закрывая это окно, снова откройте ярлык «На одном ПК» в папке программы.</p><p>Откроется рабочее место студента. Здесь вы сможете проверить, как ученик работает с тренажёром.</p><p>Чтобы открыть ещё несколько рабочих мест, запустите этот же ярлык повторно.</p><img src={demoLaunchExample} alt="Повторно откройте ярлык «На одном ПК»"/><div className="demo-setup-actions"><button type="button" className="primary" onClick={()=>{sessionStorage.removeItem('training112:demo-teacher-welcome');setVisible(false);}}>Продолжить</button></div></section></div>;
 }
 function RequiredPasswordChange({onDone}:{onDone:(user:Obj)=>void}){
   const [error,setError]=useState('');

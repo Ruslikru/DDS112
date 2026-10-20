@@ -569,10 +569,6 @@ def apply_command(id,c,u,db,_trusted_ai=False):
             if not comment:fail('Введите комментарий')
             if status in ['Работы завершены','Отказ от выполнения работ']:fail('Работа службы завершена')
         elif status not in allowed_statuses(hist): fail('Недопустимый переход статуса')
-        if kind=='status' and task.get('onboarding') and state.get('guided'):
-            from .tutorial_comments import feedback
-            issue=feedback(status,comment)
-            if issue:fail('Проверьте комментарий. '+issue)
         if status in ['Не принята','Отказ от выполнения работ'] and not comment: fail('Укажите причину')
         if status in ['Принята','Не принята'] and 'ack_seconds' not in state:
             state['ack_seconds']=max(0,round((datetime.fromisoformat(now())-datetime.fromisoformat(p.started_at)).total_seconds()-state.get('paused_seconds',0)))

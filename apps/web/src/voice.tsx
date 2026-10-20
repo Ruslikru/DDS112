@@ -61,19 +61,11 @@ export async function listMicrophones():Promise<{id:string,label:string}[]>{
 }
 /** Records up to 15 s and passes the audio to `transcribe` (the native bridge when omitted). Returns a stop function.
  *  `deviceId` picks a microphone; `onLevel` receives the input level (RMS, 0..1) about 20 times a second while recording. */
-export async function record(onDone:(text:string)=>void,onError:(text:string)=>void,transcribe?:(audio:string)=>Promise<Obj>,options:{deviceId?:string,onLevel?:(level:number)=>void}={}):Promise<((cancel?:boolean)=>void)|undefined>{
- try{
-  let convert=transcribe;
-  if(!convert){
-   if(mobile()||!bridge())throw Error('Живой голос доступен в приложении Windows на этом ПК.');
-   const native=await voiceBridge();
-   // Older voice clients use WebView's own microphone permission prompt.
-   if(typeof native.allow_microphone==='function')await native.allow_microphone();
-   convert=(audio:string)=>bridge().voice_transcribe(audio);
-  }else if(typeof bridge()?.allow_microphone==='function')await bridge().allow_microphone();
+async function openCallMicrophone(deviceId?:string):Promise<MediaStream>{
+  if(typeof bridge()?.allow_microphone==='function')await bridge().allow_microphone();
   if(!navigator.mediaDevices?.getUserMedia)throw Error('Микрофон в браузере доступен только по HTTPS или на адресе localhost.');
   let opened:MediaStream|undefined,problem:any;
-  const deviceId=options.deviceId??selectedMicrophone();
+  deviceId??=selectedMicrophone();
   const constraints:MediaStreamConstraints={audio:deviceId?{deviceId:{exact:deviceId}}:true};
   try{opened=await navigator.mediaDevices.getUserMedia(constraints);}
   catch(e:any){
@@ -82,7 +74,18 @@ export async function record(onDone:(text:string)=>void,onError:(text:string)=>v
    if(deviceId&&e?.name!=='NotAllowedError'){try{opened=await navigator.mediaDevices.getUserMedia({audio:true});}catch(e2:any){problem=e2;}}
   }
   if(!opened)throw Error(problem?.name==='NotAllowedError'?'Доступ к микрофону запрещён. Разрешите его в настройках браузера.':problem?.name==='NotFoundError'?'Микрофон не найден.':'Микрофон недоступен: '+(problem?.message||String(problem)));
-  const stream:MediaStream=opened;
+  return opened;
+}
+export async function record(onDone:(text:string)=>void,onError:(text:string)=>void,transcribe?:(audio:string)=>Promise<Obj>,options:{deviceId?:string,stream?:MediaStream,onLevel?:(level:number)=>void}={}):Promise<((cancel?:boolean)=>void)|undefined>{
+ try{
+  let convert=transcribe;
+  if(!convert){
+   if(mobile()||!bridge())throw Error('Живой голос доступен в приложении Windows на этом ПК.');
+   const native=await voiceBridge();
+   // Older voice clients use WebView's own microphone permission prompt.
+   convert=(audio:string)=>bridge().voice_transcribe(audio);
+  }
+  const stream=options.stream?.getAudioTracks().some(t=>t.readyState==='live')?options.stream:await openCallMicrophone(options.deviceId);
   let recorder:MediaRecorder;try{recorder=new MediaRecorder(stream);}catch(e){stream.getTracks().forEach(t=>t.stop());throw e;}const chunks:BlobPart[]=[];
   let cancelled=false;
   // Input level meter, so the speaker can see whether the microphone picks anything up.
@@ -96,7 +99,7 @@ export async function record(onDone:(text:string)=>void,onError:(text:string)=>v
   recorder.ondataavailable=e=>chunks.push(e.data);
   let started=0;
   recorder.onstop=async()=>{stopMeter();stream.getTracks().forEach(t=>t.stop());if(cancelled)return;if(performance.now()-started<350){onError('Кнопку нужно удерживать. Зажмите микрофон, произнесите фразу и затем отпустите.');return;}try{const blob=new Blob(chunks);if(!blob.size)throw Error('Запись пустая. Удерживайте микрофон, пока говорите.');const bytes=new Uint8Array(await blob.arrayBuffer());let raw='';bytes.forEach(b=>raw+=String.fromCharCode(b));const value=await convert!(btoa(raw));onDone(value.text+'');}catch(e:any){onError(e.message||String(e));}};
-  recorder.start();started=performance.now();const limit=setTimeout(()=>{if(recorder.state==='recording')recorder.stop();},15000);
+  recorder.start();started=performance.now();const limit=setTimeout(()=>{if(recorder.state==='recording')recorder.stop();},24000);
   // stop(true) discards the recording: nothing is transcribed and neither callback fires.
   return (cancel=false)=>{clearTimeout(limit);cancelled=cancel;if(recorder.state==='recording')recorder.stop();};
  }catch(e:any){onError(e.message||String(e));return undefined;}
@@ -189,15 +192,19 @@ export function VoiceQueue(){
 
 export function DDSVoiceCall({disabled,contacts,contactId,service,textOnly=false,incomingState,engine,onStart,onEnd,onSelect,onSend}:{disabled:boolean,contacts:Obj[],contactId:string,service:string,textOnly?:boolean,incomingState?:string,engine?:CallAudioEngine,onStart?:()=>Promise<void>,onEnd?:()=>void,onSelect:(id:string)=>void,onSend:(text:string,id:string)=>Promise<any>}){
  useNativeReady();
- const [phase,setPhase]=useState('idle'),[error,setError]=useState('');
+ const [phase,setPhase]=useState('idle'),[error,setError]=useState(''),[heard,setHeard]=useState('');
  const resources=useRef(new Set<string>());
+ const warmed=useRef<Promise<MediaStream|undefined>|undefined>(undefined),warmStream=useRef<MediaStream|undefined>(undefined);
+ const closeMicrophone=()=>{warmStream.current?.getTracks().forEach(track=>track.stop());warmStream.current=undefined;warmed.current=undefined;};
+ const primeMicrophone=(run:number)=>{warmed.current=openCallMicrophone().then(stream=>{if(run!==generation.current){stream.getTracks().forEach(track=>track.stop());return undefined;}warmStream.current=stream;return stream;}).catch(e=>{if(run===generation.current)setError(e.message);return undefined;});};
  const stop=useRef<((cancel?:boolean)=>void)|undefined>(undefined),audio=useRef<HTMLAudioElement|null>(null),tone=useRef<AudioContext|null>(null),generation=useRef(0),locked=useRef(false);
- const cancel=()=>{generation.current++;locked.current=false;stop.current?.();stop.current=undefined;audio.current?.pause();resources.current.forEach(releaseAudio);resources.current.clear();tone.current?.close().catch(()=>{});tone.current=null;engine?.hangup();onEnd?.();setPhase('idle');};
- useEffect(()=>()=>{generation.current++;stop.current?.();audio.current?.pause();resources.current.forEach(releaseAudio);resources.current.clear();tone.current?.close().catch(()=>{});onEnd?.();},[]);
+ const cancel=()=>{generation.current++;locked.current=false;stop.current?.();stop.current=undefined;audio.current?.pause();closeMicrophone();resources.current.forEach(releaseAudio);resources.current.clear();tone.current?.close().catch(()=>{});tone.current=null;engine?.hangup();onEnd?.();setPhase('idle');};
+ useEffect(()=>()=>{generation.current++;stop.current?.();audio.current?.pause();closeMicrophone();resources.current.forEach(releaseAudio);resources.current.clear();tone.current?.close().catch(()=>{});onEnd?.();},[]);
  async function call(c:Obj){
   if(locked.current||disabled)return;document.querySelectorAll('audio').forEach(a=>a.pause());locked.current=true;const run=++generation.current;onSelect(c.id);setError('');setPhase('dialing');
   let timer:ReturnType<typeof setInterval>|undefined;
   try{
+   setHeard('');primeMicrophone(run);
    await Promise.all([engine?.unlock(),onStart?.()]);await engine?.prepare(c.call_audio);if(run!==generation.current)return;
    if(!c.greeting_audio)throw Error('Запись приветствия недоступна. Обновите карточку; если ошибка повторяется, сообщите преподавателю.');
    if(run!==generation.current)return;
@@ -208,24 +215,26 @@ export function DDSVoiceCall({disabled,contacts,contactId,service,textOnly=false
    if(run!==generation.current)return;await engine?.connect(c.call_audio);if(run!==generation.current)return;
    setPhase('greeting');const player=new Audio(reply.audio);audio.current=player;engine?.attach(player);
    await new Promise<void>((resolve,reject)=>{player.onended=()=>resolve();player.onerror=()=>reject(Error('Не удалось воспроизвести приветствие службы.'));player.play().catch(reject);});
-   if(run!==generation.current)return;setPhase('ready');
-  }catch(e:any){if(run===generation.current){setError(e.message||String(e));engine?.hangup();onEnd?.();setPhase('idle');locked.current=false;}}
+   await warmed.current;if(run!==generation.current)return;setPhase('ready');
+  }catch(e:any){if(run===generation.current){generation.current++;closeMicrophone();setError(e.message||String(e));engine?.hangup();onEnd?.();setPhase('idle');locked.current=false;}}
   finally{clearInterval(timer);if(tone.current&&run===generation.current){tone.current.close().catch(()=>{});tone.current=null;}}
  }
  async function microphone(){
   if(phase!=='ready')return;const run=generation.current;setPhase('starting');
-  stop.current=await record(async text=>{if(run!==generation.current)return;setPhase('sending');try{if(text.trim().length<3)throw Error('Речь не распознана. Нажмите микрофон и повторите.');const result=await onSend(text,contactId);if(run!==generation.current)return;const reply=result?.state?.messages?.filter((m:Obj)=>m.audio).at(-1);if(reply?.audio){const cached=await speechResource(reply.audio);resources.current.add(cached);if(run!==generation.current)return;await engine?.finishWaiting();if(run!==generation.current)return;const player=new Audio(cached);audio.current=player;engine?.attach(player);await playReply(player);engine?.replyEnded();}if(run===generation.current){await new Promise(resolve=>setTimeout(resolve,1200));if(run===generation.current)cancel();}}catch(e:any){if(run===generation.current)setError(e.message||String(e));}finally{await engine?.finishWaiting();if(run===generation.current)setPhase('ready');}},message=>{void engine?.finishWaiting();if(run===generation.current){setError(message);setPhase('ready');}},serverTranscribe);
+  const prepared=await warmed.current;warmed.current=undefined;warmStream.current=undefined;
+  if(run!==generation.current){prepared?.getTracks().forEach(track=>track.stop());return;}
+  stop.current=await record(async text=>{if(run!==generation.current)return;setHeard(text);setPhase('sending');try{if(text.trim().length<3)throw Error('Речь не распознана. Нажмите микрофон и повторите.');const result=await onSend(text,contactId);if(run!==generation.current)return;const reply=result?.state?.messages?.filter((m:Obj)=>m.audio).at(-1);if(reply?.audio){const cached=await speechResource(reply.audio);resources.current.add(cached);if(run!==generation.current)return;await engine?.finishWaiting();if(run!==generation.current)return;const player=new Audio(cached);audio.current=player;engine?.attach(player);await playReply(player);if(run!==generation.current)return;await engine?.replyEnded();}if(run===generation.current){cancel();}}catch(e:any){if(run===generation.current){setError(e.message||String(e));primeMicrophone(run);}}finally{await engine?.finishWaiting();if(run===generation.current)setPhase('ready');}},message=>{void engine?.finishWaiting();if(run===generation.current){setError(message);primeMicrophone(run);setPhase('ready');}},serverTranscribe,{stream:prepared});
   const finish=stop.current;
   if(run!==generation.current){finish?.();return;}
   if(finish)setPhase('recording');
-  return finish?(cancel=false)=>{finish(cancel);if(run===generation.current){setPhase(cancel?'ready':'sending');if(!cancel)engine?.waitForReply(contacts.find(c=>c.id===contactId)?.voice_gender);}}:undefined;
+  return finish?(cancel=false)=>{finish(cancel);if(run===generation.current){setPhase(cancel?'ready':'recognizing');if(!cancel)engine?.waitForReply(contacts.find(c=>c.id===contactId)?.voice_gender);}}:undefined;
  }
  const selected=contacts.find(c=>c.id===contactId),connected=phase!=='idle';
  return <div className="dds-voice-call" data-phase={phase}>
   <div className="phone-quick-contacts" aria-label="Быстрые контакты">{contacts.map(c=><button key={c.id} data-contact={c.id} data-guide="voice-contact" disabled={disabled||connected||!c.phone} title={'Позвонить: '+c.name+' · '+c.phone} onClick={()=>call(c)}><span><b>{c.name}</b><small>{c.phone}</small></span><span className="contact-call-action"><Phone size={14}/> Позвонить</span></button>)}</div>
   <div className="phone-call-panel">
    <div className="phone-party"><b>{connected?selected?.name:'Телефон ДДС'}</b><small>{connected?selected?.phone:'Выберите контакт выше'}</small></div>
-   <div className="phone-phase" role="status">{incomingState||({idle:'Нет активного звонка',dialing:'Соединяем…',greeting:'Слушайте приветствие',ready:'Можно говорить',starting:'Включаем микрофон…',recording:'Говорите. Отпустите кнопку, чтобы отправить.',sending:'Слушайте ответ…'}[phase])}</div>
+   <div className="phone-phase" role="status">{incomingState||({idle:'Нет активного звонка',dialing:'Соединяем…',greeting:'Слушайте приветствие',ready:'Можно говорить',starting:'Включаем микрофон…',recording:'Говорите. Отпустите кнопку, чтобы отправить.',recognizing:'Распознаём речь…',sending:'Слушайте ответ…'}[phase])}</div>
    <div className="phone-controls"><div><MicButton recording={phase==='recording'} disabled={!['ready','recording'].includes(phase)||disabled} onStart={microphone}/><small>{phase==='recording'?'Отправить':'Микрофон'}</small></div><div><button className="handset hangup" disabled={!connected} aria-label="Завершить звонок" title="Завершить звонок" onClick={cancel}><PhoneOff size={24}/></button><small>Завершить</small></div></div>
-  </div><Notice>{error}</Notice></div>;
+  </div>{heard&&<p className="phone-recognized" role="status"><strong>Распознано:</strong> {heard}</p>}<Notice>{error}</Notice></div>;
 }

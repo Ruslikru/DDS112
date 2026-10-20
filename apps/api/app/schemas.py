@@ -23,6 +23,7 @@ class Criterion(BaseModel):
     skill: str = 'Полнота карточки'
 
 class Contact(BaseModel):
+    voice_tts: Literal["piper-denis","piper-irina","piper-ruslan"] | None = None
     call_audio: dict = Field(default_factory=dict)
     voice_gender: Literal["male","female"] = "male"
     voice_lines: list[dict] = Field(default_factory=list,max_length=60)
