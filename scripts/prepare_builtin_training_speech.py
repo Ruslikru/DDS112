@@ -1,4 +1,4 @@
-"""Prepare and verify packaged speech for the two base tickets and introductions."""
+"""Prepare and verify packaged speech for the six starter tickets and introductions."""
 import hashlib,json,os,shutil,sys
 from pathlib import Path
 from unittest.mock import patch
@@ -31,6 +31,14 @@ for record in records:
 with patch.object(VoiceRuntime,'warm',return_value={}),patch.object(VoiceRuntime,'warm_pre',return_value=None),patch.object(LocalEngine,'start',return_value=None),TestClient(app):
     with SessionLocal() as db:
         owner=db.scalar(select(User).where(User.role=='admin'))
+        # Audio compatibility only: these old scenarios are not seeded into the
+        # new classroom, but existing installations may still contain them.
+        from apps.api.app.communication_examples import seed as legacy_communications
+        legacy_communications(db)
+        compatibility=set()
+        for task in sample_tasks():
+            old=TicketData.model_validate({'title':task['title'],'tasks':[task]}).model_dump()
+            compatibility.update(voice.keys(voice.prepare(old,db,owner.id)))
         titles={v.data['title'] for v in db.scalars(select(TicketVersion))}
         for task in sample_tasks():
             if task.get('id')=='dds-water':task={**task,'title':TITLES[0]}
@@ -42,6 +50,7 @@ with patch.object(VoiceRuntime,'warm',return_value={}),patch.object(VoiceRuntime
         versions=db.scalars(select(TicketVersion)).all()
         from apps.api.app.classroom_models import MiniQuestion
         needed={key for version in versions for key in voice.keys(version.data)}
+        needed.update(compatibility)
         needed.update(q.data['voice_key'] for q in db.scalars(select(MiniQuestion)) if q.data.get('voice_key'))
         pending=[job.data for job in db.scalars(select(voice.VoiceJob)) if job.id in needed and job.status!='ready']
         titles=[v.data['title'] for v in versions]

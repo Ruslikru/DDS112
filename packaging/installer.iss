@@ -1,19 +1,27 @@
-﻿#define AppVersion "0.8.25"
+#define AppVersion "0.8.26"
+#ifndef PayloadDir
+#define PayloadDir "..\release\Dispetcher112-fix-bilets-20261020-r11"
+#endif
+#ifndef BuildTag
+#define BuildTag "20261020-r11"
+#endif
 [Setup]
-AppId={{A6F6F021-37DD-48BB-B651-76B37DD31A12}
+AppId={{A6F6F021-37DD-48BB-B651-76B37DD31A12}{param:VerificationInstance|}
 AppName=Тренажёр 112
 AppVersion={#AppVersion}
+AppVerName=Тренажёр 112 {#AppVersion}{param:VerificationInstance|}
 AppPublisher=Команда тренажёра 112
-DefaultDirName={localappdata}\Programs\Dispetcher112
+DefaultDirName={autopf}\Dispetcher112
 DefaultGroupName=Тренажёр 112
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
-OutputDir=..\release\Dispetcher112-{#AppVersion}-installer
+OutputDir=..\release\Dispetcher112-{#AppVersion}-{#BuildTag}-installer
 OutputBaseFilename=Dispetcher112-Setup-{#AppVersion}-win-x64
-Compression=lzma2/fast
-SolidCompression=yes
+Compression=zip/1
+SolidCompression=no
 DiskSpanning=yes
 DiskSliceSize=2000000000
 SlicesPerDisk=1
@@ -23,46 +31,49 @@ DisableDirPage=no
 AlwaysShowDirOnReadyPage=yes
 UninstallDisplayIcon={app}\Dispetcher112.exe
 DisableProgramGroupPage=yes
+UsePreviousLanguage=no
+UsePreviousPrivileges=no
 CloseApplications=yes
 RestartApplications=no
+SetupIconFile=assets\trainer.ico
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; Flags: unchecked
+Name: "desktopicons"; Description: "Создать два ярлыка на рабочем столе: на одном ПК и в локальной сети"
 
 [Files]
-Source: "..\build\desktop-dist-0.8.25\Dispetcher112\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\local_ai\config.json"; DestDir: "{app}\local_ai"; Flags: ignoreversion
-Source: "..\local_ai\manifest.json"; DestDir: "{app}\local_ai"; Flags: ignoreversion
-Source: "..\local_ai\README.md"; DestDir: "{app}\local_ai"; Flags: ignoreversion
-Source: "..\local_ai\LICENSE*"; DestDir: "{app}\local_ai"; Flags: ignoreversion
-Source: "..\local_ai\runtime\cpu\*"; DestDir: "{app}\local_ai\runtime\cpu"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\local_ai\runtime\vulkan\*"; DestDir: "{app}\local_ai\runtime\vulkan"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\local_ai\models\Qwen3-4B-Instruct-2507-Q4_K_M.gguf"; DestDir: "{app}\local_ai\models"; Flags: ignoreversion nocompression
-Source: "..\local_ai\models\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"; DestDir: "{app}\local_ai\models"; Flags: ignoreversion nocompression
-Source: "..\local_ai\models\qwen-dds-1000-f32.gguf"; DestDir: "{app}\local_ai\models"; Flags: ignoreversion nocompression
+; One verified payload is shared by the portable release and the installer.
+Source: "{#PayloadDir}\*"; DestDir: "{app}"; Excludes: "*.lnk,*.gguf"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PayloadDir}\local_ai\models\Qwen3-4B-Instruct-2507-Q4_K_M.gguf"; DestDir: "{app}\local_ai\models"; Flags: ignoreversion nocompression
 Source: "..\local_ai\downloads\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
-; Speech runs in its own bundled Python environment, independent of host Python.
-Source: "..\local_ai\voice_worker.py"; DestDir: "{app}\local_ai"; Flags: ignoreversion
-Source: "..\local_ai\speech_text.py"; DestDir: "{app}\local_ai"; Flags: ignoreversion
-Source: "..\local_ai\voice\runtime-0.8.24b\*"; DestDir: "{app}\local_ai\voice\runtime"; Excludes: "__pycache__\*,*.pyc,Lib\site-packages\torch\include\*,Lib\site-packages\torch\lib\*.lib,Lib\site-packages\pandas\tests\*,Lib\site-packages\sklearn\tests\*,Lib\site-packages\mpmath\tests\*"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\local_ai\voice\models\gigaam\*"; DestDir: "{app}\local_ai\voice\models\gigaam"; Flags: ignoreversion recursesubdirs createallsubdirs nocompression
-Source: "..\local_ai\voice\piper\FINAL_MODELS_29800\*"; DestDir: "{app}\local_ai\voice\piper\FINAL_MODELS_29800"; Flags: ignoreversion nocompression
-Source: "..\local_ai\voice\builtin\*"; DestDir: "{app}\local_ai\voice\builtin"; Excludes: "*.build.json"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\local_ai\voice\fillers\*"; DestDir: "{app}\local_ai\voice\fillers"; Flags: ignoreversion recursesubdirs createallsubdirs
-
 [Icons]
-Name: "{group}\Тренажёр 112"; Filename: "{app}\Dispetcher112.exe"
-Name: "{autodesktop}\Тренажёр 112"; Filename: "{app}\Dispetcher112.exe"; Tasks: desktopicon
+Name: "{group}\На одном ПК"; Filename: "{app}\Dispetcher112.exe"; Parameters: "--local"; WorkingDir: "{app}"; Check: not VerificationInstall
+Name: "{group}\В локальной сети"; Filename: "{app}\Dispetcher112.exe"; Parameters: "--lan"; WorkingDir: "{app}"; Check: not VerificationInstall
+Name: "{code:DesktopShortcutRoot}\Тренажёр 112 — На одном ПК"; Filename: "{app}\Dispetcher112.exe"; Parameters: "--local"; WorkingDir: "{app}"; Tasks: desktopicons
+Name: "{code:DesktopShortcutRoot}\Тренажёр 112 — В локальной сети"; Filename: "{app}\Dispetcher112.exe"; Parameters: "--lan"; WorkingDir: "{app}"; Tasks: desktopicons
 
 [Run]
 Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "Подготовка встроенного интерфейса WebView2…"; Flags: waituntilterminated; Check: NeedsWebView
-Filename: "{app}\Dispetcher112.exe"; Description: "Запустить Тренажёр 112"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Dispetcher112.exe"; Parameters: "--local"; Description: "Запустить Тренажёр 112 на одном ПК"; Flags: nowait postinstall skipifsilent
 
 [Code]
+function VerificationInstall: Boolean;
+begin
+  Result := ExpandConstant('{param:VerificationInstance|}') <> '';
+end;
+
+function DesktopShortcutRoot(Param: String): String;
+begin
+  { Isolated installation checks must preserve existing shortcuts and uninstall registration. }
+  if VerificationInstall then
+    Result := ExpandConstant('{app}\Проверка ярлыков')
+  else
+    Result := ExpandConstant('{autodesktop}');
+end;
+
 function NeedsWebView: Boolean;
 var Version: String;
 begin

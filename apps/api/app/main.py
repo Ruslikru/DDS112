@@ -164,6 +164,8 @@ async def lifespan(app):
         with SessionLocal() as db:seed_tutorials(db)
     from .practice_library import seed as seed_practice
     with SessionLocal() as db:seed_practice(db)
+    from .starter_library import seed as seed_starters
+    with SessionLocal() as db:seed_starters(db)
     from .voice import recover
     recover()
     from .result_report import recover as recover_reports

@@ -72,6 +72,9 @@ foreach ($mode in @(@('На одном ПК', '--local'), @('В локально
 Для входа выберите учётную запись на экране входа.
 '@ | Set-Content -LiteralPath (Join-Path $destination 'КАК ЗАПУСТИТЬ.txt') -Encoding UTF8
 Copy-Required 'packaging/QUICKSTART.txt' (Join-Path $destination 'ПОДРОБНАЯ ИНСТРУКЦИЯ.txt')
+Copy-Required 'packaging/Reset-Workstation.ps1' (Join-Path $destination 'Reset-Workstation.ps1')
+Copy-Required 'packaging/Reset-Connection.cmd' (Join-Path $destination 'Reset-Connection.cmd')
+Copy-Required 'packaging/RESET-INSTRUCTIONS.txt' (Join-Path $destination 'RESET-INSTRUCTIONS.txt')
 
 foreach ($relative in @('Dispetcher112.exe','_internal/dist/index.html','local_ai/voice/runtime/python.exe','local_ai/voice/models/gigaam/config.json','local_ai/voice/piper/FINAL_MODELS_29800/denis_29800.onnx','local_ai/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','На одном ПК.lnk','В локальной сети.lnk')) {
     if (!(Test-Path -LiteralPath (Join-Path $destination $relative))) { throw "Неполная папка: $relative" }

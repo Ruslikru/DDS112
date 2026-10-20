@@ -1,8 +1,9 @@
-param([string]$InnoCompiler = '')
+param([string]$InnoCompiler = '', [string]$BuildTag = '20261020-r11')
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 Push-Location $projectRoot
 try {
+    if ($BuildTag -notmatch '^[a-zA-Z0-9-]+$') { throw 'Invalid BuildTag' }
     $python=Join-Path $projectRoot '.venv/Scripts/python.exe'
     if (!(Test-Path -LiteralPath $python)) { throw 'Create .venv and install apps/api/requirements.lock.txt first.' }
     if (!$InnoCompiler) {
@@ -10,33 +11,28 @@ try {
         $InnoCompiler=$candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     }
     if (!$InnoCompiler) { throw 'Pass -InnoCompiler with the path to ISCC.exe.' }
-    & $python -m pip install -r packaging/build-requirements.txt
-    if ($LASTEXITCODE) { throw 'Build dependencies failed' }
-    npm ci
-    if ($LASTEXITCODE) { throw 'npm ci failed' }
-    npx tsc --noEmit
-    if ($LASTEXITCODE) { throw 'TypeScript failed' }
-    npx vite build --outDir tmp/frontend-build
-    if ($LASTEXITCODE) { throw 'Vite failed' }
-    robocopy tmp/frontend-build dist /E /NFL /NDL /NJH /NJS /NP | Out-Null
-    if ($LASTEXITCODE -lt 8) { $global:LASTEXITCODE=0 }
-    if ($LASTEXITCODE) { throw 'Web build failed' }
-    & $python scripts/desktop_notices.py
-    if ($LASTEXITCODE) { throw 'License notices failed' }
-    & $python -m PyInstaller packaging/desktop.spec --noconfirm --distpath build/desktop-dist-0.8.25 --workpath build/desktop-work-0.8.25
-    if ($LASTEXITCODE) { throw 'PyInstaller failed' }
-    # The bundled speech Python must not import packages from the build PC.
-    & (Join-Path $projectRoot 'local_ai/voice/runtime-0.8.24b/python.exe') -I scripts/check_voice_runtime.py
-    if ($LASTEXITCODE) { throw 'Voice runtime is not self-contained: run scripts/prepare-voice-runtime.ps1' }
-    & (Join-Path $projectRoot 'local_ai/voice/runtime-0.8.24b/python.exe') -I scripts/prepare_gigaam.py
-    if ($LASTEXITCODE) { throw 'GigaAM model could not be prepared' }
-    & $InnoCompiler packaging/installer.iss
-    if ($LASTEXITCODE) { throw 'Installer compilation failed' }
     $versionLine=Get-Content packaging/installer.iss | Select-String '^#define AppVersion "([^"]+)"$'
     $version=$versionLine.Matches[0].Groups[1].Value
-    $setup=Join-Path $projectRoot "release/Dispetcher112-$version-installer/Dispetcher112-Setup-$version-win-x64.exe"
-    $checksumLines=Get-ChildItem -LiteralPath (Split-Path $setup) -File | Where-Object { $_.Extension -in '.exe','.bin' } | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$_.Name }
-    $checksumLines | Set-Content -Encoding ascii (Join-Path (Split-Path $setup) 'SHA256SUMS.txt')
-    Copy-Item packaging/QUICKSTART.txt (Join-Path (Split-Path $setup) 'README.txt') -Force
-    Write-Output $setup
+    $buildFolder="build/desktop-dist-$version-$BuildTag/Dispetcher112"
+    $releaseName="Dispetcher112-fix-bilets-$BuildTag"
+    $payload=Join-Path $projectRoot "release/$releaseName"
+    $output=Join-Path $projectRoot "release/Dispetcher112-$version-$BuildTag-installer"
+    if ((Test-Path -LiteralPath $payload) -or (Test-Path -LiteralPath $output)) { throw 'Use a fresh BuildTag; existing releases are preserved.' }
+    & $python scripts/check_starter_audio.py --report "output/starter-audio-$BuildTag.json"
+    if ($LASTEXITCODE) { throw 'The six starter tickets must already have complete packaged speech.' }
+    npm run build
+    if ($LASTEXITCODE) { throw 'Frontend build failed' }
+    & $python -m PyInstaller packaging/desktop.spec --noconfirm --distpath "build/desktop-dist-$version-$BuildTag" --workpath "build/desktop-work-$version-$BuildTag"
+    if ($LASTEXITCODE) { throw 'PyInstaller failed' }
+    & ./scripts/build-portable-folder.ps1 -BuildFolder $buildFolder -ReleaseName $releaseName
+    & $python scripts/check_starter_audio.py --bundle $payload
+    if ($LASTEXITCODE) { throw 'Packaged starter speech failed verification.' }
+    & (Join-Path $payload 'local_ai/voice/runtime/python.exe') -I scripts/check_voice_runtime.py
+    if ($LASTEXITCODE) { throw 'Voice runtime is not self-contained.' }
+    & $InnoCompiler /Qp "/DPayloadDir=$payload" "/DBuildTag=$BuildTag" packaging/installer.iss
+    if ($LASTEXITCODE) { throw 'Installer compilation failed' }
+    $checksumLines=Get-ChildItem -LiteralPath $output -File | Where-Object { $_.Extension -in '.exe','.bin' } | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$_.Name }
+    $checksumLines | Set-Content -Encoding ascii (Join-Path $output 'SHA256SUMS.txt')
+    Copy-Item -LiteralPath packaging/QUICKSTART.txt -Destination (Join-Path $output 'README.txt')
+    Write-Output $output
 } finally { Pop-Location }

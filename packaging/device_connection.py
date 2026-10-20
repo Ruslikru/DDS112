@@ -13,8 +13,11 @@ def load_connection(data,force=False):
     file=data/'classroom.json'
     previous=json.loads(file.read_text('utf-8')) if file.exists() else {}
     if previous.get('mode') in ('server','client') and not previous.get('demo'):
+        if previous.get('setup_complete') is not True:
+            message='Найдена настройка старой версии. Администратор должен подтвердить роль этого компьютера.' if 'setup_complete' not in previous else 'Настройка этого компьютера ещё не завершена. Войдите администратором и выберите его роль.'
+            return recovery_connection(previous,message)
         config={**previous,'network_mode':previous.get('network_mode','lan'),
-                'setup_complete':previous.get('setup_complete',True)}
+                'setup_complete':True}
         config['station_configured']=config['mode']=='server' or bool(config.get('token') and re.fullmatch(r'[1-9][0-9]{0,2}',str(config.get('number',''))))
         config['server_selected']=bool(config.get('server'))
         if force:config['edit_connection']=True

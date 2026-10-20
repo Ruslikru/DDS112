@@ -15,7 +15,7 @@ from .db import Base,DATA,SessionLocal,TicketVersion,Media
 from . import main as m
 from .schemas import TicketData
 from .caller import caller_gender
-from local_ai.voice import VoiceRuntime
+from local_ai.voice import VoiceRuntime,PIPER_MODELS
 from local_ai.engine import AIUnavailable
 
 runtime=VoiceRuntime(DATA)
@@ -178,6 +178,10 @@ def restore_builtin(db):
     records=json.loads(manifest.read_text('utf-8'))
     for job in db.scalars(select(VoiceJob).where(VoiceJob.status.in_(['pending','failed']))):
         item=next((r for r in records if r['text']==job.data['text'] and r['gender']==job.data['gender'] and r['tts']==job.data['settings']['tts']),None)
+        # Removed engines already fall back to Piper at inference time. Reuse the
+        # equivalent bundled line instead of regenerating an old classroom's queue.
+        if not item and job.data['settings']['tts'] not in PIPER_MODELS:
+            item=next((r for r in records if r['text']==job.data['text'] and r['gender']==job.data['gender'] and r['tts'] in PIPER_MODELS),None)
         if not item:continue
         path=folder/item['file']
         if not path.is_file():continue

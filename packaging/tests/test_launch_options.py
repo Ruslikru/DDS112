@@ -52,6 +52,19 @@ def test_saved_workstation_is_reused_without_setup(tmp_path):
         assert not result.get('edit_connection')
 
 
+@pytest.mark.parametrize('role',['server','client'])
+def test_legacy_role_needs_admin_confirmation_without_changing_file(tmp_path,role):
+    import json
+    from device_connection import load_connection
+    file=tmp_path/'classroom.json'
+    file.write_text(json.dumps({'mode':role,'server':'http://192.168.1.10:8765','token':'legacy-token'}))
+    original=file.read_bytes()
+    result=load_connection(tmp_path)
+    assert result['network_mode']=='setup' and not result['setup_complete']
+    assert result['saved_connection']['mode']==role
+    assert file.read_bytes()==original
+
+
 @pytest.mark.parametrize(('flags', 'expected'), [([], 'auto'), (['--local'], 'demo'),
     (['--lan'], 'lan'), (['--configure-classroom'], 'lan')])
 def test_launcher_passes_mode_to_window(monkeypatch, tmp_path, flags, expected):

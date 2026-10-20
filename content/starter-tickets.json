@@ -1,0 +1,1672 @@
+[
+  {
+    "title": "Остановка лифта · готовый учебный билет",
+    "description": "В жилом доме лифт остановился между этажами. Два взрослых пассажира отвечают через двери. Дыма и запаха гари нет.",
+    "difficulty": "Базовый",
+    "difficulty_stars": 1,
+    "difficulty_reason": "Одна понятная ситуация: принять заявку, получить результат и закрыть карточку.",
+    "tasks": [
+      {
+        "workplace": {},
+        "caller_gender": null,
+        "scenario": {
+          "version": 2,
+          "facts": {
+            "incident": "Остановка лифта",
+            "address": "Москва, Берзарина, дом 21",
+            "description": "В жилом доме лифт остановился между этажами. Два взрослых пассажира отвечают через двери. Дыма и запаха гари нет. Пострадавших нет.",
+            "victims": "Пострадавших нет.",
+            "service": "ДДС района",
+            "victims_state": "no",
+            "victims_count": "",
+            "routing_inputs": {
+              "incident_type": "Остановка лифта",
+              "description": "В жилом доме лифт остановился между этажами. Два взрослых пассажира отвечают через двери. Дыма и запаха гари нет. Пострадавших нет.",
+              "object": "Жилой дом",
+              "traits": [],
+              "city": "Москва",
+              "region": "Москва",
+              "district": "СЗАО",
+              "area": "Хорошёво-Мнёвники",
+              "blocked": null,
+              "medical_refusal": null,
+              "culture_list": null,
+              "victims_absent": null,
+              "classifier_code": null
+            }
+          },
+          "access": {
+            "source": "card",
+            "answer": "Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора.",
+            "service": "",
+            "report_id": "",
+            "available_after": 0
+          },
+          "stages": [
+            {
+              "id": "dispatch",
+              "status": "Начало реагирования",
+              "report": "Приняли заявку по происшествию «Остановка лифта», выезжаем к месту.",
+              "report_id": "report-dispatch"
+            },
+            {
+              "id": "approach",
+              "status": "",
+              "report": "Едем к адресу. Уточните удобный подъезд к месту происшествия.",
+              "report_id": "report-approach"
+            },
+            {
+              "id": "arrived",
+              "status": "Прибытие",
+              "report": "Прибыли к указанному адресу. Находимся на месте происшествия.",
+              "report_id": "report-arrived"
+            },
+            {
+              "id": "working",
+              "status": "Проведение работ",
+              "report": "Проводим освобождение людей из остановившегося лифта.",
+              "report_id": "report-working"
+            },
+            {
+              "id": "done",
+              "status": "Работы завершены",
+              "report": "Люди освобождены. Лифт остановлен до проверки обслуживающей организацией.",
+              "report_id": "report-done"
+            }
+          ]
+        },
+        "scenario_details": {},
+        "onboarding": null,
+        "id": "starter-20261020-lift",
+        "title": "Остановка лифта · готовый учебный билет",
+        "mode": "dds",
+        "category": "Остановка лифта",
+        "intro": "Получена карточка: Москва, Берзарина, дом 21. В жилом доме лифт остановился между этажами. Два взрослых пассажира отвечают через двери. Дыма и запаха гари нет. Пострадавших нет. Примите решение и организуйте реагирование.",
+        "intro_audio": null,
+        "phone": "+7 (900) 112-20-10",
+        "source": "Подготовленный учебный сценарий. Все абоненты и события вымышлены.",
+        "method_note": "Проверьте обстоятельства происшествия и назначение служб. Статусы, письменные записи и передача сведений оцениваются отдельно.",
+        "limit_seconds": 300,
+        "contacts": [
+          {
+            "voice_tts": null,
+            "call_audio": {},
+            "voice_gender": "male",
+            "voice_lines": [],
+            "id": "brigade",
+            "name": "Старший учебной бригады",
+            "phone": "1001",
+            "kind": "brigade",
+            "service": "",
+            "response": "Задание принято: Москва, Берзарина, дом 21. Приняли заявку по происшествию «Остановка лифта», выезжаем к месту.",
+            "updates": [
+              "Едем к адресу. Уточните удобный подъезд к месту происшествия.",
+              "Прибыли к указанному адресу. Находимся на месте происшествия.",
+              "Проводим освобождение людей из остановившегося лифта.",
+              "Люди освобождены. Лифт остановлен до проверки обслуживающей организацией."
+            ],
+            "questions": []
+          },
+          {
+            "voice_tts": null,
+            "call_audio": {},
+            "voice_gender": "male",
+            "voice_lines": [],
+            "id": "caller",
+            "name": "Ирина Сергеевна Иванова",
+            "phone": "+7 (900) 112-20-10",
+            "kind": "caller",
+            "service": "",
+            "response": "Обращение в 112: В жилом доме лифт остановился между этажами. Два взрослых пассажира отвечают через двери. Дыма и запаха гари нет. Адрес: Москва, Берзарина, дом 21. Пострадавших нет.",
+            "updates": [],
+            "questions": [
+              {
+                "id": "access",
+                "question": "Как подъехать к месту происшествия?",
+                "answer": "Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора.",
+                "audio_id": null,
+                "required": true
+              }
+            ]
+          }
+        ],
+        "validation_note": "",
+        "origin": "author",
+        "own_service": "ДДС района",
+        "questions": [],
+        "initial_card": {
+          "name": "Ирина Сергеевна Иванова",
+          "phone": "+7 (900) 112-20-10",
+          "city": "Москва",
+          "area": "Хорошёво-Мнёвники",
+          "street": "Берзарина",
+          "house": "21",
+          "description": "В жилом доме лифт остановился между этажами. Два взрослых пассажира отвечают через двери. Дыма и запаха гари нет. Пострадавших нет.",
+          "incident_type": "Остановка лифта",
+          "victims": "no",
+          "country": "Россия",
+          "region": "Москва",
+          "district": "СЗАО",
+          "object": "Жилой дом",
+          "caller_status": "Очевидец",
+          "entrance": "2",
+          "floor": "1",
+          "code": "78",
+          "traits": [],
+          "contact_phone": "+7 (900) 112-20-10",
+          "site_phone": "+7 (900) 112-20-10",
+          "address_note": "Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора."
+        },
+        "expected_card": {},
+        "type_options": [
+          "Остановка лифта"
+        ],
+        "traits": [],
+        "services": [
+          "ДДС района"
+        ],
+        "routing": [],
+        "service_events": [
+          {
+            "id": "report-approach",
+            "report_id": "report-approach",
+            "stage_id": "approach",
+            "status": "",
+            "after": 35,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Едем к адресу. Уточните удобный подъезд к месту происшествия."
+          },
+          {
+            "id": "report-arrived",
+            "report_id": "report-arrived",
+            "stage_id": "arrived",
+            "status": "Прибытие",
+            "after": 80,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Прибыли к указанному адресу. Находимся на месте происшествия."
+          },
+          {
+            "id": "report-working",
+            "report_id": "report-working",
+            "stage_id": "working",
+            "status": "Проведение работ",
+            "after": 125,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Проводим освобождение людей из остановившегося лифта."
+          },
+          {
+            "id": "report-done",
+            "report_id": "report-done",
+            "stage_id": "done",
+            "status": "Работы завершены",
+            "after": 170,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Люди освобождены. Лифт остановлен до проверки обслуживающей организацией."
+          }
+        ],
+        "criteria": [
+          {
+            "id": "accept",
+            "label": "Карточка принята своей службой",
+            "kind": "status",
+            "field": "",
+            "expected": "Принята",
+            "weight": 10,
+            "critical": true,
+            "skill": "Принятие карточки",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          },
+          {
+            "id": "dispatch",
+            "label": "Связь со старшим бригады",
+            "kind": "contact",
+            "field": "",
+            "expected": "brigade",
+            "weight": 10,
+            "critical": false,
+            "skill": "Организация реагирования",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          },
+          {
+            "id": "status-dispatch",
+            "label": "Начало реагирования",
+            "kind": "status",
+            "field": "",
+            "expected": "Начало реагирования",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "dispatch",
+            "report_id": "report-dispatch",
+            "status": "Начало реагирования"
+          },
+          {
+            "id": "record-dispatch",
+            "label": "Запись события: Начало реагирования",
+            "kind": "manual",
+            "field": "",
+            "expected": "Приняли заявку по происшествию «Остановка лифта», выезжаем к месту.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "dispatch",
+            "report_id": "report-dispatch",
+            "status": "Начало реагирования"
+          },
+          {
+            "id": "record-approach",
+            "label": "Запись события: Уточнение подъезда",
+            "kind": "manual",
+            "field": "",
+            "expected": "Бригада уточнила подъезд. Переданы сведения: Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "approach",
+            "report_id": "report-approach",
+            "status": ""
+          },
+          {
+            "id": "status-arrived",
+            "label": "Прибытие",
+            "kind": "status",
+            "field": "",
+            "expected": "Прибытие",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "arrived",
+            "report_id": "report-arrived",
+            "status": "Прибытие"
+          },
+          {
+            "id": "record-arrived",
+            "label": "Запись события: Прибытие",
+            "kind": "manual",
+            "field": "",
+            "expected": "Прибыли к указанному адресу. Находимся на месте происшествия.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "arrived",
+            "report_id": "report-arrived",
+            "status": "Прибытие"
+          },
+          {
+            "id": "status-working",
+            "label": "Проведение работ",
+            "kind": "status",
+            "field": "",
+            "expected": "Проведение работ",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "working",
+            "report_id": "report-working",
+            "status": "Проведение работ"
+          },
+          {
+            "id": "record-working",
+            "label": "Запись события: Проведение работ",
+            "kind": "manual",
+            "field": "",
+            "expected": "Проводим освобождение людей из остановившегося лифта.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "working",
+            "report_id": "report-working",
+            "status": "Проведение работ"
+          },
+          {
+            "id": "status-done",
+            "label": "Работы завершены",
+            "kind": "status",
+            "field": "",
+            "expected": "Работы завершены",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "done",
+            "report_id": "report-done",
+            "status": "Работы завершены"
+          },
+          {
+            "id": "record-done",
+            "label": "Запись события: Работы завершены",
+            "kind": "manual",
+            "field": "",
+            "expected": "Люди освобождены. Лифт остановлен до проверки обслуживающей организацией.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "done",
+            "report_id": "report-done",
+            "status": "Работы завершены"
+          },
+          {
+            "id": "access-speech",
+            "label": "Бригаде переданы доступные сведения о подъезде",
+            "kind": "manual",
+            "field": "",
+            "expected": "Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора.",
+            "weight": 15,
+            "critical": false,
+            "skill": "Передача сведений",
+            "evidence_source": "speech",
+            "required_record": false,
+            "stage_id": "approach",
+            "report_id": "report-approach",
+            "status": ""
+          },
+          {
+            "id": "time",
+            "label": "Учебный срок: 300 секунд",
+            "kind": "time",
+            "field": "",
+            "expected": 300,
+            "weight": 10,
+            "critical": false,
+            "skill": "Время",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Задымление мусоропровода · готовый учебный билет",
+    "description": "В подъезде жилого дома виден дым из мусоропровода. Открытого пламени не видно. Люди отошли от задымлённого участка.",
+    "difficulty": "Базовый",
+    "difficulty_stars": 2,
+    "difficulty_reason": "К обычному ходу работ добавлено одно уточнение у заявителя или бригады.",
+    "tasks": [
+      {
+        "workplace": {},
+        "caller_gender": null,
+        "scenario": {
+          "version": 2,
+          "facts": {
+            "incident": "Задымление мусоропровода",
+            "address": "Москва, Маршала Тухачевского, дом 41",
+            "description": "В подъезде жилого дома виден дым из мусоропровода. Открытого пламени не видно. Люди отошли от задымлённого участка. Пострадавших нет.",
+            "victims": "Пострадавших нет.",
+            "service": "Служба 101",
+            "victims_state": "no",
+            "victims_count": "",
+            "routing_inputs": {
+              "incident_type": "Задымление мусоропровода",
+              "description": "В подъезде жилого дома виден дым из мусоропровода. Открытого пламени не видно. Люди отошли от задымлённого участка. Пострадавших нет.",
+              "object": "Жилой дом",
+              "traits": [
+                "Дым",
+                "Мусоропровод",
+                "Подъезд"
+              ],
+              "city": "Москва",
+              "region": "Москва",
+              "district": "СЗАО",
+              "area": "Хорошёво-Мнёвники",
+              "blocked": null,
+              "medical_refusal": null,
+              "culture_list": null,
+              "victims_absent": null,
+              "classifier_code": null
+            }
+          },
+          "access": {
+            "source": "card",
+            "answer": "Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора.",
+            "service": "",
+            "report_id": "",
+            "available_after": 0
+          },
+          "stages": [
+            {
+              "id": "dispatch",
+              "status": "Начало реагирования",
+              "report": "Приняли заявку по происшествию «Задымление мусоропровода», выезжаем к месту.",
+              "report_id": "report-dispatch"
+            },
+            {
+              "id": "approach",
+              "status": "",
+              "report": "Едем к адресу. Уточните удобный подъезд к месту происшествия.",
+              "report_id": "report-approach"
+            },
+            {
+              "id": "arrived",
+              "status": "Прибытие",
+              "report": "Прибыли к указанному адресу. Находимся на месте происшествия.",
+              "report_id": "report-arrived"
+            },
+            {
+              "id": "working",
+              "status": "Проведение работ",
+              "report": "Проводим разведку, устанавливаем источник дыма и проверяем место задымления.",
+              "report_id": "report-working"
+            },
+            {
+              "id": "done",
+              "status": "Работы завершены",
+              "report": "Источник дыма устранён, место проверено. Распространения задымления не обнаружено.",
+              "report_id": "report-done"
+            }
+          ]
+        },
+        "scenario_details": {},
+        "onboarding": null,
+        "id": "starter-20261020-smoke",
+        "title": "Задымление мусоропровода · готовый учебный билет",
+        "mode": "dds",
+        "category": "Задымление мусоропровода",
+        "intro": "Получена карточка: Москва, Маршала Тухачевского, дом 41. В подъезде жилого дома виден дым из мусоропровода. Открытого пламени не видно. Люди отошли от задымлённого участка. Пострадавших нет. Примите решение и организуйте реагирование.",
+        "intro_audio": null,
+        "phone": "+7 (900) 112-20-10",
+        "source": "Подготовленный учебный сценарий. Все абоненты и события вымышлены.",
+        "method_note": "Проверьте обстоятельства происшествия и назначение служб. Статусы, письменные записи и передача сведений оцениваются отдельно.",
+        "limit_seconds": 300,
+        "contacts": [
+          {
+            "voice_tts": null,
+            "call_audio": {},
+            "voice_gender": "male",
+            "voice_lines": [],
+            "id": "brigade",
+            "name": "Старший учебной бригады",
+            "phone": "1001",
+            "kind": "brigade",
+            "service": "",
+            "response": "Задание принято: Москва, Маршала Тухачевского, дом 41. Приняли заявку по происшествию «Задымление мусоропровода», выезжаем к месту.",
+            "updates": [
+              "Едем к адресу. Уточните удобный подъезд к месту происшествия.",
+              "Прибыли к указанному адресу. Находимся на месте происшествия.",
+              "Проводим разведку, устанавливаем источник дыма и проверяем место задымления.",
+              "Источник дыма устранён, место проверено. Распространения задымления не обнаружено."
+            ],
+            "questions": []
+          },
+          {
+            "voice_tts": null,
+            "call_audio": {},
+            "voice_gender": "male",
+            "voice_lines": [],
+            "id": "caller",
+            "name": "Ирина Сергеевна Иванова",
+            "phone": "+7 (900) 112-20-10",
+            "kind": "caller",
+            "service": "",
+            "response": "Обращение в 112: В подъезде жилого дома виден дым из мусоропровода. Открытого пламени не видно. Люди отошли от задымлённого участка. Адрес: Москва, Маршала Тухачевского, дом 41. Пострадавших нет.",
+            "updates": [],
+            "questions": [
+              {
+                "id": "access",
+                "question": "Как подъехать к месту происшествия?",
+                "answer": "Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора.",
+                "audio_id": null,
+                "required": true
+              }
+            ]
+          }
+        ],
+        "validation_note": "",
+        "origin": "author",
+        "own_service": "Служба 101",
+        "questions": [],
+        "initial_card": {
+          "name": "Ирина Сергеевна Иванова",
+          "phone": "+7 (900) 112-20-10",
+          "city": "Москва",
+          "area": "Хорошёво-Мнёвники",
+          "street": "Маршала Тухачевского",
+          "house": "41",
+          "description": "В подъезде жилого дома виден дым из мусоропровода. Открытого пламени не видно. Люди отошли от задымлённого участка. Пострадавших нет.",
+          "incident_type": "Задымление мусоропровода",
+          "victims": "no",
+          "country": "Россия",
+          "region": "Москва",
+          "district": "СЗАО",
+          "object": "Жилой дом",
+          "caller_status": "Очевидец",
+          "entrance": "1",
+          "floor": "4",
+          "code": "72",
+          "traits": [
+            "Дым",
+            "Мусоропровод",
+            "Подъезд"
+          ],
+          "contact_phone": "+7 (900) 112-20-10",
+          "site_phone": "+7 (900) 112-20-10",
+          "address_note": "Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора."
+        },
+        "expected_card": {},
+        "type_options": [
+          "Задымление мусоропровода"
+        ],
+        "traits": [],
+        "services": [
+          "Служба 101"
+        ],
+        "routing": [],
+        "service_events": [
+          {
+            "id": "report-approach",
+            "report_id": "report-approach",
+            "stage_id": "approach",
+            "status": "",
+            "after": 30,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Едем к адресу. Уточните удобный подъезд к месту происшествия."
+          },
+          {
+            "id": "report-arrived",
+            "report_id": "report-arrived",
+            "stage_id": "arrived",
+            "status": "Прибытие",
+            "after": 75,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Прибыли к указанному адресу. Находимся на месте происшествия."
+          },
+          {
+            "id": "report-working",
+            "report_id": "report-working",
+            "stage_id": "working",
+            "status": "Проведение работ",
+            "after": 120,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Проводим разведку, устанавливаем источник дыма и проверяем место задымления."
+          },
+          {
+            "id": "report-done",
+            "report_id": "report-done",
+            "stage_id": "done",
+            "status": "Работы завершены",
+            "after": 165,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Источник дыма устранён, место проверено. Распространения задымления не обнаружено."
+          }
+        ],
+        "criteria": [
+          {
+            "id": "accept",
+            "label": "Карточка принята своей службой",
+            "kind": "status",
+            "field": "",
+            "expected": "Принята",
+            "weight": 10,
+            "critical": true,
+            "skill": "Принятие карточки",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          },
+          {
+            "id": "dispatch",
+            "label": "Связь со старшим бригады",
+            "kind": "contact",
+            "field": "",
+            "expected": "brigade",
+            "weight": 10,
+            "critical": false,
+            "skill": "Организация реагирования",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          },
+          {
+            "id": "status-dispatch",
+            "label": "Начало реагирования",
+            "kind": "status",
+            "field": "",
+            "expected": "Начало реагирования",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "dispatch",
+            "report_id": "report-dispatch",
+            "status": "Начало реагирования"
+          },
+          {
+            "id": "record-dispatch",
+            "label": "Запись события: Начало реагирования",
+            "kind": "manual",
+            "field": "",
+            "expected": "Приняли заявку по происшествию «Задымление мусоропровода», выезжаем к месту.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "dispatch",
+            "report_id": "report-dispatch",
+            "status": "Начало реагирования"
+          },
+          {
+            "id": "record-approach",
+            "label": "Запись события: Уточнение подъезда",
+            "kind": "manual",
+            "field": "",
+            "expected": "Бригада уточнила подъезд. Переданы сведения: Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "approach",
+            "report_id": "report-approach",
+            "status": ""
+          },
+          {
+            "id": "status-arrived",
+            "label": "Прибытие",
+            "kind": "status",
+            "field": "",
+            "expected": "Прибытие",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "arrived",
+            "report_id": "report-arrived",
+            "status": "Прибытие"
+          },
+          {
+            "id": "record-arrived",
+            "label": "Запись события: Прибытие",
+            "kind": "manual",
+            "field": "",
+            "expected": "Прибыли к указанному адресу. Находимся на месте происшествия.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "arrived",
+            "report_id": "report-arrived",
+            "status": "Прибытие"
+          },
+          {
+            "id": "status-working",
+            "label": "Проведение работ",
+            "kind": "status",
+            "field": "",
+            "expected": "Проведение работ",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "working",
+            "report_id": "report-working",
+            "status": "Проведение работ"
+          },
+          {
+            "id": "record-working",
+            "label": "Запись события: Проведение работ",
+            "kind": "manual",
+            "field": "",
+            "expected": "Проводим разведку, устанавливаем источник дыма и проверяем место задымления.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "working",
+            "report_id": "report-working",
+            "status": "Проведение работ"
+          },
+          {
+            "id": "status-done",
+            "label": "Работы завершены",
+            "kind": "status",
+            "field": "",
+            "expected": "Работы завершены",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "done",
+            "report_id": "report-done",
+            "status": "Работы завершены"
+          },
+          {
+            "id": "record-done",
+            "label": "Запись события: Работы завершены",
+            "kind": "manual",
+            "field": "",
+            "expected": "Источник дыма устранён, место проверено. Распространения задымления не обнаружено.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "done",
+            "report_id": "report-done",
+            "status": "Работы завершены"
+          },
+          {
+            "id": "access-speech",
+            "label": "Бригаде переданы доступные сведения о подъезде",
+            "kind": "manual",
+            "field": "",
+            "expected": "Въезд во двор справа от дома, через открытые ворота. Вход в подъезд со стороны двора.",
+            "weight": 15,
+            "critical": false,
+            "skill": "Передача сведений",
+            "evidence_source": "speech",
+            "required_record": false,
+            "stage_id": "approach",
+            "report_id": "report-approach",
+            "status": ""
+          },
+          {
+            "id": "time",
+            "label": "Учебный срок: 300 секунд",
+            "kind": "time",
+            "field": "",
+            "expected": 300,
+            "weight": 10,
+            "critical": false,
+            "skill": "Время",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Запах газа в частном доме · готовый учебный билет",
+    "description": "Возле газовой плиты в частном доме ощущается запах газа. Открытого огня нет. Жильцы вышли из дома и ждут на улице.",
+    "difficulty": "Средний",
+    "difficulty_stars": 3,
+    "difficulty_reason": "Несколько последовательных докладов; изменения нужно отразить в карточке.",
+    "tasks": [
+      {
+        "workplace": {},
+        "caller_gender": null,
+        "scenario": {
+          "version": 2,
+          "facts": {
+            "incident": "Запах газа в частном доме",
+            "address": "Москва, Конёнкова, дом 25",
+            "description": "Возле газовой плиты в частном доме ощущается запах газа. Открытого огня нет. Жильцы вышли из дома и ждут на улице. Пострадавших нет.",
+            "victims": "Пострадавших нет.",
+            "service": "Служба 104",
+            "victims_state": "no",
+            "victims_count": "",
+            "routing_inputs": {
+              "incident_type": "Запах газа в частном доме",
+              "description": "Возле газовой плиты в частном доме ощущается запах газа. Открытого огня нет. Жильцы вышли из дома и ждут на улице. Пострадавших нет.",
+              "object": "Дворовая территория",
+              "traits": [],
+              "city": "Москва",
+              "region": "Москва",
+              "district": "СВАО",
+              "area": "Бибирево",
+              "blocked": null,
+              "medical_refusal": null,
+              "culture_list": null,
+              "victims_absent": null,
+              "classifier_code": null
+            }
+          },
+          "access": {
+            "source": "card",
+            "answer": "Въезд во двор слева от указанного дома, через открытые ворота. Место происшествия у площадки за воротами.",
+            "service": "",
+            "report_id": "",
+            "available_after": 0
+          },
+          "stages": [
+            {
+              "id": "dispatch",
+              "status": "Начало реагирования",
+              "report": "Приняли заявку по происшествию «Запах газа в частном доме», выезжаем к месту.",
+              "report_id": "report-dispatch"
+            },
+            {
+              "id": "approach",
+              "status": "",
+              "report": "Едем к адресу. Уточните удобный подъезд к месту происшествия.",
+              "report_id": "report-approach"
+            },
+            {
+              "id": "arrived",
+              "status": "Прибытие",
+              "report": "Прибыли к указанному адресу. Находимся на месте происшествия.",
+              "report_id": "report-arrived"
+            },
+            {
+              "id": "working",
+              "status": "Проведение работ",
+              "report": "Проверяем газовое оборудование и ограничиваем доступ к опасному участку.",
+              "report_id": "report-working"
+            },
+            {
+              "id": "done",
+              "status": "Работы завершены",
+              "report": "Проверка завершена, опасный участок изолирован. Дальнейшие работы переданы профильной службе.",
+              "report_id": "report-done"
+            }
+          ]
+        },
+        "scenario_details": {},
+        "onboarding": null,
+        "id": "starter-20261020-gas",
+        "title": "Запах газа в частном доме · готовый учебный билет",
+        "mode": "dds",
+        "category": "Запах газа в частном доме",
+        "intro": "Получена карточка: Москва, Конёнкова, дом 25. Возле газовой плиты в частном доме ощущается запах газа. Открытого огня нет. Жильцы вышли из дома и ждут на улице. Пострадавших нет. Примите решение и организуйте реагирование.",
+        "intro_audio": null,
+        "phone": "+7 (900) 112-20-10",
+        "source": "Подготовленный учебный сценарий. Все абоненты и события вымышлены.",
+        "method_note": "Проверьте обстоятельства происшествия и назначение служб. Статусы, письменные записи и передача сведений оцениваются отдельно.",
+        "limit_seconds": 300,
+        "contacts": [
+          {
+            "voice_tts": null,
+            "call_audio": {},
+            "voice_gender": "male",
+            "voice_lines": [],
+            "id": "brigade",
+            "name": "Старший учебной бригады",
+            "phone": "1001",
+            "kind": "brigade",
+            "service": "",
+            "response": "Задание принято: Москва, Конёнкова, дом 25. Приняли заявку по происшествию «Запах газа в частном доме», выезжаем к месту.",
+            "updates": [
+              "Едем к адресу. Уточните удобный подъезд к месту происшествия.",
+              "Прибыли к указанному адресу. Находимся на месте происшествия.",
+              "Проверяем газовое оборудование и ограничиваем доступ к опасному участку.",
+              "Проверка завершена, опасный участок изолирован. Дальнейшие работы переданы профильной службе."
+            ],
+            "questions": []
+          },
+          {
+            "voice_tts": null,
+            "call_audio": {},
+            "voice_gender": "male",
+            "voice_lines": [],
+            "id": "caller",
+            "name": "Ирина Сергеевна Иванова",
+            "phone": "+7 (900) 112-20-10",
+            "kind": "caller",
+            "service": "",
+            "response": "Обращение в 112: Возле газовой плиты в частном доме ощущается запах газа. Открытого огня нет. Жильцы вышли из дома и ждут на улице. Адрес: Москва, Конёнкова, дом 25. Пострадавших нет.",
+            "updates": [],
+            "questions": [
+              {
+                "id": "access",
+                "question": "Как подъехать к месту происшествия?",
+                "answer": "Въезд во двор слева от указанного дома, через открытые ворота. Место происшествия у площадки за воротами.",
+                "audio_id": null,
+                "required": true
+              }
+            ]
+          }
+        ],
+        "validation_note": "",
+        "origin": "author",
+        "own_service": "Служба 104",
+        "questions": [],
+        "initial_card": {
+          "name": "Ирина Сергеевна Иванова",
+          "phone": "+7 (900) 112-20-10",
+          "city": "Москва",
+          "area": "Бибирево",
+          "street": "Конёнкова",
+          "house": "25",
+          "description": "Возле газовой плиты в частном доме ощущается запах газа. Открытого огня нет. Жильцы вышли из дома и ждут на улице. Пострадавших нет.",
+          "incident_type": "Запах газа в частном доме",
+          "victims": "no",
+          "country": "Россия",
+          "region": "Москва",
+          "district": "СВАО",
+          "object": "Дворовая территория",
+          "caller_status": "Очевидец",
+          "traits": [],
+          "contact_phone": "+7 (900) 112-20-10",
+          "site_phone": "+7 (900) 112-20-10",
+          "address_note": "Въезд во двор слева от указанного дома, через открытые ворота. Место происшествия у площадки за воротами."
+        },
+        "expected_card": {},
+        "type_options": [
+          "Запах газа в частном доме"
+        ],
+        "traits": [],
+        "services": [
+          "Служба 104"
+        ],
+        "routing": [],
+        "service_events": [
+          {
+            "id": "report-approach",
+            "report_id": "report-approach",
+            "stage_id": "approach",
+            "status": "",
+            "after": 25,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Едем к адресу. Уточните удобный подъезд к месту происшествия."
+          },
+          {
+            "id": "report-arrived",
+            "report_id": "report-arrived",
+            "stage_id": "arrived",
+            "status": "Прибытие",
+            "after": 65,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Прибыли к указанному адресу. Находимся на месте происшествия."
+          },
+          {
+            "id": "report-working",
+            "report_id": "report-working",
+            "stage_id": "working",
+            "status": "Проведение работ",
+            "after": 105,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Проверяем газовое оборудование и ограничиваем доступ к опасному участку."
+          },
+          {
+            "id": "report-done",
+            "report_id": "report-done",
+            "stage_id": "done",
+            "status": "Работы завершены",
+            "after": 145,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Проверка завершена, опасный участок изолирован. Дальнейшие работы переданы профильной службе."
+          }
+        ],
+        "criteria": [
+          {
+            "id": "accept",
+            "label": "Карточка принята своей службой",
+            "kind": "status",
+            "field": "",
+            "expected": "Принята",
+            "weight": 10,
+            "critical": true,
+            "skill": "Принятие карточки",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          },
+          {
+            "id": "dispatch",
+            "label": "Связь со старшим бригады",
+            "kind": "contact",
+            "field": "",
+            "expected": "brigade",
+            "weight": 10,
+            "critical": false,
+            "skill": "Организация реагирования",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          },
+          {
+            "id": "status-dispatch",
+            "label": "Начало реагирования",
+            "kind": "status",
+            "field": "",
+            "expected": "Начало реагирования",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "dispatch",
+            "report_id": "report-dispatch",
+            "status": "Начало реагирования"
+          },
+          {
+            "id": "record-dispatch",
+            "label": "Запись события: Начало реагирования",
+            "kind": "manual",
+            "field": "",
+            "expected": "Приняли заявку по происшествию «Запах газа в частном доме», выезжаем к месту.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "dispatch",
+            "report_id": "report-dispatch",
+            "status": "Начало реагирования"
+          },
+          {
+            "id": "record-approach",
+            "label": "Запись события: Уточнение подъезда",
+            "kind": "manual",
+            "field": "",
+            "expected": "Бригада уточнила подъезд. Переданы сведения: Въезд во двор слева от указанного дома, через открытые ворота. Место происшествия у площадки за воротами.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "approach",
+            "report_id": "report-approach",
+            "status": ""
+          },
+          {
+            "id": "status-arrived",
+            "label": "Прибытие",
+            "kind": "status",
+            "field": "",
+            "expected": "Прибытие",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "arrived",
+            "report_id": "report-arrived",
+            "status": "Прибытие"
+          },
+          {
+            "id": "record-arrived",
+            "label": "Запись события: Прибытие",
+            "kind": "manual",
+            "field": "",
+            "expected": "Прибыли к указанному адресу. Находимся на месте происшествия.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "arrived",
+            "report_id": "report-arrived",
+            "status": "Прибытие"
+          },
+          {
+            "id": "status-working",
+            "label": "Проведение работ",
+            "kind": "status",
+            "field": "",
+            "expected": "Проведение работ",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "working",
+            "report_id": "report-working",
+            "status": "Проведение работ"
+          },
+          {
+            "id": "record-working",
+            "label": "Запись события: Проведение работ",
+            "kind": "manual",
+            "field": "",
+            "expected": "Проверяем газовое оборудование и ограничиваем доступ к опасному участку.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "working",
+            "report_id": "report-working",
+            "status": "Проведение работ"
+          },
+          {
+            "id": "status-done",
+            "label": "Работы завершены",
+            "kind": "status",
+            "field": "",
+            "expected": "Работы завершены",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "done",
+            "report_id": "report-done",
+            "status": "Работы завершены"
+          },
+          {
+            "id": "record-done",
+            "label": "Запись события: Работы завершены",
+            "kind": "manual",
+            "field": "",
+            "expected": "Проверка завершена, опасный участок изолирован. Дальнейшие работы переданы профильной службе.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "done",
+            "report_id": "report-done",
+            "status": "Работы завершены"
+          },
+          {
+            "id": "access-speech",
+            "label": "Бригаде переданы доступные сведения о подъезде",
+            "kind": "manual",
+            "field": "",
+            "expected": "Въезд во двор слева от указанного дома, через открытые ворота. Место происшествия у площадки за воротами.",
+            "weight": 15,
+            "critical": false,
+            "skill": "Передача сведений",
+            "evidence_source": "speech",
+            "required_record": false,
+            "stage_id": "approach",
+            "report_id": "report-approach",
+            "status": ""
+          },
+          {
+            "id": "time",
+            "label": "Учебный срок: 300 секунд",
+            "kind": "time",
+            "field": "",
+            "expected": 300,
+            "weight": 10,
+            "critical": false,
+            "skill": "Время",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ДТП без пострадавших · готовый учебный билет",
+    "description": "На улице столкнулись два легковых автомобиля. Машины стоят у правой обочины. Проезжая часть частично занята. Разлива топлива и возгорания нет.",
+    "difficulty": "Сложный",
+    "difficulty_stars": 4,
+    "difficulty_reason": "Возникает задержка бригады: уточните адрес и доступ, зафиксируйте решение.",
+    "tasks": [
+      {
+        "workplace": {},
+        "caller_gender": null,
+        "scenario": {
+          "version": 2,
+          "facts": {
+            "incident": "ДТП без пострадавших",
+            "address": "Москва, Декабристов, дом 18",
+            "description": "На улице столкнулись два легковых автомобиля. Машины стоят у правой обочины. Проезжая часть частично занята. Разлива топлива и возгорания нет. Пострадавших нет.",
+            "victims": "Пострадавших нет.",
+            "service": "ЦОДД",
+            "victims_state": "no",
+            "victims_count": "",
+            "routing_inputs": {
+              "incident_type": "ДТП без пострадавших",
+              "description": "На улице столкнулись два легковых автомобиля. Машины стоят у правой обочины. Проезжая часть частично занята. Разлива топлива и возгорания нет. Пострадавших нет.",
+              "object": "Участок улицы",
+              "traits": [],
+              "city": "Москва",
+              "region": "Москва",
+              "district": "СВАО",
+              "area": "Отрадное",
+              "blocked": null,
+              "medical_refusal": null,
+              "culture_list": null,
+              "victims_absent": null,
+              "classifier_code": null
+            }
+          },
+          "access": {
+            "source": "caller",
+            "answer": "Подъезд по улице к указанному дому. Место происшествия у правой обочины, рядом с пешеходным переходом.",
+            "service": "",
+            "report_id": "",
+            "available_after": 0
+          },
+          "stages": [
+            {
+              "id": "dispatch",
+              "status": "Начало реагирования",
+              "report": "Приняли заявку по происшествию «ДТП без пострадавших», выезжаем к месту.",
+              "report_id": "report-dispatch"
+            },
+            {
+              "id": "approach",
+              "status": "",
+              "report": "Едем к адресу. Уточните удобный подъезд к месту происшествия.",
+              "report_id": "report-approach"
+            },
+            {
+              "id": "arrived",
+              "status": "Прибытие",
+              "report": "Прибыли к указанному адресу. Находимся на месте происшествия.",
+              "report_id": "report-arrived"
+            },
+            {
+              "id": "working",
+              "status": "Проведение работ",
+              "report": "Обследуем место происшествия «ДТП без пострадавших» и фиксируем выявленные обстоятельства.",
+              "report_id": "report-working"
+            },
+            {
+              "id": "done",
+              "status": "Работы завершены",
+              "report": "Обследование завершено, сведения зафиксированы и переданы ответственной службе для дальнейшей работы.",
+              "report_id": "report-done"
+            }
+          ]
+        },
+        "scenario_details": {},
+        "onboarding": null,
+        "id": "starter-20261020-road",
+        "title": "ДТП без пострадавших · готовый учебный билет",
+        "mode": "dds",
+        "category": "ДТП без пострадавших",
+        "intro": "Получена карточка: Москва, Декабристов, дом 18. На улице столкнулись два легковых автомобиля. Машины стоят у правой обочины. Проезжая часть частично занята. Разлива топлива и возгорания нет. Пострадавших нет. Примите решение и организуйте реагирование.",
+        "intro_audio": null,
+        "phone": "+7 (900) 112-20-10",
+        "source": "Подготовленный учебный сценарий. Все абоненты и события вымышлены.",
+        "method_note": "Проверьте обстоятельства происшествия и назначение служб. Статусы, письменные записи и передача сведений оцениваются отдельно.",
+        "limit_seconds": 300,
+        "contacts": [
+          {
+            "voice_tts": null,
+            "call_audio": {},
+            "voice_gender": "male",
+            "voice_lines": [],
+            "id": "brigade",
+            "name": "Старший учебной бригады",
+            "phone": "1001",
+            "kind": "brigade",
+            "service": "",
+            "response": "Задание принято: Москва, Декабристов, дом 18. Приняли заявку по происшествию «ДТП без пострадавших», выезжаем к месту.",
+            "updates": [
+              "Едем к адресу. Уточните удобный подъезд к месту происшествия.",
+              "Прибыли к указанному адресу. Находимся на месте происшествия.",
+              "Обследуем место происшествия «ДТП без пострадавших» и фиксируем выявленные обстоятельства.",
+              "Обследование завершено, сведения зафиксированы и переданы ответственной службе для дальнейшей работы."
+            ],
+            "questions": []
+          },
+          {
+            "voice_tts": null,
+            "call_audio": {},
+            "voice_gender": "male",
+            "voice_lines": [],
+            "id": "caller",
+            "name": "Ирина Сергеевна Иванова",
+            "phone": "+7 (900) 112-20-10",
+            "kind": "caller",
+            "service": "",
+            "response": "Обращение в 112: На улице столкнулись два легковых автомобиля. Машины стоят у правой обочины. Проезжая часть частично занята. Разлива топлива и возгорания нет. Адрес: Москва, Декабристов, дом 18. Пострадавших нет.",
+            "updates": [],
+            "questions": [
+              {
+                "id": "access",
+                "question": "Как подъехать к месту происшествия?",
+                "answer": "Подъезд по улице к указанному дому. Место происшествия у правой обочины, рядом с пешеходным переходом.",
+                "audio_id": null,
+                "required": true
+              }
+            ]
+          }
+        ],
+        "validation_note": "",
+        "origin": "author",
+        "own_service": "ЦОДД",
+        "questions": [],
+        "initial_card": {
+          "name": "Ирина Сергеевна Иванова",
+          "phone": "+7 (900) 112-20-10",
+          "city": "Москва",
+          "area": "Отрадное",
+          "street": "Декабристов",
+          "house": "18",
+          "description": "На улице столкнулись два легковых автомобиля. Машины стоят у правой обочины. Проезжая часть частично занята. Разлива топлива и возгорания нет. Пострадавших нет.",
+          "incident_type": "ДТП без пострадавших",
+          "victims": "no",
+          "country": "Россия",
+          "region": "Москва",
+          "district": "СВАО",
+          "object": "Участок улицы",
+          "caller_status": "Очевидец",
+          "traits": [],
+          "contact_phone": "+7 (900) 112-20-10",
+          "site_phone": "+7 (900) 112-20-10",
+          "address_note": "Подъезд уточните у заявителя."
+        },
+        "expected_card": {},
+        "type_options": [
+          "ДТП без пострадавших"
+        ],
+        "traits": [],
+        "services": [
+          "ЦОДД"
+        ],
+        "routing": [],
+        "service_events": [
+          {
+            "id": "report-approach",
+            "report_id": "report-approach",
+            "stage_id": "approach",
+            "status": "",
+            "after": 25,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Едем к адресу. Уточните удобный подъезд к месту происшествия."
+          },
+          {
+            "id": "report-arrived",
+            "report_id": "report-arrived",
+            "stage_id": "arrived",
+            "status": "Прибытие",
+            "after": 75,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Прибыли к указанному адресу. Находимся на месте происшествия."
+          },
+          {
+            "id": "report-working",
+            "report_id": "report-working",
+            "stage_id": "working",
+            "status": "Проведение работ",
+            "after": 125,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Обследуем место происшествия «ДТП без пострадавших» и фиксируем выявленные обстоятельства."
+          },
+          {
+            "id": "report-done",
+            "report_id": "report-done",
+            "stage_id": "done",
+            "status": "Работы завершены",
+            "after": 175,
+            "kind": "incoming_call",
+            "contact_id": "brigade",
+            "trigger_contact": "brigade",
+            "who": "Старший учебной бригады",
+            "text": "Обследование завершено, сведения зафиксированы и переданы ответственной службе для дальнейшей работы."
+          }
+        ],
+        "criteria": [
+          {
+            "id": "accept",
+            "label": "Карточка принята своей службой",
+            "kind": "status",
+            "field": "",
+            "expected": "Принята",
+            "weight": 10,
+            "critical": true,
+            "skill": "Принятие карточки",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          },
+          {
+            "id": "dispatch",
+            "label": "Связь со старшим бригады",
+            "kind": "contact",
+            "field": "",
+            "expected": "brigade",
+            "weight": 10,
+            "critical": false,
+            "skill": "Организация реагирования",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          },
+          {
+            "id": "status-dispatch",
+            "label": "Начало реагирования",
+            "kind": "status",
+            "field": "",
+            "expected": "Начало реагирования",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "dispatch",
+            "report_id": "report-dispatch",
+            "status": "Начало реагирования"
+          },
+          {
+            "id": "record-dispatch",
+            "label": "Запись события: Начало реагирования",
+            "kind": "manual",
+            "field": "",
+            "expected": "Приняли заявку по происшествию «ДТП без пострадавших», выезжаем к месту.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "dispatch",
+            "report_id": "report-dispatch",
+            "status": "Начало реагирования"
+          },
+          {
+            "id": "record-approach",
+            "label": "Запись события: Уточнение подъезда",
+            "kind": "manual",
+            "field": "",
+            "expected": "Бригада уточнила подъезд. Переданы сведения: Подъезд по улице к указанному дому. Место происшествия у правой обочины, рядом с пешеходным переходом.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "approach",
+            "report_id": "report-approach",
+            "status": ""
+          },
+          {
+            "id": "status-arrived",
+            "label": "Прибытие",
+            "kind": "status",
+            "field": "",
+            "expected": "Прибытие",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "arrived",
+            "report_id": "report-arrived",
+            "status": "Прибытие"
+          },
+          {
+            "id": "record-arrived",
+            "label": "Запись события: Прибытие",
+            "kind": "manual",
+            "field": "",
+            "expected": "Прибыли к указанному адресу. Находимся на месте происшествия.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "arrived",
+            "report_id": "report-arrived",
+            "status": "Прибытие"
+          },
+          {
+            "id": "status-working",
+            "label": "Проведение работ",
+            "kind": "status",
+            "field": "",
+            "expected": "Проведение работ",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "working",
+            "report_id": "report-working",
+            "status": "Проведение работ"
+          },
+          {
+            "id": "record-working",
+            "label": "Запись события: Проведение работ",
+            "kind": "manual",
+            "field": "",
+            "expected": "Обследуем место происшествия «ДТП без пострадавших» и фиксируем выявленные обстоятельства.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "working",
+            "report_id": "report-working",
+            "status": "Проведение работ"
+          },
+          {
+            "id": "status-done",
+            "label": "Работы завершены",
+            "kind": "status",
+            "field": "",
+            "expected": "Работы завершены",
+            "weight": 5,
+            "critical": false,
+            "skill": "Статусы ДДС",
+            "evidence_source": "service_reports",
+            "required_record": false,
+            "stage_id": "done",
+            "report_id": "report-done",
+            "status": "Работы завершены"
+          },
+          {
+            "id": "record-done",
+            "label": "Запись события: Работы завершены",
+            "kind": "manual",
+            "field": "",
+            "expected": "Обследование завершено, сведения зафиксированы и переданы ответственной службе для дальнейшей работы.",
+            "weight": 8,
+            "critical": false,
+            "skill": "Комментарии ДДС",
+            "evidence_source": "written",
+            "required_record": true,
+            "stage_id": "done",
+            "report_id": "report-done",
+            "status": "Работы завершены"
+          },
+          {
+            "id": "access-speech",
+            "label": "Бригаде переданы доступные сведения о подъезде",
+            "kind": "manual",
+            "field": "",
+            "expected": "Подъезд по улице к указанному дому. Место происшествия у правой обочины, рядом с пешеходным переходом.",
+            "weight": 15,
+            "critical": false,
+            "skill": "Передача сведений",
+            "evidence_source": "speech",
+            "required_record": false,
+            "stage_id": "approach",
+            "report_id": "report-approach",
+            "status": ""
+          },
+          {
+            "id": "time",
+            "label": "Учебный срок: 300 секунд",
+            "kind": "time",
+            "field": "",
+            "expected": 300,
+            "weight": 10,
+            "critical": false,
+            "skill": "Время",
+            "evidence_source": "",
+            "required_record": false,
+            "stage_id": "",
+            "report_id": "",
+            "status": ""
+          }
+        ]
+      }
+    ]
+  }
+]
