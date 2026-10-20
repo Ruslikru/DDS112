@@ -159,17 +159,7 @@ async def lifespan(app):
     local_engine.on_event=diagnostic_event
     from local_ai.engine import assistant_engine
     assistant_engine.on_event=diagnostic_event
-    async def warm_models():
-        from .voice import runtime
-        def warm_llm():
-            with local_engine.lock:
-                local_engine.start()
-        for name,loader in (('речь',runtime.warm),('создание билетов',runtime.warm_pre),('анализ',warm_llm)):
-            try:
-                await asyncio.to_thread(loader)
-                diagnostic_event('model_warm_ready',model=name)
-            except Exception as error:
-                diagnostic_event('model_warm_failed',model=name,error=str(error))
+    from .startup_models import warm_models
     warm_job=asyncio.create_task(warm_models())
     diagnostic_event('server_ready')
     from .backups import worker as backup_worker

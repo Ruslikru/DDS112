@@ -31,7 +31,7 @@ function Text({text}:{text:string}){
 }
 /** Spoken answers to an open confirmation card are handled on the client, without the server. JS \b ignores Cyrillic, hence the lookahead. */
 /** A short answer to an open card is «yes»; «Отправь билет 2 Кузнецову» is a new command even though it starts with «отправь». */
-const VOICE_YES=/^(?:да[,\s]+)?(создай|создать|отправь|отправить|опубликуй|да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|сохрани|сохранить|ок|окей|хорошо)(?:[,\s]+(?:пожалуйста|да|его|её|это))?[\s.,!?]*$/i;
+const VOICE_YES=/^(?:да[,\s]+)?(создай|создать|отправь|отправить|опубликуй|да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|отправляй|отправь|отправить|назначай|выдавай|сохрани|сохранить|ок|окей|хорошо)(?:[,\s]+(?:пожалуйста|да|его|её|это))?[\s.,!?]*$/i;
 const VOICE_NO=/^(нет|отмена|отмени|отменить|не надо|не нужно|стоп|не выполняй)(?=[\s.,!?]|$)/i;
 const HINTS=['Что умеешь?','Журнал','Проверить работы','Кто сейчас в классе?','Новый билет'];
 const DIALOG_INTENTS=['create_ticket','edit_ticket','open_ticket','ticket_status','save_ticket','create_group','open_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'];
@@ -163,7 +163,8 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   return false;
  };
  /** Sends a phrase; `slots` carries an answer given with a button, `shown` is what the log displays. */
- const send=async(command:string,slots?:Obj,shown?:string):Promise<Obj|null>=>{
+ const send=async(command:string,slots?:Obj,shown?:string,resetDialog=false):Promise<Obj|null>=>{
+  const dialog=resetDialog?null:latest.current.dialog;
   const phrase=command.trim();
   if(!phrase&&!slots)return null;
   const pending=latest.current.messages.at(-1)?.confirm;
@@ -264,7 +265,7 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   }
   finally{setBusy('');focus();}
  };
- const recompose=(phrase:string)=>{settle('составить заново');setDialog(null);if(phrase)send(phrase);else focus();};
+ const recompose=(phrase:string)=>{settle('составить заново');setDialog(null);if(phrase)send(latest.current.dialog?.intent?.includes('question')?'Создай минивопрос':phrase,undefined,undefined,true);else focus();};
  const submit=(e:React.FormEvent)=>{e.preventDefault();if(!busy)send(text);};
  /** Enter sends, Shift+Enter adds a line; ↑/↓ walk the history when the field holds no edited text. */
  const keys=(e:React.KeyboardEvent<HTMLTextAreaElement>)=>{
@@ -282,7 +283,7 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const adjust=()=>{settle('уточнение');push({who:'assistant',text:dialog?.intent==='create_group'?'Напишите новое название или состав группы.':dialog?.intent?.includes('question')?'Напишите, какой текст вопроса, ответа или озвучки изменить.':'Напишите, что поменять: например «сложность 4» или «без пострадавших».'});focus();};
  const openWizard=(slots:Obj)=>{settle('открыто в мастере');setDialog(null);creation.current=null;navigate('/tickets',{state:{wizard:{own_service:slots.own_service,services:slots.services,incident_type:slots.incident_type,mode:slots.mode,difficulty_stars:slots.difficulty,victims_state:slots.victims,victims_count:slots.victims_count||1,traits:slots.traits||[]}}});focus();};
  const last=messages.length-1;
-  const busyText=busy==='generate'?'Создаю черновик: собираю историю, звонки и проверочные факты. Обычно это занимает около минуты.':busy==='run'?'Сохраняю изменения…':'Разбираю команду…';
+  const busyText=busy==='generate'?'Создаю черновик: собираю историю, звонки и проверочные факты. Обычно это занимает около минуты.':busy==='run'?'Сохраняю изменения…':dialog?.intent==='create_question'?'Готовлю минивопрос и варианты ответов…':'Разбираю команду…';
  const cancelButton=<button type="button" disabled={!!busy} onClick={cancel}>Отмена</button>;
  return <ArmDialog title="Ассистент" className="assistant-shade" modal={false} onClose={onClose} headerActions={<AssistantMicrophoneSettings value={mic} onChange={chooseMic} disabled={recording||!!stopRecording.current}/> }>
   <div className="assistant-log" ref={log} aria-live="polite">
