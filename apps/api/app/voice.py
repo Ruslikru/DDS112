@@ -57,6 +57,7 @@ def prepare(data,db,owner,preserve=False):
             event['voice_key']=key
             if not db.get(VoiceJob,key):db.add(VoiceJob(id=key,data={**spec,'owner':owner},status='pending'))
     db.flush()
+    restore_builtin(db)
     return result
 
 def speech_items(task):
@@ -205,7 +206,11 @@ def transcribe(data:TranscribeIn,u=Depends(m.current),db=Depends(m.getdb)):
     except Exception as e:
         # An empty recording is the speaker's problem, not an outage: Whisper reports it as an error string.
         if 'не распознана' in str(e):m.fail('Речь не распознана. Удерживайте кнопку, пока говорите, и проверьте, что микрофон включён.')
-        m.fail('Распознавание на сервере недоступно: '+str(e),503)
+        if any(part in str(e) for part in ('End of file','Invalid data','В записи нет звука','пустая','слишком короткая')):
+            m.fail('Запись не получилась. Удерживайте микрофон, произнесите фразу и отпустите кнопку.')
+        import logging
+        logging.exception('Microphone transcription failed')
+        m.fail('Не удалось распознать запись. Повторите попытку. Если ошибка повторяется, сообщите преподавателю.',503)
     return {**{k:v for k,v in (value or {}).items() if k!='text'},'text':str((value or {}).get('text','')).strip()}
 
 @router.post('/prepare')

@@ -28,7 +28,8 @@ def create_attempt(db, assignment, task, index, delivered_at=None, flow='sequent
            'call':'none' if dds else 'ringing','registered':dds,'training':assignment.training,
            'lesson_id':assignment.lesson_id,'flow':flow,'paused_seconds':0,
            'brigade_pacing':'timed' if assignment.lesson_id and db.get(Lesson,assignment.lesson_id).config.get('delivery_mode') in ('sprint','dds_stream','cooperative') else 'sequential'}
-    if task.get('onboarding'):state.update(teacher_assisted=True,guided=True)
+    from .learning import onboarding_needed
+    if task.get('onboarding') and onboarding_needed(db,assignment.student_id):state.update(teacher_assisted=True,guided=True)
     if not dds:
         from .classroom_models import Workstation
         station=db.scalar(select(Workstation).where(Workstation.user_id==assignment.student_id,Workstation.approved==True,Workstation.blocked==False).order_by(Workstation.last_seen.desc()))

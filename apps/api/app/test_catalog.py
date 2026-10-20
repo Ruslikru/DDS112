@@ -7,7 +7,7 @@ TITLES = ('ДДС · взаимодействие с бригадой', 'ДДС:
 
 def library_visible(data):
     """Keep seeded exercises out of the authoring library without touching saved work."""
-    return True
+    return not any(task.get('onboarding') for task in data.get('tasks',[]))
 
 
 def enabled():
@@ -18,6 +18,7 @@ def available(data):
     if not enabled():
         return True
     tasks = data.get('tasks', [])
+    if tasks and all(task.get('onboarding') for task in tasks):return True
     return bool(tasks) and all(task.get('mode') == 'dds' and task.get('title') in TITLES for task in tasks)
 
 
@@ -25,6 +26,9 @@ def versions(values):
     seen = set()
     for version in values:
         if not available(version.data):
+            continue
+        if any(task.get('onboarding') for task in version.data.get('tasks',[])):
+            yield version
             continue
         if enabled():
             if version.data.get('description') == 'Снимок занятия':
@@ -38,7 +42,7 @@ def versions(values):
 
 def ensure_demo_assignments(db):
     from .db import Assignment, Group, TicketVersion, User
-    selected = list(versions(db.scalars(select(TicketVersion).where(TicketVersion.published == True).order_by(TicketVersion.id.desc()))))
+    selected = [v for v in versions(db.scalars(select(TicketVersion).where(TicketVersion.published == True).order_by(TicketVersion.id.desc()))) if library_visible(v.data)]
     owner = db.scalar(select(User).where(User.login == 'admin'))
     if not owner:
         return

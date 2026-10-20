@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import {api,Obj,uuid} from './shared';
+import {ManagementConfirm} from './management';
 type Entry={id:string,user:number,attempt:string,type:string,payload:Obj,draft?:Obj,draftId:string};
 let processing=false,offline=false,notice='',rejected=false;
 const key=(user:number)=>'training112:outbox:'+user;
@@ -10,15 +11,20 @@ export function markNetworkFailure(){offline=true;notice='Проблемы с л
 export async function submitAttempt(user:number,attempt:string,type:string,payload:Obj,draft?:Obj){
  const items=read(user);let entry=items.find(x=>x.attempt===attempt&&x.type===type&&JSON.stringify(x.payload)===JSON.stringify(payload)&&JSON.stringify(x.draft)===JSON.stringify(draft));
  if(!entry){entry={id:uuid(),draftId:uuid(),user,attempt,type,payload,draft};save(user,[...items,entry]);}
- await flush(user);return read(user).some(x=>x.id===entry!.id)?null:api('/attempts/'+attempt);
+ const failure=await flush(user);
+ if(failure?.id===entry.id&&[400,403,404,422].includes(failure.error.status)){
+  save(user,read(user).filter(x=>x.id!==entry!.id));rejected=false;notice='';emit();throw failure.error;
+ }
+ return read(user).some(x=>x.id===entry!.id)?null:api('/attempts/'+attempt);
 }
 async function flush(user:number){
- if(processing)return;processing=true;
+ if(processing)return;processing=true;let failedEntry:Entry|undefined;
  try{
   const me=await api('/me');if(me.id!==user)return;
   const restored=offline;offline=false;rejected=false;
   if(restored){notice=read(user).length?'Подключение восстановлено. Отправка очереди билетов на проверку…':'Подключение восстановлено.';emit();}
   for(const entry of read(user)){
+   failedEntry=entry;
    for(const stage of [...(entry.draft?[{type:'draft',payload:entry.draft,id:entry.draftId}]:[]),{type:entry.type,payload:entry.payload,id:entry.id}]){
     let done=false;
     for(let retry=0;retry<3&&!done;retry++){
@@ -30,12 +36,13 @@ async function flush(user:number){
    save(user,read(user).filter(x=>x.id!==entry.id));
    if(restored)notice='Подключение восстановлено. Сохранённые изменения отправлены, билеты переданы на проверку.';emit();
   }
- }catch(e:any){if(e.network)markNetworkFailure();else if(e.status!==401){rejected=true;notice='Очередь сохранена. Не удалось передать действие: '+e.message;emit();}}
+ }catch(e:any){if(e.network)markNetworkFailure();else if(e.status!==401){rejected=true;notice='Очередь сохранена. Не удалось передать действие: '+e.message;emit();}return {id:failedEntry?.id,error:e};}
  finally{processing=false;}
 }
 export function NetworkStatus({user}:{user:number}){
  const [,setTick]=useState(0);
+ const [cancelEntry,setCancelEntry]=useState<Entry|null>(null);
  useEffect(()=>{const update=()=>setTick(x=>x+1),failed=()=>markNetworkFailure(),retry=()=>void flush(user);window.addEventListener('training-network',update);window.addEventListener('offline',failed);window.addEventListener('online',retry);window.addEventListener('training-network-failed',failed);const timer=setInterval(retry,3000);retry();return()=>{clearInterval(timer);window.removeEventListener('training-network',update);window.removeEventListener('offline',failed);window.removeEventListener('online',retry);window.removeEventListener('training-network-failed',failed);};},[user]);
  const items=read(user);if(!notice&&!items.length)return null;
- return <aside className={'network-status '+(offline?'offline':'')} role="status" aria-live="polite"><span>{notice||'Отправляем сохранённые изменения…'}{items.length>0&&` В очереди: ${items.length}.`}</span>{!offline&&items.length>0&&<button onClick={()=>void flush(user)}>Повторить отправку</button>}{rejected&&items.length>0&&<button onClick={()=>{if(window.confirm('Удалить первое неотправленное действие из очереди? Остальные действия и локальный черновик останутся на этом ПК.')){save(user,read(user).slice(1));rejected=false;notice='';void flush(user);}}}>Отменить неотправленное действие</button>}{!offline&&!items.length&&<button aria-label="Скрыть сообщение о сети" onClick={()=>{notice='';emit();}}>×</button>}</aside>;
+ return <><aside className={'network-status '+(offline?'offline':'')} role="status" aria-live="polite"><span>{notice||'Отправляем сохранённые изменения…'}{items.length>0&&` В очереди: ${items.length}.`}</span>{!offline&&items.length>0&&<button onClick={()=>void flush(user)}>Повторить отправку</button>}{rejected&&items.length>0&&<button onClick={()=>setCancelEntry(items[0])}>Отменить неотправленное действие</button>}{!offline&&!items.length&&<button aria-label="Скрыть сообщение о сети" onClick={()=>{notice='';emit();}}>×</button>}</aside>{cancelEntry&&<ManagementConfirm title="Отменить неотправленное действие?" description="Это действие будет убрано из очереди. Остальные действия и локальный черновик сохранятся на этом ПК." confirmLabel="Отменить действие" onCancel={()=>setCancelEntry(null)} onConfirm={()=>{save(user,read(user).filter(x=>x.id!==cancelEntry.id));setCancelEntry(null);rejected=false;notice='';void flush(user);}}/>}</>;
 }

@@ -1,0 +1,17 @@
+.student-coach{box-sizing:border-box;max-height:calc(100dvh - 32px);overflow:auto;overflow-wrap:anywhere}
+.intro-microphone-check ol{padding-left:20px;margin:12px 0 18px}
+.intro-microphone-check li{margin:7px 0}
+.intro-mic-control{display:flex;align-items:center;gap:14px;padding:14px;background:#fff8b8;border:1px solid #d4bc35}
+.intro-mic-control>div{min-width:0}
+.intro-mic-control strong,.intro-mic-control span{display:block}
+.intro-mic-control span{margin-top:4px;font-size:12px;line-height:1.5}
+.student-coach .intro-mic-control .voice-mic{display:flex;align-items:center;justify-content:center;width:52px;height:52px;flex:none;padding:12px;border:0;border-radius:50%;background:#30383c;color:#fff}
+.student-coach .intro-mic-control .voice-mic.recording{background:#b74636}
+.student-coach .intro-mic-control .voice-mic svg{width:27px;height:27px;color:inherit}
+.intro-microphone-check meter{display:block;width:100%;height:8px;margin:10px 0;accent-color:#218b63}
+.student-coach .intro-mic-feedback{margin:12px 0;padding:12px;background:#fff9d9;border-left:3px solid #9b7024;font-size:13px;line-height:1.5}
+.student-coach .intro-mic-feedback.success{border-color:#218b63;background:#f4fbdd}
+.student-coach .intro-next{display:block;min-height:38px;margin-top:18px;padding:8px 22px}
+.student-coach .intro-next:disabled{opacity:.45;cursor:default}
+
+.student-coach.centered:before{display:none}

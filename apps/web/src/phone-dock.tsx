@@ -28,7 +28,7 @@ export function PhoneDock({p,owner,busy,contactId,setContactId,contactText,setCo
  },[ringing,owner]);
  async function accept(){
   onOpen();setAudioError('');
-  try{await startLine();engine.current?.stop();await engine.current?.connect(incoming[0].call_audio);setIncomingPlaying(true);const result=await cmd('accept_dds_call',{id:incoming[0].id});if(!result)throw Error('Не удалось принять звонок');}
+  try{await Promise.all([engine.current?.unlock(),startLine()]);engine.current?.stop();await engine.current?.connect(incoming[0].call_audio);setIncomingPlaying(true);const result=await cmd('accept_dds_call',{id:incoming[0].id});if(!result)throw Error('Не удалось принять звонок');}
   catch(e:any){setAudioError(e.message);ended();}
  }
  return <section data-guide="phone" className={"phone-dock"+(ringing?" is-ringing":"")} aria-label="Учебная связь">

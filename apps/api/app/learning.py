@@ -22,8 +22,21 @@ DEFAULT_SERVICES={
 
 def profile(db,sid):
     p=db.get(TrainingProfile,sid)
-    if not p:p=TrainingProfile(user_id=sid,data={});db.add(p);db.flush()
+    if not p:
+        from sqlalchemy.exc import IntegrityError
+        try:
+            with db.begin_nested():
+                p=TrainingProfile(user_id=sid,data={});db.add(p);db.flush()
+        except IntegrityError:p=db.get(TrainingProfile,sid)
     return p
+
+
+def onboarding_needed(db,sid):
+    p=db.get(TrainingProfile,sid)
+    if p and p.data.get('demo_level',0)>0:return False
+    attempts=db.scalars(select(Attempt).where(Attempt.student_id==sid,Attempt.status!='aborted')).all()
+    if any(not a.snapshot.get('onboarding') and a.status=='completed' for a in attempts):return False
+    return len({a.snapshot.get('onboarding') for a in attempts if a.status=='completed'})<2
 
 def summary(db,sid):
     attempts=db.scalars(select(Attempt).where(Attempt.student_id==sid,Attempt.status=='completed').order_by(Attempt.id.desc())).all()
@@ -34,7 +47,8 @@ def summary(db,sid):
     confirmed=[a for a in assessments if not a.get('pending') and not a.get('ai_preliminary') and not a.get('assisted')]
     scores=[a['score'] for a in confirmed if a.get('score') is not None]
     avg=round(statistics.mean(scores)) if scores else None
-    p=profile(db,sid);intro=p.data.get('intro_complete',False)
+    p=profile(db,sid);needs_onboarding=onboarding_needed(db,sid)
+    intro=p.data.get('intro_complete',False) or not needs_onboarding
     level=0 if not intro else 1 if len(scores)<3 else 4 if avg>=90 else 3 if avg>=75 else 2 if avg>=50 else 1
     levels={}
     for attempt in attempts:
@@ -50,7 +64,7 @@ def summary(db,sid):
         mastered=max(0,p.data['demo_stars']-1)
     level=max(level,min(5,mastered)) if intro else 0
     times=[a['measured_seconds'] for a in confirmed if a.get('measured_seconds') is not None]
-    return {'mastered_stars':mastered,'recommended_stars':min(5,mastered+1) if mastered else 1,'level':level,'intro_complete':intro,'score':avg,'completed':len(attempts),'confirmed':len(scores),
+    return {'needs_onboarding':needs_onboarding,'needs_intro':needs_onboarding and not intro,'mastered_stars':mastered,'recommended_stars':min(5,mastered+1) if mastered else 1,'level':level,'intro_complete':intro,'score':avg,'completed':len(attempts),'confirmed':len(scores),
         'seconds':round(statistics.mean(times),1) if times else None,
         'text_errors':sum(len(a.get('text_checks',[])) for a in assessments),
         'drills':len(p.data.get('drills',[])),'mini_correct':sum(x['correct'] for x in p.data.get('drills',[]))}
@@ -69,6 +83,8 @@ def seed_catalog(db):
     db.commit()
     from .initial_library import seed_reference_content
     seed_reference_content(db)
+    from .dictation import seed as seed_dictation
+    seed_dictation(db)
 
 @router.get('/profile')
 def my_profile(u=Depends(m.current),db=Depends(m.getdb)):
@@ -159,6 +175,8 @@ def question_view(q,db,student=False):
     job=db.get(VoiceJob,data['voice_key']) if data.get('voice_key') else None
     data.update(audio_id=job.audio_id if job and job.status=='ready' else None,audio_status=job.status if job else '',audio_error=job.error if job else '')
     if student:
+        from .dictation import is_dictation,PROMPT
+        if is_dictation(data):data.update(prompt=PROMPT,dictation=True)
         for key in ('answer','audio_text','voice_key'):data.pop(key,None)
     return {'id':q.id,**data,'active':q.active}
 
@@ -180,16 +198,25 @@ def save_question(data:MiniIn,id:int|None=None,u=Depends(m.current),db=Depends(m
         from .voice import prepare
         prepared=prepare({'tasks':[{'contacts':[{'id':'mini','response':data.audio_text,'voice_gender':data.voice_gender}]}]},db,u.id)
         saved['voice_key']=prepared['tasks'][0]['contacts'][0]['voice_lines'][0]['voice_key']
+    from .dictation import prepare as prepare_dictation
+    saved=prepare_dictation(saved,db,u.id)
     row.data=saved;row.active=data.active;db.add(row);db.commit();return question_view(row,db)
 
 @router.post('/drill/{attempt_id}')
 def drill(attempt_id:int,u=Depends(m.current),db=Depends(m.getdb)):
     a=db.get(Attempt,attempt_id)
     if not a or a.student_id!=u.id:m.fail('Задание недоступно',403)
-    if a.status=='aborted' or a.status=='completed' and not (a.assessment or {}).get('pending') or a.state.get('preview'):
+    grade=a.assessment or {}
+    report=(grade.get('report_job') or {}).get('status')
+    semantic=(grade.get('semantic_review') or {}).get('status')
+    waiting=report in ('queued','running') or report!='error' and grade.get('pending') and semantic in (None,'queued','running')
+    if a.status=='aborted' or a.status=='completed' and not waiting or a.state.get('preview') or a.state.get('guided') and a.status!='completed':
+        if a.state.get('guided') and a.state.get('mini_started'):
+            state=copy.deepcopy(a.state);elapsed=max(0,time.time()-state.pop('mini_started'));state['paused_seconds']=state.get('paused_seconds',0)+elapsed;a.state=state
         p=profile(db,u.id)
         if (p.data.get('pending_drill') or {}).get('attempt')==attempt_id:
-            p.data={**p.data,'pending_drill':None};db.commit()
+            p.data={**p.data,'pending_drill':None}
+        db.commit()
         return None
     review_wait=a.status=='completed'
     p=profile(db,u.id);data=copy.deepcopy(p.data); key=str(attempt_id)+(':review' if review_wait else '')
@@ -199,6 +226,10 @@ def drill(attempt_id:int,u=Depends(m.current),db=Depends(m.getdb)):
         if not previous or previous.status in ('completed','aborted'):
             pending=None;data['pending_drill']=None
     if pending and pending['attempt']==attempt_id:
+        from .dictation import is_dictation,prepare as prepare_dictation
+        if is_dictation(pending['data']) and not pending['data'].get('voice_key'):
+            pending={**pending,'data':prepare_dictation(pending['data'],db,u.id)}
+            p.data={**data,'pending_drill':pending};db.commit()
         return question_view(type('Pending',(),{'id':pending['id'],'data':pending['data'],'active':True})(),db,True)
     if pending:return None
     if not review_wait and key in data.get('drill_offered',[]):return None

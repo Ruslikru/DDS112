@@ -52,8 +52,12 @@ def visible(db,u,student):
     return u.role=='teacher' and g and g.teacher_id==u.id
 def person(u): return {k:getattr(u,k) for k in ['id','login','name','role','active','audit_access','group_id','must_change_password']}
 def attempt_view(a,u):
+    from .learning import onboarding_needed
+    state=a.state
     from .voice import attach_audio
-    with SessionLocal() as voice_db:task=attach_audio(a.snapshot,voice_db)
+    with SessionLocal() as voice_db:
+        task=attach_audio(a.snapshot,voice_db)
+        if a.snapshot.get('onboarding') and state.get('guided_source')!='requested' and not onboarding_needed(voice_db,a.student_id):state={**state,'guided':False}
     if a.status not in ['completed','aborted']:
         task['questions']=caller_questions(task)
     if u.role=='student' and not a.assessment:
@@ -61,7 +65,8 @@ def attempt_view(a,u):
         task['contacts']=[{k:v for k,v in c.items() if k not in ['response','updates','questions','voice_lines']} for c in task.get('contacts',[])]
         task['questions']=[{'id':q['id'],'question':q['question']} for q in task['questions']]
         if a.status=='ringing': task['intro']=''; task['intro_audio']=None
-    return {'id':a.id,'assignment_id':a.assignment_id,'student_id':a.student_id,'task_index':a.task_index,'status':a.status,'revision':a.revision,'task':task,'card':a.card,'state':a.state,'assessment':a.assessment,'started_at':a.started_at,'duration':duration(a),'allowed_statuses':allowed_statuses(a.state.get('services',{}).get(a.snapshot['own_service'],[]))}
+    return {'id':a.id,'assignment_id':a.assignment_id,'student_id':a.student_id,'task_index':a.task_index,'status':a.status,'revision':a.revision,'task':task,'card':a.card,'state':state,'assessment':a.assessment,'started_at':a.started_at,'duration':duration(a),'allowed_statuses':allowed_statuses(a.state.get('services',{}).get(a.snapshot['own_service'],[]))}
+
 def process_events(db):
     for event in db.scalars(select(ScheduledEvent).where(ScheduledEvent.done==False,ScheduledEvent.due<=time.time()).order_by(ScheduledEvent.due,ScheduledEvent.id).with_for_update(skip_locked=True)).all():
         a=db.scalar(select(Attempt).where(Attempt.id==event.attempt_id).with_for_update())
@@ -139,6 +144,8 @@ async def lifespan(app):
     if not test_catalog_enabled():
         from .tutorials import seed as seed_tutorials
         with SessionLocal() as db:seed_tutorials(db)
+    from .practice_library import seed as seed_practice
+    with SessionLocal() as db:seed_practice(db)
     from .voice import recover
     recover()
     from .result_report import recover as recover_reports
@@ -388,7 +395,7 @@ def assignments(u=Depends(current),db:Session=Depends(getdb)):
         v=db.get(TicketVersion,a.version_id); student=db.get(User,a.student_id)
         if not catalog_available(v.data) or (not allow_112 and any(task.get('mode')!='dds' for task in v.data.get('tasks',[]))):continue
         attempts=db.scalars(select(Attempt).where(Attempt.assignment_id==a.id).order_by(Attempt.id.desc())).all()
-        out.append({'id':a.id,'lesson_id':a.lesson_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment} for p in attempts]})
+        out.append({'id':a.id,'lesson_id':a.lesson_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'onboarding':t.get('onboarding'),'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment} for p in attempts]})
     return out
 @app.post('/api/assignments')
 def assign(data:AssignmentIn,u=Depends(current),db:Session=Depends(getdb)):
@@ -504,7 +511,7 @@ def apply_command(id,c,u,db,_trusted_ai=False):
         if task['mode']!='dds': fail('Исходящая учебная связь доступна в ДДС')
         contact=next((x for x in task.get('contacts',[]) if x['id']==payload.get('id')),None)
         if not contact or not contact.get('phone'): fail('Контакт или телефон недоступен')
-        if contact['kind']=='service' and contact.get('service') not in state['services']: fail('Эта служба не получала карточку')
+        if contact['kind']=='service' and contact.get('service') and contact['service'] not in state['services']: fail('Эта служба не получала карточку')
         text=str(payload.get('text','')).strip()
         if not 3<=len(text)<=4000: fail('Введите сообщение для передачи (3–4000 символов)')
         counts=state.setdefault('contact_counts',{}); count=counts.get(contact['id'],0)
@@ -562,6 +569,10 @@ def apply_command(id,c,u,db,_trusted_ai=False):
             if not comment:fail('Введите комментарий')
             if status in ['Работы завершены','Отказ от выполнения работ']:fail('Работа службы завершена')
         elif status not in allowed_statuses(hist): fail('Недопустимый переход статуса')
+        if kind=='status' and task.get('onboarding') and state.get('guided'):
+            from .tutorial_comments import feedback
+            issue=feedback(status,comment)
+            if issue:fail('Проверьте комментарий. '+issue)
         if status in ['Не принята','Отказ от выполнения работ'] and not comment: fail('Укажите причину')
         if status in ['Принята','Не принята'] and 'ack_seconds' not in state:
             state['ack_seconds']=max(0,round((datetime.fromisoformat(now())-datetime.fromisoformat(p.started_at)).total_seconds()-state.get('paused_seconds',0)))

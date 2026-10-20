@@ -4,14 +4,13 @@ from fastapi import APIRouter,Depends
 from sqlalchemy import select
 from . import main as m
 from .db import Ticket,TicketVersion,Assignment,Attempt,User
-from .schemas import TicketData
+from .schemas import TicketData,Criterion
 from .dds_flow import create_attempt
 from .test_catalog import enabled, available as catalog_available
 
 router=APIRouter(prefix='/api')
 
 def seed(db):
-    if enabled():return
     owner=db.scalar(select(User).where(User.role=='admin'))
     if not owner:return
     existing={t.get('onboarding') for v in db.scalars(select(TicketVersion)) for t in v.data.get('tasks',[])}
@@ -40,21 +39,26 @@ def seed(db):
         task=copy.deepcopy(task)
         if task.get('mode')=='dds' and task.get('onboarding') and not task.get('service_events'):
             task['service_events']=[{'kind':'incoming_call','contact_id':'brigade','trigger_contact':'brigade','who':'Старший бригады','stage':stage,'respect_delay':True,'after':delay,'text':text} for stage,delay,text in [('arrived',10,'Мы прибыли. Обстановка соответствует заявке.'),('done',35,'Работы завершены. Опасность устранена.')]]
+        if task.get('onboarding') and not any(c['id']=='tutorial-comments' for c in task.get('criteria',[])):
+            task.setdefault('criteria',[]).append({'id':'tutorial-comments','kind':'manual','field':'','label':'Содержание комментариев о ходе реагирования','expected':'Приём карточки, выезд бригады, прибытие, ход работ и устранение опасности отражены в соответствующих комментариях. Нет противоречий докладам.','weight':30,'skill':'Комментарии ДДС'})
+        if task.get('onboarding'):task['criteria']=[Criterion.model_validate(c).model_dump() for c in task.get('criteria',[])]
         return task
     for v in db.scalars(select(TicketVersion)):
-        if any(t.get('onboarding','') and t['mode']=='dds' and not t.get('service_events') for t in v.data['tasks']):
+        if any(t.get('onboarding') and upgrade(t)!=t for t in v.data['tasks']):
             updated=copy.deepcopy(v.data);updated['tasks']=[upgrade(t) for t in updated['tasks']]
             v.data=prepare(updated,db,owner.id)
     for attempt in db.scalars(select(Attempt).where(Attempt.status.notin_(['completed','aborted']))):
         updated=upgrade(attempt.snapshot)
         if updated!=attempt.snapshot:
+            had_events=bool(attempt.snapshot.get('service_events'))
             attempt.snapshot=prepare({'tasks':[updated]},db,owner.id)['tasks'][0]
-            if attempt.state.get('contact_counts',{}).get('brigade',0):
+            if not had_events and attempt.state.get('contact_counts',{}).get('brigade',0):
                 for event in attempt.snapshot['service_events']:db.add(ScheduledEvent(attempt_id=attempt.id,due=time.time()+event['after'],data=event))
     db.commit()
 
 @router.get('/tutorials')
 def catalog(u=Depends(m.current),db=Depends(m.getdb)):
+    from .learning import onboarding_needed
     from .voice import readiness
     from .training_modes import operator_112_enabled
     allow_112=operator_112_enabled(db)
@@ -80,7 +84,7 @@ def start_tutorial(id:int,u=Depends(m.current),db=Depends(m.getdb)):
         a=Assignment(version_id=id,student_id=u.id,teacher_id=u.id,title=v.data['title'],training=True);db.add(a);db.flush()
     active=db.scalar(select(Attempt).where(Attempt.assignment_id==a.id,Attempt.status.notin_(['completed','aborted'])))
     p=active or create_attempt(db,a,v.data['tasks'][0],0)
-    p.state={**p.state,'teacher_assisted':True,'guided':True};db.commit()
+    p.state={**p.state,'teacher_assisted':True,'guided':True,'guided_source':'requested'};db.commit()
     return m.attempt_view(p,u)
 
 @router.post('/tickets/{id}/try')
@@ -94,3 +98,13 @@ def try_ticket(id:int,data:dict,u=Depends(m.current),db=Depends(m.getdb)):
     p=create_attempt(db,a,v.data['tasks'][index],index,preview=True)
     p.state={**p.state,'preview':True,'teacher_assisted':True};db.commit()
     return m.attempt_view(p,u)
+
+@router.post('/tutorials/attempts/{attempt_id}/reviewed')
+def reviewed(attempt_id:int,u=Depends(m.current),db=Depends(m.getdb)):
+    attempt=db.get(Attempt,attempt_id)
+    if not attempt or attempt.student_id!=u.id or not attempt.snapshot.get('onboarding'):m.fail('Вводный билет недоступен',403)
+    if attempt.status!='completed':m.fail('Сначала завершите урок')
+    grade=attempt.assessment or {}
+    if (grade.get('report_job') or {}).get('status') not in (None,'done') or (grade.get('semantic_review') or {}).get('status') in ('queued','running'):m.fail('Дождитесь результата проверки')
+    attempt.state={**attempt.state,'tutorial_result_seen':True};db.commit()
+    return {'ok':True}

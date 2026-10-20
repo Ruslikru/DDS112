@@ -1,0 +1,8 @@
+.assignment-tabs{display:flex;flex-wrap:wrap;gap:4px;margin:-6px 0 22px;border-bottom:1px solid #aebdc6}
+.assignment-tabs a{display:flex;align-items:center;gap:8px;padding:12px 13px;color:#4f6878;text-decoration:none;font-size:13px;line-height:1.4;border-bottom:3px solid transparent;margin-bottom:-1px}
+.assignment-tabs a:hover{background:#ffffff70;color:#235d7b}
+.assignment-tabs a.active{color:#126f98;background:#ffffffa6;border-bottom-color:#1681ad;font-weight:600}
+.assignment-tabs a:focus-visible{outline:2px solid #1681ad;outline-offset:2px}
+.assignment-tab-count{min-width:20px;padding:1px 5px;background:#dce5e9;color:#49616e;text-align:center;font-size:11px;border-radius:10px}
+.assignment-tabs .active .assignment-tab-count{background:#1681ad;color:#fff}
+@media(max-width:1100px){.assignment-tabs a{padding:10px;flex:1 1 42%;justify-content:space-between}}

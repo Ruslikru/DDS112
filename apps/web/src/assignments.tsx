@@ -1,3 +1,4 @@
+import './assignment-tabs.css';
 import {TutorialCatalog} from './tutorials';
 import React, { useEffect, useState, useRef } from "react";
 
@@ -53,12 +54,25 @@ import {
 } from "./shared";
 export function Assignments() {
   const operator112=useOperator112();
+  const location=useLocation();
+  const requestedView=new URLSearchParams(location.search).get('view')||'assigned';
   const u = React.useContext(UserContext),
     { data, error, load } = useLoad("/assignments", 5000),
     [show, setShow] = useState(false),
     [filter, setFilter] = useState(""),
     [err, setErr] = useState("");
   const nav = useNavigate();
+  const view=u.role==='student'&&['started','completed','introduction'].includes(requestedView)?requestedView:'assigned';
+  const introduction=view==='introduction';
+  const ordinary=data?.filter((a:Obj)=>!a.tasks.some((t:Obj)=>t.onboarding));
+  const category=(a:Obj)=>{
+    const active=a.attempts.some((p:Obj)=>!['completed','aborted'].includes(p.status));
+    const completed=a.tasks.every((_:Obj,index:number)=>a.attempts.some((p:Obj)=>p.task_index===index&&p.status==='completed'));
+    return active?'started':completed?'completed':a.attempts.some((p:Obj)=>p.status==='completed')?'started':'assigned';
+  };
+  const assignments=ordinary?.filter((a:Obj)=>u.role!=='student'||category(a)===view);
+  const tabs=[['assigned','Задания от преподавателя'],['started','Начатые билеты'],['completed','Пройденные билеты'],['introduction','Знакомство с программой']];
+  const tabUrl=(tab:string)=>{const query=new URLSearchParams(location.search);if(tab==='assigned')query.delete('view');else query.set('view',tab);return '/assignments'+(query.size?'?'+query.toString():'');};
   const [mode,setMode]=useState(new URLSearchParams(useLocation().search).get('mode')||'');
   const start = async (id: number, index: number) => {
     try {
@@ -74,7 +88,7 @@ export function Assignments() {
     <div className="page">
       <Heading
         eyebrow="УЧЕБНЫЙ ПРОЦЕСС"
-        title={u.role === "student" ? "Мои задания" : "Назначения"}
+        title={u.role === "student" ? "Мои билеты" : "Назначения"}
       >
         {u.role !== "student" && (
           <button className="primary" onClick={() => setShow(!show)}>
@@ -83,8 +97,9 @@ export function Assignments() {
           </button>
         )}
       </Heading>
-      <Notice>{error || err}</Notice>{u.role==='student'&&<TutorialCatalog/>}
-      {show && (
+      {u.role==='student'&&<nav className="assignment-tabs" aria-label="Разделы билетов">{tabs.map(([key,title])=><Link key={key} to={tabUrl(key)} className={view===key?'active':''} aria-current={view===key?'page':undefined}>{title}{key!=='introduction'&&ordinary&&<span className="assignment-tab-count">{ordinary.filter((a:Obj)=>category(a)===key).length}</span>}</Link>)}</nav>}
+      <Notice>{error || err}</Notice>{u.role==='student'&&(view==='assigned'||introduction)&&<TutorialCatalog revisit={introduction}/>}
+      {!introduction&&<>{show && (
         <AssignmentForm
           done={() => {
             setShow(false);
@@ -102,10 +117,10 @@ export function Assignments() {
             onChange={(e) => setFilter(e.target.value)}
           />
         </div>
-        <span>{data?.length || 0} назначений</span>
+        <span>{assignments?.length || 0} назначений</span>
       </div>
       <div className="assignment-list">
-        {data
+        {assignments
           ?.filter((a: Obj) =>
             (a.title + a.student).toLowerCase().includes(filter.toLowerCase())&&(!operator112||!mode||a.tasks.some((t:Obj)=>t.mode===mode)),
           )
@@ -191,7 +206,7 @@ export function Assignments() {
             </div>
           ))}
       </div>
-      {data?.length === 0 && <Empty />}
+      {assignments?.length === 0 && <Empty text={view==='started'?'Начатых билетов пока нет':view==='completed'?'Пройденных билетов пока нет':'Преподаватель пока не назначил новые билеты'} />}</>}
     </div>
   );
 }

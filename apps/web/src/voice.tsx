@@ -1,3 +1,4 @@
+import {audioResource,releaseAudio} from './audio-resource';
 import {AssistantMicrophoneSettings} from './assistant-microphone-settings';
 import {selectedMicrophone,selectMicrophone,MICROPHONE_CHANGED} from './microphone-preference';
 import './sound-settings.css';
@@ -9,6 +10,10 @@ import {useHeldRecording} from './use-held-recording';
 import {Phone,PhoneOff,Mic,MicOff} from 'lucide-react';
 
 const bridge=()=> (window as any).pywebview?.api;
+async function speechResource(id:string){
+ const cached=await Promise.resolve(bridge()?.voice_cached?.(id)).catch(()=>null);
+ return cached||audioResource('/api/media/'+id);
+}
 const mobile=()=>/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
 function useNativeReady(){
  const [ready,setReady]=useState(!!bridge()?.voice_speak);
@@ -89,8 +94,9 @@ export async function record(onDone:(text:string)=>void,onError:(text:string)=>v
   }catch{}}
   const stopMeter=()=>{if(!meter)return;clearInterval(meter.timer);meter.context.close().catch(()=>{});meter=undefined;};
   recorder.ondataavailable=e=>chunks.push(e.data);
-  recorder.onstop=async()=>{stopMeter();stream.getTracks().forEach(t=>t.stop());if(cancelled)return;try{const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());let raw='';bytes.forEach(b=>raw+=String.fromCharCode(b));const value=await convert!(btoa(raw));onDone(value.text+'');}catch(e:any){onError(e.message||String(e));}};
-  recorder.start();const limit=setTimeout(()=>{if(recorder.state==='recording')recorder.stop();},15000);
+  let started=0;
+  recorder.onstop=async()=>{stopMeter();stream.getTracks().forEach(t=>t.stop());if(cancelled)return;if(performance.now()-started<350){onError('Кнопку нужно удерживать. Зажмите микрофон, произнесите фразу и затем отпустите.');return;}try{const blob=new Blob(chunks);if(!blob.size)throw Error('Запись пустая. Удерживайте микрофон, пока говорите.');const bytes=new Uint8Array(await blob.arrayBuffer());let raw='';bytes.forEach(b=>raw+=String.fromCharCode(b));const value=await convert!(btoa(raw));onDone(value.text+'');}catch(e:any){onError(e.message||String(e));}};
+  recorder.start();started=performance.now();const limit=setTimeout(()=>{if(recorder.state==='recording')recorder.stop();},15000);
   // stop(true) discards the recording: nothing is transcribed and neither callback fires.
   return (cancel=false)=>{clearTimeout(limit);cancelled=cancel;if(recorder.state==='recording')recorder.stop();};
  }catch(e:any){onError(e.message||String(e));return undefined;}
@@ -134,7 +140,7 @@ export function VoiceSettings(_props:{localOnly?:boolean}={}){
 export function BrigadeAudio({id,autoPlay=false,playKey=id,hidden=false,onEnded,onPlaying,onError,beforePlay}:{id:string,autoPlay?:boolean,playKey?:string,hidden?:boolean,onEnded?:()=>void,onPlaying?:()=>void,onError?:(message:string)=>void,beforePlay?:(player:HTMLAudioElement)=>Promise<void>}){
  const [source,setSource]=useState<{id:string,url:string}|null>(null);const ref=useRef<HTMLAudioElement>(null);
  const url=source?.id===id?source.url:undefined;
- useEffect(()=>{let closed=false;const player=ref.current;setSource(null);Promise.resolve(bridge()?.voice_cached?.(id)).catch(()=>null).then((cached:string)=>{if(!closed)setSource({id,url:cached||'/api/media/'+id});});return()=>{closed=true;player?.pause();};},[id]);
+ useEffect(()=>{let closed=false,url:string|undefined;const player=ref.current;setSource(null);speechResource(id).then(value=>{url=value;if(closed)releaseAudio(value);else setSource({id,url:value});}).catch(e=>onError?.(e.message));return()=>{closed=true;player?.pause();releaseAudio(url);};},[id]);
  useEffect(()=>{const key='voice-played:'+playKey;if(url&&autoPlay&&!sessionStorage.getItem(key)){document.querySelectorAll('audio').forEach(a=>{if(a!==ref.current)a.pause();});const player=ref.current;if(player)Promise.resolve(beforePlay?.(player)).then(()=>player.play()).then(()=>sessionStorage.setItem(key,'1')).catch(e=>onError?.(e.message||'Не удалось включить звук'));}},[url,autoPlay,playKey]);
  return <audio ref={ref} onEnded={onEnded} onPlaying={onPlaying} onError={()=>onError?.('Не удалось воспроизвести ответ. Проверьте связь с сервером.')} controls={!hidden} hidden={hidden} preload="none" src={url}/>;
 }
@@ -184,19 +190,20 @@ export function VoiceQueue(){
 export function DDSVoiceCall({disabled,contacts,contactId,service,textOnly=false,incomingState,engine,onStart,onEnd,onSelect,onSend}:{disabled:boolean,contacts:Obj[],contactId:string,service:string,textOnly?:boolean,incomingState?:string,engine?:CallAudioEngine,onStart?:()=>Promise<void>,onEnd?:()=>void,onSelect:(id:string)=>void,onSend:(text:string,id:string)=>Promise<any>}){
  useNativeReady();
  const [phase,setPhase]=useState('idle'),[error,setError]=useState('');
+ const resources=useRef(new Set<string>());
  const stop=useRef<((cancel?:boolean)=>void)|undefined>(undefined),audio=useRef<HTMLAudioElement|null>(null),tone=useRef<AudioContext|null>(null),generation=useRef(0),locked=useRef(false);
- const cancel=()=>{generation.current++;locked.current=false;stop.current?.();stop.current=undefined;audio.current?.pause();tone.current?.close().catch(()=>{});tone.current=null;engine?.hangup();onEnd?.();setPhase('idle');};
- useEffect(()=>()=>{generation.current++;stop.current?.();audio.current?.pause();tone.current?.close().catch(()=>{});onEnd?.();},[]);
+ const cancel=()=>{generation.current++;locked.current=false;stop.current?.();stop.current=undefined;audio.current?.pause();resources.current.forEach(releaseAudio);resources.current.clear();tone.current?.close().catch(()=>{});tone.current=null;engine?.hangup();onEnd?.();setPhase('idle');};
+ useEffect(()=>()=>{generation.current++;stop.current?.();audio.current?.pause();resources.current.forEach(releaseAudio);resources.current.clear();tone.current?.close().catch(()=>{});onEnd?.();},[]);
  async function call(c:Obj){
-  if(locked.current||disabled)return;if(textOnly){onSelect(c.id);return;}document.querySelectorAll('audio').forEach(a=>a.pause());locked.current=true;const run=++generation.current;onSelect(c.id);setError('');setPhase('dialing');
+  if(locked.current||disabled)return;document.querySelectorAll('audio').forEach(a=>a.pause());locked.current=true;const run=++generation.current;onSelect(c.id);setError('');setPhase('dialing');
   let timer:ReturnType<typeof setInterval>|undefined;
   try{
-   await onStart?.();await engine?.prepare(c.call_audio);if(run!==generation.current)return;
-   if(!c.greeting_audio)throw Error('Приветствие ещё генерируется. Дождитесь готовности записи.');
+   await Promise.all([engine?.unlock(),onStart?.()]);await engine?.prepare(c.call_audio);if(run!==generation.current)return;
+   if(!c.greeting_audio)throw Error('Запись приветствия недоступна. Обновите карточку; если ошибка повторяется, сообщите преподавателю.');
    if(run!==generation.current)return;
    await engine?.signal('ringback',true);
-   const cached=await bridge()?.voice_cached?.(c.greeting_audio);
-   const reply={audio:cached||'/api/media/'+c.greeting_audio};
+   const url=await speechResource(c.greeting_audio);resources.current.add(url);
+   const reply={audio:url};
    await new Promise(resolve=>setTimeout(resolve,2200));
    if(run!==generation.current)return;await engine?.connect(c.call_audio);if(run!==generation.current)return;
    setPhase('greeting');const player=new Audio(reply.audio);audio.current=player;engine?.attach(player);
@@ -207,14 +214,14 @@ export function DDSVoiceCall({disabled,contacts,contactId,service,textOnly=false
  }
  async function microphone(){
   if(phase!=='ready')return;const run=generation.current;setPhase('starting');
-  stop.current=await record(async text=>{if(run!==generation.current)return;setPhase('sending');try{if(text.trim().length<3)throw Error('Речь не распознана. Нажмите микрофон и повторите.');const result=await onSend(text,contactId);if(run!==generation.current)return;const reply=result?.state?.messages?.filter((m:Obj)=>m.audio).at(-1);if(reply?.audio){const cached=await bridge()?.voice_cached?.(reply.audio);if(run!==generation.current)return;await engine?.finishWaiting();if(run!==generation.current)return;const player=new Audio(cached||'/api/media/'+reply.audio);audio.current=player;engine?.attach(player);await playReply(player);engine?.replyEnded();}if(run===generation.current){await new Promise(resolve=>setTimeout(resolve,1200));if(run===generation.current)cancel();}}catch(e:any){if(run===generation.current)setError(e.message||String(e));}finally{await engine?.finishWaiting();if(run===generation.current)setPhase('ready');}},message=>{void engine?.finishWaiting();if(run===generation.current){setError(message);setPhase('ready');}},serverTranscribe);
+  stop.current=await record(async text=>{if(run!==generation.current)return;setPhase('sending');try{if(text.trim().length<3)throw Error('Речь не распознана. Нажмите микрофон и повторите.');const result=await onSend(text,contactId);if(run!==generation.current)return;const reply=result?.state?.messages?.filter((m:Obj)=>m.audio).at(-1);if(reply?.audio){const cached=await speechResource(reply.audio);resources.current.add(cached);if(run!==generation.current)return;await engine?.finishWaiting();if(run!==generation.current)return;const player=new Audio(cached);audio.current=player;engine?.attach(player);await playReply(player);engine?.replyEnded();}if(run===generation.current){await new Promise(resolve=>setTimeout(resolve,1200));if(run===generation.current)cancel();}}catch(e:any){if(run===generation.current)setError(e.message||String(e));}finally{await engine?.finishWaiting();if(run===generation.current)setPhase('ready');}},message=>{void engine?.finishWaiting();if(run===generation.current){setError(message);setPhase('ready');}},serverTranscribe);
   const finish=stop.current;
   if(run!==generation.current){finish?.();return;}
   if(finish)setPhase('recording');
   return finish?(cancel=false)=>{finish(cancel);if(run===generation.current){setPhase(cancel?'ready':'sending');if(!cancel)engine?.waitForReply(contacts.find(c=>c.id===contactId)?.voice_gender);}}:undefined;
  }
  const selected=contacts.find(c=>c.id===contactId),connected=phase!=='idle';
- return <div className="dds-voice-call">
+ return <div className="dds-voice-call" data-phase={phase}>
   <div className="phone-quick-contacts" aria-label="Быстрые контакты">{contacts.map(c=><button key={c.id} data-contact={c.id} data-guide="voice-contact" disabled={disabled||connected||!c.phone} title={'Позвонить: '+c.name+' · '+c.phone} onClick={()=>call(c)}><span><b>{c.name}</b><small>{c.phone}</small></span><span className="contact-call-action"><Phone size={14}/> Позвонить</span></button>)}</div>
   <div className="phone-call-panel">
    <div className="phone-party"><b>{connected?selected?.name:'Телефон ДДС'}</b><small>{connected?selected?.phone:'Выберите контакт выше'}</small></div>

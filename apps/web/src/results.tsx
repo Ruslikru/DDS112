@@ -1,3 +1,4 @@
+import {MiniDrill} from './training-tools';
 import {ArmDialog} from './arm-ui';
 import React, { useEffect, useState, useRef } from "react";
 import { AIReview } from './ai';
@@ -51,7 +52,7 @@ import {
   Empty,
   Heading,
 } from "./shared";
-export function Assessment({
+function AssessmentContent({
   p,
   onUpdate,
   onConfirmed,
@@ -365,4 +366,11 @@ export function Results() {
       </div>
     </div>
   );
+}
+
+export function Assessment(props:{p:Obj,onUpdate?:(p:Obj)=>void,onConfirmed?:()=>void}){
+ const u=React.useContext(UserContext),p=props.p,a=p.assessment;
+ const report=a?.report_job?.status,semantic=a?.semantic_review?.status;
+ const waiting=['queued','running'].includes(report)||report!=='error'&&a?.pending&&[undefined,'queued','running'].includes(semantic);
+ return <><AssessmentContent {...props}/>{u.role==='student'&&p.student_id===u.id&&!p.state.preview&&<MiniDrill key={p.id} attemptId={p.id} waiting enabled={!!waiting}/>}</>;
 }

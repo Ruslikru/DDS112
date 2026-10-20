@@ -1,3 +1,4 @@
+import {audioHeaders} from './audio-resource';
 import {api,Obj} from './shared';
 
 // One engine per handset. Backgrounds never restart between speech turns.
@@ -30,7 +31,7 @@ export class CallAudioEngine {
   if(this.buffers.has(id))return this.buffers.get(id)!;
   const assets=await this.loadManifest(),row=assets[id];
   if(!row)throw Error('Нет звукового файла: '+id);
-  const response=await fetch(row.url);if(!response.ok)throw Error('Не удалось загрузить звуковое окружение');
+  const response=await fetch(row.url,{headers:audioHeaders(),credentials:'same-origin'});if(!response.ok)throw Error('Не удалось загрузить звуковое окружение');
   const bytes=await response.arrayBuffer();if(bytes.byteLength!==row.bytes)throw Error('Звуковой файл повреждён');
   // On LAN HTTP the server performs SHA-256 verification; secure contexts also verify locally.
   if(crypto.subtle){const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('');if(digest!==row.sha256)throw Error('Контрольная сумма звукового файла не совпала');}
@@ -45,14 +46,14 @@ export class CallAudioEngine {
   const ids=Array.from(new Set<string>(['ring','ringback','hangup',...(scene.backgrounds||[]),...(scene.ambient_events||[]),...(scene.events_after_reply||[]).map((x:Obj)=>x.id)]));
   for(let n=0;n<ids.length;n+=3)await Promise.all(ids.slice(n,n+3).map(id=>this.buffer(id)));
  }
- private play(id:string,loop=false,background=false,volume=.4){
+ private play(id:string,loop=false,background=false,volume=.4,maxSeconds?:number){
   const buffer=this.buffers.get(id);if(!buffer||!this.context||!this.output||!this.bus)return Promise.resolve();
   const source=this.context.createBufferSource(),gain=this.context.createGain();source.buffer=buffer;source.loop=loop;
   gain.gain.value=volume;source.connect(gain);gain.connect(background?this.bus:this.output);this.sources.add(source);
-  return new Promise<void>(resolve=>{const done=()=>{this.sources.delete(source);this.pending.delete(done);source.disconnect();gain.disconnect();resolve();};this.pending.add(done);source.onended=done;source.start();});
+  return new Promise<void>(resolve=>{const done=()=>{this.sources.delete(source);this.pending.delete(done);source.disconnect();gain.disconnect();resolve();};this.pending.add(done);source.onended=done;source.start();if(maxSeconds!==undefined)source.stop(this.context!.currentTime+Math.min(maxSeconds,buffer.duration));});
  }
  private later(fn:()=>void,ms:number){const timer=setTimeout(()=>{this.timers.delete(timer);fn();},ms);this.timers.add(timer);}
- async signal(id:'ring'|'ringback'|'hangup',loop=false){const epoch=this.epoch;await this.unlock();await this.buffer(id);if(epoch===this.epoch)void this.play(id,loop);}
+ async signal(id:'ring'|'ringback'|'hangup',loop=false){const epoch=this.epoch;await this.unlock();await this.buffer(id);if(epoch===this.epoch)void this.play(id,loop,false,.4,id==='hangup'?1:undefined);}
  stop(){
   this.waiting=false;this.epoch++;for(const timer of this.timers)clearTimeout(timer);this.timers.clear();
   for(const source of this.sources){try{source.stop();}catch{}}this.sources.clear();

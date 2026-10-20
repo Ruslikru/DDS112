@@ -25,7 +25,7 @@ def seed_reference_content(db):
         if not db.get(ServiceDefinition,name):db.add(ServiceDefinition(name=name,config={'tags':tags,'questions':[],'rules':[]}))
     existing={q.data.get('seed_key') for q in db.scalars(select(MiniQuestion))}
     items=[{'prompt':p,'answer':a,'kind':'choice','options':opts,'level':1} for p,a,opts in MINIS]
-    for word in ['Декабристов','Конёнкова','Мусоропровод','Пострадавшие','Реагирование','Набережная','Ограждение','Электроснабжение','Теплотрасса','Подтопление','Управляющая организация','Подземный переход']:
+    for word in ['Декабристов','Конёнкова','Мусоропровод','Пострадавшие','Реагирование','Набережная','Ограждение','Электроснабжение','Теплотрасса','Подтопление','Управляющая организация','Подземный переход','Улица Кржижановского','Большая Черёмушкинская улица','Первый Красногвардейский проезд','Боровское шоссе']:
         items.append({'prompt':'Введите без ошибок: '+word,'answer':word,'kind':'text','options':[],'level':0})
     for index,item in enumerate(items):
         key=f'expansion020-{index}'
