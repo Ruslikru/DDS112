@@ -14,7 +14,7 @@ class VoiceSync:
         self.stop_event=threading.Event();self.status={'ready':0,'total':0,'error':'','versions':{}}
         self.thread=threading.Thread(target=self.run,daemon=True);self.thread.start()
     def request(self,path,headers=None):
-        return urllib.request.urlopen(urllib.request.Request(self.config['server']+path,headers={'X-Workstation':self.config['token'],**(headers or {})}),timeout=30)
+        return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(urllib.request.Request(self.config['server']+path,headers={'X-Workstation':self.config['token'],**(headers or {})}),timeout=30)
     def sync(self):
         with self.request('/api/voice/manifest') as response:manifest=json.load(response)
         self.status={'ready':0,'total':len(manifest['files']),'error':'','versions':{}}

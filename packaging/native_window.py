@@ -80,7 +80,7 @@ def run(data, launcher):
         config=json.loads((data/'classroom.json').read_text('utf-8'))
         launcher.configure(data)
     else:
-        config=startup_config(data,os.getenv('DESKTOP_LAUNCH_MODE','demo'),setup,
+        config=startup_config(data,os.getenv('DESKTOP_LAUNCH_MODE','auto'),setup,
                               force=os.getenv('CONFIGURE_CLASSROOM')=='1')
     import gc
     gc.collect()  # Dispose Tk variables on the UI thread before starting workers.
@@ -90,7 +90,7 @@ def run(data, launcher):
         from demo_profiles import DEMO_PASSWORD,reserve
         from lan_discovery import verify
         running=verify('http://127.0.0.1:8765')
-        if running and running.get('setup_policy')!='confirm-name-each-start':
+        if running and running.get('setup_policy') not in ('confirm-name-each-start','persistent-device-setup'):
             messagebox.showerror('Обновите учебный сервер',
                 'На этом ПК уже запущен сервер из прежней сборки. Закройте его и запустите новую версию первым экземпляром.')
             return
@@ -125,8 +125,19 @@ def run(data, launcher):
             except OSError:
                 handle,exists=launcher.single_instance(data)
                 if exists:close_handle(handle);return
-    (data/'classroom.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
-    if config['mode']=='server':
+    from device_connection import save_connection,recovery_connection,INITIAL_PASSWORD
+    pre_enrolled=False
+    if config['mode']=='client' and not config.get('demo'):
+        try:config=enroll(config,data);pre_enrolled=True
+        except (ValueError,OSError) as error:config=recovery_connection(config,error)
+    if not config.get('recovery'):save_connection(data,config)
+    if config['mode']=='server' and not config.get('demo'):
+        for key in ('CLASSROOM_SERVER','DEMO_CLASSROOM','CLASSROOM_SERVER_STATION_ID','DEMO_SERVER_STATION_ID'):
+            os.environ.pop(key,None)
+        os.environ['ENFORCE_WORKSTATIONS']='1';os.environ['ENFORCE_SERVER_NAME']='1'
+        if not launcher.initialized(data):os.environ['DEMO_PASSWORD']=INITIAL_PASSWORD
+    if config['mode']=='server' and (config.get('demo') or config.get('network_mode')=='lan'):
+
         os.environ['CLASSROOM_SERVER']='1'
         os.environ['ENFORCE_WORKSTATIONS']='1'
         os.environ['ENFORCE_SERVER_NAME']='1'
@@ -181,7 +192,8 @@ def run(data, launcher):
                 config['number']='Демо слот '+data.name.rsplit('-',1)[-1]
             config['server_generation']=generation
             (data/'classroom.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
-        config=enroll(config,data)
+        if config['mode']=='server':config['server']=server.url
+        if not pre_enrolled:config=enroll(config,data)
         if config.get('demo') and config['mode']=='client' and not config.get('station_configured'):
             import urllib.request
             request=urllib.request.Request(config['server']+'/api/classroom/demo-pending',b'{}',
@@ -190,12 +202,22 @@ def run(data, launcher):
             (data/'classroom.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
         if config['mode']=='server':
             os.environ['CLASSROOM_SERVER_STATION_ID']=config['station_id']
+            if config.pop('apply_server_name',False):
+                from apps.api.app.db import SessionLocal
+                from apps.api.app.management_models import ManagementSetting
+                from apps.api.app.server_identity import activate
+                with SessionLocal() as db:
+                    row=db.get(ManagementSetting,'server_identity')
+                    if row:row.value={'name':config['name']}
+                    else:db.add(ManagementSetting(key='server_identity',value={'name':config['name']}))
+                    db.commit()
+                activate();save_connection(data,config)
         if config.get('demo') and config['mode']=='server':
             os.environ['DEMO_SERVER_STATION_ID']=config['station_id']
         demo_password_hint=''
         if config.get('demo') and config['mode']=='client':
             demo_password_hint=DEMO_PASSWORD
-        if config.get('demo') and config['mode']=='server':
+        if config['mode']=='server':
             # Older demo databases may use a password chosen by the user.
             import sqlite3
             from argon2 import PasswordHasher,exceptions
@@ -230,8 +252,45 @@ def run(data, launcher):
                 Path(target).write_bytes(base64.b64decode(content,validate=True))
                 return True
             def get_demo_identity(self):
-                return {'role':config['mode'] if config.get('demo') else '', 'password':demo_password_hint,
-                        'configured':bool(config.get('station_configured'))}
+                return {'role':('local' if config.get('network_mode')=='local' else config['mode']) if config.get('demo') or config.get('setup_complete') else 'setup',
+                        'demo':bool(config.get('demo')),'password':demo_password_hint,
+                        'configured':bool(config.get('station_configured')),'desktop':True}
+            def get_device_settings(self):
+                if not authorize_admin(window,server.url):raise PermissionError('Настройки доступны администратору')
+                from device_runtime.network import lan_addresses
+                previous=config.get('saved_connection',config)
+                return {**{k:previous.get(k) for k in ('mode','network_mode','server','number','name','setup_complete')},
+                        'managed':not config.get('demo'),'setup_complete':bool(config.get('setup_complete')),
+                        'force_edit':bool(config.get('edit_connection')),'error':config.get('connection_error',''),
+                        'urls':['http://'+ip+':8765' for ip in lan_addresses()]}
+            def discover_device_servers(self):
+                if not authorize_admin(window,server.url):raise PermissionError('Настройки доступны администратору')
+                from lan_discovery import discover
+                return discover(config.get('saved_connection',config).get('server',''))
+            def configure_device(self,value):
+                nonlocal restart_requested
+                if not authorize_admin(window,server.url):raise PermissionError('Настройки доступны администратору')
+                from device_connection import connect_workstation,server_connection,request_json
+                import urllib.request,threading
+                cookies={key:morsel.value for cookie in window.get_cookies() for key,morsel in cookie.items()}
+                cookie='; '.join(key+'='+value for key,value in cookies.items())
+                previous=config.get('saved_connection',config)
+                role=value.get('role')
+                if role not in ('client','server','local'):raise ValueError('Выберите роль компьютера')
+                if role=='client':
+                    connect_workstation(data,previous,value.get('server',''),value.get('number',''),value.get('password',''),cookie if not config.get('recovery') else '')
+                else:
+                    name=str(value.get('name','')).strip()
+                    if not name or len(name)>100:raise ValueError('Укажите название учебного сервера')
+                    if config['mode']=='server':
+                        opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                        request_json(opener,server.url+'/api/management/server-name',{'name':name},cookie)
+                    server_connection(data,previous,role,name)
+                restart_requested=True
+                def close_for_restart():
+                    window.confirm_close=False;window.destroy()
+                threading.Timer(1,close_for_restart).start()
+                return {'ok':True,'restarting':True}
             def choose_backup_folder(self):
                 result=window.create_file_dialog(webview.FOLDER_DIALOG)
                 return result[0] if result else None
@@ -246,6 +305,7 @@ def run(data, launcher):
                 config['server_selected']=True
                 (data/'classroom.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
                 return True
+        restart_requested=False
         native_bridge=DesktopBridge(voice,voice_sync,lambda:authorize_admin(window,server.url))
         window=webview.create_window('Тренажёр 112 / ДДС',server.url,width=1366,height=900,
                                      min_size=(1024,680),maximized=True,js_api=native_bridge)
@@ -254,9 +314,10 @@ def run(data, launcher):
         identified_once=False
         def identify():
             nonlocal identified_once
-            values={'training112:station-token':config['token'],'training112:station-number':config['number'],
-                    'training112:station-mode':config['mode'],'training112:demo-role':config['mode'] if config.get('demo') else '',
-                    'training112:demo-password-hint':demo_password_hint,
+            values={'training112:station-token':config['token'],'training112:station-number':'' if config['mode']=='server' else config['number'],
+                    'training112:station-mode':config['mode'] if config.get('demo') or config.get('setup_complete') else 'setup','training112:demo-role':config['mode'] if config.get('demo') else '',
+                    'training112:demo-password-hint':demo_password_hint,'training112:desktop':'true','training112:network-mode':config.get('network_mode',''),
+                    'training112:device-configured':str(bool(config.get('setup_complete') or config.get('demo'))).lower(),
                     'training112:station-configured':str(bool(config.get('station_configured'))).lower(),
                     'training112:server-selected':str(bool(config.get('server_selected'))).lower(),
                     'training112:server-url':config['server']}
@@ -269,6 +330,9 @@ def run(data, launcher):
                 script+='sessionStorage.setItem("training112:demo-welcome","client");'
             else:
                 script+='sessionStorage.removeItem("training112:demo-welcome");'
+            if not identified_once and not config.get('demo'):
+                window.clear_cookies()
+                script+='setTimeout(()=>location.replace("/"),50);'
             window.evaluate_js(script+'window.dispatchEvent(new Event("station-ready"));')
             if not identified_once:agent.start()
             identified_once=True
@@ -283,3 +347,7 @@ def run(data, launcher):
         server.stop()
         if server.thread: server.thread.join(20)
         ctypes.WinDLL('kernel32').CloseHandle(ctypes.c_void_p(handle))
+        if locals().get('restart_requested'):
+            import subprocess,sys
+            executable=[sys.executable] if getattr(sys,'frozen',False) else [sys.executable,str(Path(__file__).with_name('desktop_launcher.py'))]
+            subprocess.Popen([*executable,'--data-dir',str(base_data),'--resume-profile',str(data),'--wait-for-pid',str(os.getpid())],creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

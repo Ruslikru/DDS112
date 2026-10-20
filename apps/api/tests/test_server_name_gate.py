@@ -12,14 +12,13 @@ def test_administrator_names_server_before_other_users_log_in(monkeypatch):
             row=db.get(ManagementSetting,'server_identity')
             original=dict(row.value) if row else None
             if row:
-                row.value={'name':'Кабинет 101'}
+                row.value={'name':''}
             else:
-                db.add(ManagementSetting(key='server_identity',value={'name':'Кабинет 101'}))
+                db.add(ManagementSetting(key='server_identity',value={'name':''}))
             db.commit()
         try:
             status=teacher.get('/api/classroom/server-setup').json()
-            assert status['named'] is True
-            assert status['name']=='Кабинет 101'
+            assert status['named'] is False
             assert status['ready'] is False
             credentials={'login':'teacher','password':'Training112!'}
             blocked=teacher.post('/api/login',json=credentials,headers=HEAD)

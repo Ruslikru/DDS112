@@ -9,8 +9,10 @@ def add_launch_arguments(parser):
 
 def launch_mode(args):
     # Keep the older classroom configuration shortcut compatible.
-    return args.launch_mode or ('lan' if args.configure_classroom else 'demo')
+    return args.launch_mode or ('lan' if args.configure_classroom else 'auto')
 
 
 def startup_config(data, mode, setup, force=False):
-    return {'demo': True} if mode == 'demo' else setup(data, force=force)
+    if mode=='demo':return {'demo':True}
+    from device_connection import load_connection
+    return load_connection(data,force=force)

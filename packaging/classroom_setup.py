@@ -1,5 +1,6 @@
 """First-run classroom selection and a loopback proxy for secure-context client features."""
 import json
+import re
 import threading
 import urllib.request
 import urllib.error
@@ -190,7 +191,8 @@ def setup(data, force=False):
 class ClientProxy:
     def __init__(self,remote):
         self.remote=remote.rstrip('/');self.error=None
-        remote=self.remote
+        self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        remote=self.remote;opener=self.opener
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*args):pass
             def proxy(self):
@@ -209,7 +211,7 @@ class ClientProxy:
                 headers={k:v for k,v in self.headers.items() if k.lower() not in ('host','connection','accept-encoding','content-length')}
                 if size:headers['Content-Length']=str(size)
                 req=urllib.request.Request(remote+self.path,data=data,headers=headers,method=self.command)
-                try:response=urllib.request.urlopen(req,timeout=360)
+                try:response=opener.open(req,timeout=360)
                 except urllib.error.HTTPError as e:response=e
                 except Exception:self.send_error(502,'Classroom server unavailable');return
                 with response:
@@ -224,20 +226,35 @@ class ClientProxy:
     def start(self):self.thread.start()
     def ready(self):
         try:
-            with urllib.request.urlopen(self.remote+'/desktop-health',timeout=2) as r:return r.status==200
+            with self.opener.open(self.remote+'/desktop-health',timeout=2) as r:return r.status==200
         except Exception:
             try:
-                with urllib.request.urlopen(self.remote+'/',timeout=2) as r:return r.status==200
+                with self.opener.open(self.remote+'/',timeout=2) as r:return r.status==200
             except Exception:return False
     def stop(self):self.http.shutdown();self.http.server_close()
 
 def enroll(config,data):
+    from device_connection import save_connection
+    if config.get('mode')=='server':
+        from apps.api.app.desktop_enrollment import enroll_server
+        config=enroll_server(config)
+        if not config.get('recovery'):save_connection(data,config)
+        return config
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    if config.get('demo') and not config.get('token'):
+        request=urllib.request.Request(config['server']+'/api/classroom/register',json.dumps({'number':config['number']}).encode(),{'Content-Type':'application/json','X-Requested-With':'Training112'})
+        with opener.open(request,timeout=10) as response:station=json.load(response)
+        config={**config,'token':station['token'],'station_id':station['id']}
+        save_connection(data,config);return config
     if config.get('token'):
         req=urllib.request.Request(config['server']+'/api/classroom/admission',headers={'X-Workstation':config['token']})
-        with urllib.request.urlopen(req,timeout=10) as r:
-            if json.load(r).get('registered'):return config
-        config.pop('token',None);config.pop('station_id',None)
-    req=urllib.request.Request(config['server']+'/api/classroom/register',json.dumps({'number':config['number']}).encode(),
-        {'Content-Type':'application/json','X-Requested-With':'Training112'})
-    with urllib.request.urlopen(req,timeout=10) as r:info=json.load(r)
-    config.update(token=info['token'],station_id=info['id']);(data/'classroom.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8');return config
+        with opener.open(req,timeout=10) as response:admission=json.load(response)
+        if admission.get('registered'):
+            if not config.get('demo') and not re.fullmatch(r'[1-9][0-9]{0,2}',str(admission.get('number',''))):raise ValueError('У рабочего места неверный номер. Администратор должен выбрать номер от 1 до 999.')
+            if not admission.get('approved') and not config.get('demo'):raise ValueError('Это рабочее место не допущено. Администратор должен проверить его подключение.')
+            config={**config,'number':admission['number'],'station_id':admission['id'],'station_configured':bool(admission.get('configured')),'server_selected':bool(config.get('server_selected') or not config.get('demo'))}
+            save_connection(data,config)
+            return config
+    if config.get('demo'):
+        return enroll({k:v for k,v in config.items() if k not in ('token','station_id')},data)
+    raise ValueError('Сохранённое рабочее место не найдено на сервере. Войдите администратором и настройте подключение.')

@@ -16,7 +16,6 @@ def activate():
 
 def is_ready(db=None):
     if os.getenv('ENFORCE_SERVER_NAME')!='1' or _activated:return True
-    if os.getenv('DEMO_CLASSROOM')=='1':return False
     if db is not None:return is_named(db)
     with SessionLocal() as session:return is_named(session)
 

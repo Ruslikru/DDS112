@@ -15,7 +15,7 @@ def parse(argv):
     return launch_mode(parser.parse_args(argv))
 
 
-@pytest.mark.parametrize(('argv', 'mode'), [([], 'demo'), (['--local'], 'demo'),
+@pytest.mark.parametrize(('argv', 'mode'), [([], 'auto'), (['--local'], 'demo'),
     (['--lan'], 'lan'), (['--configure-classroom'], 'lan')])
 def test_mode(argv, mode):
     assert parse(argv) == mode
@@ -32,17 +32,27 @@ def test_local_never_opens_setup():
     assert startup_config(Path('example'), 'demo', setup) == {'demo': True}
 
 
-def test_lan_opens_classroom_setup():
-    calls = []
-    config = {'mode': 'client', 'server': 'http://192.168.1.10:8765'}
-    def setup(data, force):
-        calls.append((data, force))
-        return config
-    assert startup_config(Path('example'), 'lan', setup, True) is config
-    assert calls == [(Path('example'), True)]
+def test_lan_and_auto_go_directly_to_login_before_admin_setup(tmp_path):
+    def forbidden(*a,**kw):pytest.fail('Startup must not open a setup dialog')
+    for mode in ('auto','lan'):
+        config=startup_config(tmp_path,mode,forbidden,True)
+        assert config['setup_complete'] is False and config['network_mode']=='setup'
+        assert config['mode']=='server'
 
 
-@pytest.mark.parametrize(('flags', 'expected'), [([], 'demo'), (['--local'], 'demo'),
+def test_saved_workstation_is_reused_without_setup(tmp_path):
+    import json
+    saved={'mode':'client','number':'12','server':'http://192.168.1.10:8765','token':'saved-token','station_id':'saved-id','setup_complete':True}
+    (tmp_path/'classroom.json').write_text(json.dumps(saved))
+    def forbidden(*a,**kw):pytest.fail('Saved configuration must not open a setup dialog')
+    for mode in ('auto','lan'):
+        result=startup_config(tmp_path,mode,forbidden)
+        assert result['station_configured'] and result['setup_complete']
+        assert result['token']=='saved-token' and result['number']=='12'
+        assert not result.get('edit_connection')
+
+
+@pytest.mark.parametrize(('flags', 'expected'), [([], 'auto'), (['--local'], 'demo'),
     (['--lan'], 'lan'), (['--configure-classroom'], 'lan')])
 def test_launcher_passes_mode_to_window(monkeypatch, tmp_path, flags, expected):
     import os

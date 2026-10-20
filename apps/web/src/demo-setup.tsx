@@ -4,8 +4,7 @@ import {Pencil,X} from 'lucide-react';
 import {api,Obj,useLoad,Notice} from './shared';
 
 function stationName(number:string,mode:string){
-  return mode==='server' ? (number && number!=='Демо сервер' ? `Сервер · ПК №${number}` : 'Сервер') :
-    number && /^\d+$/.test(number) ? `Рабочее место №${number}` : 'Номер не назначен';
+  return mode==='server'?'Сервер':mode==='setup'?'Настройка устройства':number&&/^\d+$/.test(number)?`Рабочее место №${number}`:'Номер не назначен';
 }
 
 export function ServerNameSetup(){
@@ -101,14 +100,15 @@ export function AdminWorkstations(){
   const mode=localStorage.getItem('training112:station-mode')||'client';
   const demo=!!localStorage.getItem('training112:demo-role');
   const number=admission?.configured ? admission.number : localStorage.getItem('training112:station-configured')==='true' ? localStorage.getItem('training112:station-number')||'' : '';
-  const serverUrl=localStorage.getItem('training112:server-url')||'http://127.0.0.1:8765';
+  const desktop=localStorage.getItem('training112:desktop')==='true';
+  const serverUrl=mode==='server'?(connection?.urls?.[0]||'Работа на одном компьютере'):localStorage.getItem('training112:server-url')||'';
   const current=(stations||[]).filter((s:Obj)=>s.online).sort((a:Obj,b:Obj)=>Number(b.mode==='server')-Number(a.mode==='server'));
   void revision;
-  return <div className="admin-workstations"><h1>Рабочие места</h1><Notice>{error}</Notice><div className="admin-station-summary">
-    <section className="admin-workstation-card"><div className="admin-workstation-head"><div><small>Текущее рабочее место</small><h2>{stationName(number,mode)}</h2></div><button type="button" aria-label="Изменить номер текущего рабочего места" title="Изменить номер" disabled={!demo} onClick={()=>window.dispatchEvent(new Event('demo-edit-number'))}><Pencil size={18}/></button></div>
+  return <div className="admin-workstations"><h1>Рабочие места</h1>{desktop&&!demo&&<button className="button" onClick={()=>window.dispatchEvent(new Event('edit-device-connection'))}>Настроить этот компьютер</button>}<Notice>{error}</Notice><div className="admin-station-summary">
+    <section className="admin-workstation-card"><div className="admin-workstation-head"><div><small>Текущее рабочее место</small><h2>{stationName(number,mode)}</h2></div>{mode!=='server'&&mode!=='setup'&&<button type="button" aria-label="Изменить номер текущего рабочего места" title="Изменить номер" disabled={!demo&&!desktop} onClick={()=>window.dispatchEvent(new Event(demo?'demo-edit-number':'edit-device-connection'))}><Pencil size={18}/></button>}</div>
       {numberTip&&<div className="admin-setup-tip">Здесь можно изменить номер рабочего места.<button aria-label="Закрыть подсказку" onClick={()=>{sessionStorage.removeItem('training112:show-number-tip');setNumberTip(false);}}><X size={16}/></button></div>}
     </section>
-    <section className="admin-workstation-card"><div className="admin-workstation-head"><div><small>Учебный сервер</small><h2>{connection?.name||'Учебный сервер'}</h2><p>{serverUrl}</p></div><button type="button" aria-label={mode==='server'?'Изменить название сервера':'Изменить учебный сервер'} title={mode==='server'?'Изменить название':'Изменить сервер'} disabled={!demo&&mode!=='server'} onClick={()=>{if(mode==='server'){setServerName(connection?.name||'');setEditingName(v=>!v);}else window.dispatchEvent(new Event('demo-edit-server'));}}><Pencil size={18}/></button></div>
+    <section className="admin-workstation-card"><div className="admin-workstation-head"><div><small>Учебный сервер</small><h2>{connection?.name||'Учебный сервер'}</h2><p>{serverUrl}</p></div><button type="button" aria-label={mode==='server'?'Изменить название сервера':'Изменить учебный сервер'} title={mode==='server'?'Изменить название':'Изменить сервер'} disabled={!demo&&!desktop&&mode!=='server'} onClick={()=>{if(desktop&&!demo){window.dispatchEvent(new Event('edit-device-connection'));}else if(mode==='server'){setServerName(connection?.name||'');setEditingName(v=>!v);}else window.dispatchEvent(new Event('demo-edit-server'));}}><Pencil size={18}/></button></div>
       {mode==='server'&&!connection?.named&&<div className="admin-setup-tip">Дайте серверу название, например «Кабинет 204». По нему ученики найдут свой класс.<button title="Задать название" onClick={()=>{setServerName('');setEditingName(true);}}><Pencil size={16}/></button></div>}
       {editingName&&<form className="server-name-form" onSubmit={async e=>{e.preventDefault();try{await api('/management/server-name','POST',{name:serverName});setEditingName(false);setNameError('');loadConnection();}catch(e:any){setNameError(e.message);}}}><label>Название сервера<input autoFocus required maxLength={100} placeholder="Кабинет 204" value={serverName} onChange={e=>setServerName(e.target.value)}/></label><button className="primary">Сохранить</button></form>}<Notice>{nameError}</Notice>
       {serverTip&&<div className="admin-setup-tip">Здесь можно выбрать другой сервер.<button aria-label="Закрыть подсказку" onClick={()=>{sessionStorage.removeItem('training112:show-server-tip');setServerTip(false);}}><X size={16}/></button></div>}

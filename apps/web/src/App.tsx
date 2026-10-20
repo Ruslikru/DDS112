@@ -6,6 +6,7 @@ import {StudentPanel} from './student-panel';
 import {TeacherStudents,TeacherAnalytics} from './teacher';
 import {TeacherModes} from './teacher-modes';
 import {ManagementSettings,Services,SystemUpdates} from './management';
+import {DeviceConnectionSetup} from './device-connection';
 import {StationLogin} from './station-login';
 import {Classroom,ClassroomModes,TeacherWorkstations} from './classroom';
 import {AdminWorkstations,DemoStationSetup,ServerNameSetup} from './demo-setup';
@@ -81,7 +82,7 @@ import { Tickets, TicketEditor } from "./tickets";
 import { People, Audit, System } from "./admin";
 function deviceBadgeText() {
   const mode=localStorage.getItem('training112:station-mode');
-  if(mode==='server')return 'Это сервер';
+  if(mode==='server')return localStorage.getItem('training112:network-mode')==='local'?'На одном ПК':'Это сервер';
   if(mode==='client'){
     const number=localStorage.getItem('training112:station-configured')==='true' ? localStorage.getItem('training112:station-number') : '';
     return number ? `Это рабочее место №${number}` : 'Это рабочее место';
@@ -95,6 +96,11 @@ function AppDeviceBadge(){
   return text ? <span className="device-role-app" role="status">{text}</span> : null;
 }
 
+function nativeLoginRole(){
+ if(localStorage.getItem('training112:desktop')!=='true')return '';
+ return localStorage.getItem('training112:network-mode')==='local'?'local':localStorage.getItem('training112:station-mode')||'setup';
+}
+
 function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -105,16 +111,18 @@ function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
     [demoRole, setDemoRole] = useState(localStorage.getItem('training112:demo-role') || ''),
     [demoPassword, setDemoPassword] = useState(localStorage.getItem('training112:demo-password-hint') || ''),
     [welcome, setWelcome] = useState(sessionStorage.getItem('training112:demo-welcome') || ''),
-    [hintVisible, setHintVisible] = useState(false);
+    [hintVisible, setHintVisible] = useState(false),
+    [desktopRole,setDesktopRole]=useState(nativeLoginRole);
   const loginInput = useRef<HTMLInputElement>(null);
   const passwordInput = useRef<HTMLInputElement>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleHint = () => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
-    if (demoRole) idleTimer.current = setTimeout(() => setHintVisible(true), 30_000);
+    if (demoRole||desktopRole) idleTimer.current = setTimeout(() => setHintVisible(true), 30_000);
   };
   useEffect(() => {
     const update = () => {
+      setDesktopRole(nativeLoginRole());
       setServerMode(localStorage.getItem('training112:station-mode')==='server');
       setStationConfigured(localStorage.getItem('training112:station-configured')==='true');
       setDemoRole(localStorage.getItem('training112:demo-role') || '');
@@ -137,7 +145,8 @@ function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
         const info=await bridge.get_demo_identity();
         if(!active)return true;
         if(info.role){
-          setDemoRole(info.role);
+          if(info.demo!==false)setDemoRole(info.role);
+          if(info.desktop)setDesktopRole(info.role);
           setDemoPassword(info.password||'');
           setStationConfigured(Boolean(info.configured));
           if(info.role==='client'&&info.configured)setWelcome('');
@@ -150,11 +159,11 @@ function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
     return()=>{active=false;clearInterval(timer);};
   },[]);
   useEffect(() => {
-    if (!demoRole || welcome) return;
+    if ((!demoRole&&!desktopRole) || welcome) return;
     const reveal = setTimeout(() => setHintVisible(true), 400);
     scheduleHint();
     return () => { clearTimeout(reveal); if (idleTimer.current) clearTimeout(idleTimer.current); };
-  }, [demoRole, welcome]);
+  }, [demoRole,desktopRole,welcome]);
   return (
     <div className="login-page">
       <form
@@ -166,16 +175,16 @@ function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
           setError("");
           const f = new FormData(e.currentTarget);
           try {
-            if (demoRole === 'client' && localStorage.getItem('training112:station-configured') !== 'true' && f.get('login') !== 'admin') {
+            if ((demoRole||desktopRole) === 'client' && localStorage.getItem('training112:station-configured') !== 'true' && f.get('login') !== 'admin') {
               throw new Error('Сначала войдите как администратор и назначьте номер рабочего места.');
             }
-            if (serverMode && serverReady!==true && f.get('login') !== 'admin') {
+            if (serverMode && serverReady===false && f.get('login') !== 'admin') {
               throw new Error('Сначала войдите как администратор и задайте название учебного сервера.');
             }
             onLogin(await api("/login", "POST", Object.fromEntries(f)));
           } catch (e: any) {
             setError(e.message);
-            if (demoRole) setHintVisible(true);
+            if (demoRole||desktopRole) setHintVisible(true);
           } finally {
             setBusy(false);
           }
@@ -210,12 +219,12 @@ function Login({ onLogin }: { onLogin: (u: Obj) => void }) {
           ДДС — учебный контур
         </div>
         {deviceBadgeText() && <div className="device-role-login" role="status">{deviceBadgeText()}</div>}
-        {serverMode&&serverReady!==true&&<p className="server-setup-login-note">Сначала войдите администратором и задайте название сервера.</p>}
-        {demoRole && hintVisible && !welcome && <aside className="demo-hint" aria-label="Подсказка для входа">
-          <button type="button" className="demo-hint-close" aria-label="Закрыть подсказку" onClick={() => { setHintVisible(false); scheduleHint(); }}><X size={18}/></button>
-          <p>{demoRole === 'server' ? serverReady!==true ? 'Это эмуляция ПК сервера. Сначала войдите администратором и задайте название сервера.' : 'Это эмуляция ПК сервера. На нём можно войти в учётную запись преподавателя или администратора.' : !stationConfigured ? 'Это новое рабочее место. Сначала войдите администратором и назначьте номер рабочего места.' : 'Это эмуляция рабочего места. На нём можно войти в учётную запись администратора или одного из студентов.'}</p>
-          <div><span>Быстрый вход</span><div className="demo-accounts">{(demoRole === 'server' ? serverReady!==true ? ['admin'] : ['teacher','admin'] : !stationConfigured ? ['admin'] : ['admin','student1','student2','student3','student4','student5']).map(account=><button type="button" key={account} onClick={() => { if(loginInput.current && passwordInput.current){loginInput.current.value=account;passwordInput.current.value=demoPassword;loginInput.current.focus();scheduleHint();} }}><b>{account==='admin'?'Администратор':account==='teacher'?'Преподаватель':`Студент ${account.replace('student','')}`}</b>{['student1','student2'].includes(account)&&<span className="demo-account-badge">Новичок</span>}</button>)}</div></div>
+        {(demoRole||desktopRole)&&hintVisible&&!welcome&&<aside className="demo-hint" aria-label="Подсказка для входа">
+          <button type="button" className="demo-hint-close" aria-label="Закрыть подсказку" onClick={()=>{setHintVisible(false);scheduleHint();}}><X size={18}/></button>
+          <p>{desktopRole==='setup'?'Войдите администратором и настройте этот компьютер.':desktopRole==='local'?'Вход на этом компьютере: администратор, преподаватель или студент.':(demoRole||desktopRole)==='server'?'Вход на сервере класса: преподаватель или администратор.':stationConfigured?'Вход на рабочем месте: студент или администратор.':'Войдите администратором и назначьте номер этому рабочему месту.'}</p>
+          <div><span>Быстрый вход</span><div className="demo-accounts">{(desktopRole==='setup'||(demoRole||desktopRole)==='server'&&serverReady===false||((demoRole||desktopRole)==='client'&&!stationConfigured)?['admin']:(demoRole||desktopRole)==='server'?['teacher','admin']:desktopRole==='local'?['admin','teacher','student','student2']:demoRole?['admin','student1','student2','student3','student4','student5']:['admin','student','student2']).map(account=><button type="button" key={account} onClick={()=>{if(loginInput.current&&passwordInput.current){loginInput.current.value=account;passwordInput.current.value=demoPassword;loginInput.current.focus();scheduleHint();}}}><b>{account==='admin'?'Администратор':account==='teacher'?'Преподаватель':account==='student'?'Студент 1':`Студент ${account.replace('student','')}`}</b></button>)}</div></div>
         </aside>}
+
       </form>
       {welcome && <div className="demo-welcome-backdrop" role="presentation"><div className="demo-welcome" role="dialog" aria-modal="true" aria-labelledby="demo-welcome-title">
         <h2 id="demo-welcome-title">{welcome === 'server' ? 'Сервер запущен' : 'Новое рабочее место'}</h2>
@@ -324,7 +333,7 @@ export function App() {
     ...(user.role === "admin" ? [["/system", "Система", Settings]] : []),
   ];
   return (
-    <UserContext.Provider value={user}><RuntimeStatus/><NetworkStatus key={user.id} user={user.id}/>{user.role==='student'&&<AssignmentNotifications key={user.id}/>}<ClassroomClient>{user.role!=='student'&&<VoiceQueue/>}{user.role!=='student'&&<><AssistantButton/><TeacherAssistant/></>}{!location.pathname.startsWith('/attempts/')&&<IntroGate/>}{user.role==='admin'&&<ServerNameSetup/>}{user.role==='admin'&&<DemoStationSetup user={user}/>}<DemoTeacherWelcome user={user}/>
+    <UserContext.Provider value={user}><RuntimeStatus/><NetworkStatus key={user.id} user={user.id}/>{user.role==='student'&&<AssignmentNotifications key={user.id}/>}<ClassroomClient>{user.role!=='student'&&<VoiceQueue/>}{user.role!=='student'&&<><AssistantButton/><TeacherAssistant/></>}{!location.pathname.startsWith('/attempts/')&&<IntroGate/>}{user.role==='admin'&&<><ServerNameSetup/><DeviceConnectionSetup/></>}{user.role==='admin'&&<DemoStationSetup user={user}/>}<DemoTeacherWelcome user={user}/>
       <div
         className={
           "app " + (user.role!=="student"?"staff-app ":"") +

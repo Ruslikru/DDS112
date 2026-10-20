@@ -68,13 +68,21 @@ class DiscoveryServer:
 
 
 def discover(previous='', timeout=1.4, port=PORT, targets=None):
+    from device_runtime.network import lan_addresses,windows_adapters
+    import ipaddress
+    local_ips=lan_addresses()
+    broadcasts=[]
+    for row in windows_adapters():
+        if row['physical']:
+            try:broadcasts.append(str(ipaddress.ip_network(row['ip']+'/'+row['mask'],strict=False).broadcast_address))
+            except ValueError:pass
     nonce = secrets.token_hex(16)
     query = json.dumps({'protocol': PROTOCOL, 'nonce': nonce}).encode()
     candidates = {previous.rstrip('/')} if previous else set()
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         probe.settimeout(.15)
-        for host in targets or ['255.255.255.255', '127.0.0.1']:
+        for host in targets or [*broadcasts,'255.255.255.255','127.0.0.1']:
             try:
                 probe.sendto(query, (host, port))
             except OSError:
@@ -89,14 +97,18 @@ def discover(previous='', timeout=1.4, port=PORT, targets=None):
                 http_port = reply.get('port')
                 if isinstance(http_port, int) and 1 <= http_port <= 65535:
                     candidates.add(f'http://{address[0]}:{http_port}')
+                    if address[0]=='127.0.0.1':candidates.update(f'http://{ip}:{http_port}' for ip in local_ips)
             except (socket.timeout, ValueError, OSError):
                 continue
     with ThreadPoolExecutor(max_workers=8) as pool:
         found = [item for item in pool.map(verify, sorted(candidates)) if item]
     # A server on this PC may answer both broadcast and loopback.
     unique = {}
+    def rank(item):
+        host=urlsplit(item['url']).hostname
+        return (host=='127.0.0.1',local_ips.index(host) if host in local_ips else len(local_ips),item['url'])
     for item in found:
         key = item['id']
-        if key not in unique or '127.0.0.1' in item['url']:
+        if key not in unique or rank(item)<rank(unique[key]):
             unique[key] = item
     return sorted(unique.values(), key=lambda item: (item['name'], item['url']))

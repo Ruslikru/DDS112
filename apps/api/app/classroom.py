@@ -25,11 +25,9 @@ def server_setup():
 @router.get('/connection')
 def connection(request:Request,u=Depends(m.current)):
     m.staff(u)
-    import os,socket
+    from device_runtime.network import lan_addresses
     port=8765 if os.getenv('CLASSROOM_SERVER')=='1' else request.url.port or 8000
-    try:addresses={info[4][0] for info in socket.getaddrinfo(socket.gethostname(),None,socket.AF_INET)}
-    except OSError:addresses=set()
-    urls=[f'http://{ip}:{port}' for ip in sorted(addresses) if not ip.startswith(('127.','169.254.'))]
+    urls=[f'http://{ip}:{port}' for ip in lan_addresses()] if os.getenv('CLASSROOM_SERVER')=='1' else []
     from .server_identity import identity,is_ready
     return {**identity(),'ready':is_ready(),'urls':urls}
 
@@ -66,6 +64,28 @@ def register(data:Register,db=Depends(m.getdb)):
     if len(db.scalars(select(Workstation).limit(251)).all())>=250:m.fail('Лимит рабочих мест достигнут')
     secret=secrets.token_urlsafe(32);w=Workstation(id=secrets.token_hex(16),number=data.number,secret_hash=hashlib.sha256(secret.encode()).hexdigest(),approved=os.getenv('DEMO_CLASSROOM')=='1')
     db.add(w);db.commit();return {'id':w.id,'token':secret,'number':w.number}
+
+class WorkstationSetup(BaseModel):
+    number:str=Field(pattern=r'^[1-9][0-9]{0,2}$')
+    station_token:str=Field(default='',max_length=200)
+
+@router.post('/workstation-setup')
+def workstation_setup(data:WorkstationSetup,u=Depends(m.current),db=Depends(m.getdb)):
+    m.admin(u)
+    token=data.station_token
+    row=db.scalar(select(Workstation).where(Workstation.secret_hash==hashlib.sha256(token.encode()).hexdigest())) if token else None
+    if row and row.id==(os.getenv('CLASSROOM_SERVER_STATION_ID') or os.getenv('DEMO_SERVER_STATION_ID')):m.fail('Номер назначается рабочему месту, а не серверу')
+    occupied=db.scalar(select(Workstation).where(Workstation.number==data.number))
+    if occupied and (not row or occupied.id!=row.id):m.fail('Номер ПК '+data.number+' уже занят другим рабочим местом. Выберите свободный номер.',409)
+    if not row:
+        if len(db.scalars(select(Workstation).limit(251)).all())>=250:m.fail('Лимит рабочих мест достигнут')
+        token=secrets.token_urlsafe(32)
+        row=Workstation(id=secrets.token_hex(16),number=data.number,secret_hash=hashlib.sha256(token.encode()).hexdigest(),approved=True)
+        db.add(row)
+    row.number=data.number;row.approved=True;row.blocked=False
+    m.audit(db,u,'workstation_configured',row.id,{'number':row.number})
+    db.commit()
+    return {'id':row.id,'number':row.number,'token':token,'approved':True,'configured':True}
 
 @router.get('/admission')
 def admission(request:Request,db=Depends(m.getdb)):

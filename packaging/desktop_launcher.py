@@ -106,7 +106,7 @@ class Server:
             def health():
                 from apps.api.app.server_identity import identity
                 return {'app': APP_ID, 'token': self.token, 'version': VERSION,
-                        'setup_policy': 'confirm-name-each-start', **identity()}
+                        'setup_policy': 'persistent-device-setup', **identity()}
             app.router.routes.insert(0, APIRoute('/desktop-health', health, methods=['GET']))
             config = uvicorn.Config(app, host='127.0.0.1', log_config=None, access_log=False,
                                     loop='asyncio', http='h11', ws='none', timeout_graceful_shutdown=10)
@@ -360,15 +360,32 @@ def desktop(data):
     native_window.run(data, sys.modules[__name__])
 
 
+def wait_for_previous_process(pid):
+    if not pid or os.name!='nt':return
+    from ctypes import wintypes
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    kernel.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
+    kernel.OpenProcess.restype=wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes=[wintypes.HANDLE,wintypes.DWORD]
+    kernel.CloseHandle.argtypes=[wintypes.HANDLE]
+    handle=kernel.OpenProcess(0x00100000,False,pid)
+    if not handle:return
+    try:
+        if kernel.WaitForSingleObject(handle,60000)==258:raise RuntimeError('Предыдущий экземпляр ещё завершает работу. Запустите приложение повторно.')
+    finally:kernel.CloseHandle(handle)
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--data-dir',type=Path)
     parser.add_argument('--self-test',action='store_true')
     parser.add_argument('--configure-classroom',action='store_true')
     parser.add_argument('--resume-profile',type=Path)
+    parser.add_argument('--wait-for-pid',type=int)
     from launch_options import add_launch_arguments, launch_mode
     add_launch_arguments(parser)
     args=parser.parse_args()
+    wait_for_previous_process(args.wait_for_pid)
     os.environ['DESKTOP_LAUNCH_MODE']=launch_mode(args)
     if args.resume_profile:os.environ['RESUME_CLASSROOM_PROFILE']=str(args.resume_profile.resolve())
     data=(args.data_dir or Path(os.environ['LOCALAPPDATA'])/'Dispetcher112').resolve()
