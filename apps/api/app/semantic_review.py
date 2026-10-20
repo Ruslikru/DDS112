@@ -154,20 +154,21 @@ async def worker():
     while True:
         await asyncio.sleep(.5)
         try:
+            from . import result_report
+            report_id=await asyncio.to_thread(result_report.next_attempt)
+            if report_id is not None:
+                await asyncio.to_thread(result_report.generate,report_id)
+                continue
             if ai.lock.locked():continue
             attempt_id=await asyncio.to_thread(next_attempt)
             if attempt_id is not None:await asyncio.to_thread(review_attempt,attempt_id)
             else:
-                from . import result_report
-                report_id=await asyncio.to_thread(result_report.next_attempt)
-                if report_id is not None:await asyncio.to_thread(result_report.generate,report_id)
+                from . import conversation_review
+                live_id=await asyncio.to_thread(conversation_review.next_attempt)
+                if live_id is not None:await asyncio.to_thread(conversation_review.generate,live_id)
                 else:
-                    from . import conversation_review
-                    live_id=await asyncio.to_thread(conversation_review.next_attempt)
-                    if live_id is not None:await asyncio.to_thread(conversation_review.generate,live_id)
-                    else:
-                        warm_id=await asyncio.to_thread(result_report.next_warm)
-                        if warm_id is not None:await asyncio.to_thread(result_report.generate,warm_id)
+                    warm_id=await asyncio.to_thread(result_report.next_warm)
+                    if warm_id is not None:await asyncio.to_thread(result_report.generate,warm_id)
         except asyncio.CancelledError:raise
         except Exception:
             import logging

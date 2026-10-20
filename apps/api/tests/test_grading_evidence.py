@@ -51,6 +51,21 @@ def test_background_review_waits_for_end_of_exercise_not_each_phone_reply():
     assert ready_for_review(p)
 
 
+def test_ready_report_does_not_wait_for_busy_model(monkeypatch):
+    import asyncio
+    from apps.api.app import semantic_review as sr,result_report
+    generated=[];ticks=[]
+    async def tick(_):
+        if ticks:raise asyncio.CancelledError
+        ticks.append(True)
+    monkeypatch.setattr(sr.asyncio,'sleep',tick)
+    monkeypatch.setattr(sr.ai,'lock',SimpleNamespace(locked=lambda:True))
+    monkeypatch.setattr(result_report,'next_attempt',lambda:42)
+    monkeypatch.setattr(result_report,'generate',generated.append)
+    with pytest.raises(asyncio.CancelledError):asyncio.run(sr.worker())
+    assert generated==[42]
+
+
 def at(second):
     return f'2026-10-20T10:00:{second:02d}+03:00'
 
