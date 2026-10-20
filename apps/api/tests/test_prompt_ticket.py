@@ -114,7 +114,7 @@ def test_nearest_type_prefers_titles_without_extra_words(author,monkeypatch):
 def test_without_model_rules_and_template_still_give_a_draft(author,monkeypatch):
     from apps.api.app import prompt_ticket
     def unavailable(*a,**kw):raise RuntimeError('Локальная модель не установлена. Нужна папка local_ai с моделью и runtime.')
-    monkeypatch.setattr(prompt_ticket.runtime,'complete_pre',unavailable)
+    monkeypatch.setattr(prompt_ticket.text_engine,'complete',unavailable)
     from apps.api.app import scenario_wizard
     monkeypatch.setattr(scenario_wizard,'complete',lambda *a,**kw:scenario_wizard.m.fail('Локальная модель не установлена',503))
     body=generate(author,'создай билет про лифт, застряли двое, на 2 звезды')
@@ -129,7 +129,7 @@ def test_without_model_rules_and_template_still_give_a_draft(author,monkeypatch)
 def test_busy_model_is_reported(author,monkeypatch):
     from apps.api.app import prompt_ticket
     def busy(*a,**kw):raise RuntimeError('Нейросеть занята другим запросом. Повторите через несколько секунд.')
-    monkeypatch.setattr(prompt_ticket.runtime,'complete_pre',busy)
+    monkeypatch.setattr(prompt_ticket.text_engine,'complete',busy)
     r=post(author,'/ai/prompt',{'prompt':'Пожар в подъезде жилого дома'})
     assert r.status_code==503 and 'занята' in r.text
 
@@ -152,7 +152,7 @@ FIRE='''Пожар в квартире 21 этажного здания. Пож�
 def test_long_description_without_model_keeps_place_people_and_scene(author,monkeypatch):
     from apps.api.app import prompt_ticket
     def unavailable(*a,**kw):raise RuntimeError('Локальная модель не установлена. Нужна папка local_ai с моделью и runtime.')
-    monkeypatch.setattr(prompt_ticket.runtime,'complete_pre',unavailable)
+    monkeypatch.setattr(prompt_ticket.text_engine,'complete',unavailable)
     body=generate(author,FIRE)
     ticket,meta=body['data'],body['meta'];task=ticket['tasks'][0];card=task['initial_card']
     assert meta['slots']['incident_type']=='пожар: квартира',meta['candidates']

@@ -9,21 +9,5 @@
   "bytes": 2497281120,
   "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
   "runtime": "llama.cpp b11149",
-  "runtime_source": "https://github.com/ggml-org/llama.cpp/releases/tag/b11149",
-  "assistant": {
-    "model": "Qwen2.5-1.5B-Instruct",
-    "training_steps": 1000,
-    "dataset": "domain_v2",
-    "file": "models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
-    "bytes": 1117320736,
-    "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
-    "source": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-    "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
-    "adapter": {
-      "file": "models/qwen-dds-1000-f32.gguf",
-      "bytes": 8732128,
-      "sha256": "644cac23cc9493c1411de2e6424e7c90038766a4a2df11f995c8a08553775106",
-      "source_sha256": "06c8d0de0611a0ecbe22d3d5a92e5b065f0662b6e9c6249f1f8fb9a22c9e7ad1"
-    }
-  }
+  "runtime_source": "https://github.com/ggml-org/llama.cpp/releases/tag/b11149"
 }

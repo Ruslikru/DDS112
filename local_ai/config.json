@@ -3,5 +3,5 @@
   "threads": 6,
   "context": 4096,
   "model": "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-  "assistant_model": "models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+  "assistant_model": "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
 }

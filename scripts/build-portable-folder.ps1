@@ -42,7 +42,7 @@ foreach ($item in @(
 )) {
     Copy-Tree (Join-Path $root $item[0]) (Join-Path $destination $item[1])
 }
-foreach ($name in @('Qwen3-4B-Instruct-2507-Q4_K_M.gguf', 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf', 'qwen-dds-1000-f32.gguf')) {
+foreach ($name in @('Qwen3-4B-Instruct-2507-Q4_K_M.gguf')) {
     Copy-Required "local_ai/models/$name" (Join-Path $ai "models/$name")
 }
 
@@ -69,7 +69,7 @@ foreach ($mode in @(@('На одном ПК', '--local'), @('В локально
 Для входа выберите учётную запись на экране входа.
 '@ | Set-Content -LiteralPath (Join-Path $destination 'КАК ЗАПУСТИТЬ.txt') -Encoding UTF8
 
-foreach ($relative in @('Dispetcher112.exe','_internal/dist/index.html','local_ai/voice/runtime/python.exe','local_ai/voice/models/gigaam/config.json','local_ai/voice/piper/FINAL_MODELS_29800/denis_29800.onnx','local_ai/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','local_ai/models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf','local_ai/models/qwen-dds-1000-f32.gguf','На одном ПК.lnk','В локальной сети.lnk')) {
+foreach ($relative in @('Dispetcher112.exe','_internal/dist/index.html','local_ai/voice/runtime/python.exe','local_ai/voice/models/gigaam/config.json','local_ai/voice/piper/FINAL_MODELS_29800/denis_29800.onnx','local_ai/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','На одном ПК.lnk','В локальной сети.lnk')) {
     if (!(Test-Path -LiteralPath (Join-Path $destination $relative))) { throw "Неполная папка: $relative" }
 }
 Write-Output $destination

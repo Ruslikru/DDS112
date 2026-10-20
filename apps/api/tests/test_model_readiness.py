@@ -31,7 +31,8 @@ def test_authenticated_student_sees_lightweight_status():
         assert response.status_code==200
         data=response.json()
         assert data['cpu_scope']=='machine'
-        assert data['models']['dialogue']['threads']==4
+        assert set(data['models'])=={'cards','stt','tts'}
+        assert data['models']['cards']['threads']>=2
         assert data['models']['stt']['threads']==2
         assert data['models']['tts']['state']=='cold'
 
@@ -45,7 +46,7 @@ def test_supervisor_warms_every_worker_and_recovers_after_exit(monkeypatch):
         def complete(self,*a,**kw):self.load();return {'ready':True},{}
         def warm(self):self.load()
         def settings(self):return {'live':{'dialogue_threads':4,'stt_threads':2,'tts_threads':2,'stt_device':'cpu'}}
-    workers=tuple(Worker() for _ in range(4))
+    workers=tuple(Worker() for _ in range(2))
     monkeypatch.setattr(models,'workers',lambda:workers)
     monkeypatch.setattr(models,'_rows',{})
     async def run():
@@ -58,12 +59,12 @@ def test_supervisor_warms_every_worker_and_recovers_after_exit(monkeypatch):
             # Allow the completion tasks to publish readiness.
             await asyncio.sleep(.05)
             assert models.status()['models']['tts']['state']=='ready'
-            workers[3].process=None
+            workers[1].process=None
             assert models.status()['models']['stt']['state']=='cold'
             for _ in range(150):
-                if workers[3].calls==2:break
+                if workers[1].calls==2:break
                 await asyncio.sleep(.02)
-            assert workers[3].calls==2
+            assert workers[1].calls==2
             await asyncio.sleep(.05)
             assert models.status()['models']['stt']['state']=='ready'
         finally:

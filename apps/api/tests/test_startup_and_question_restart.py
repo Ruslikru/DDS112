@@ -4,20 +4,6 @@ from test_new_student_guidance import classroom
 from test_flows import login,post
 
 
-def test_three_model_paths_start_together(monkeypatch):
-    from local_ai.engine import engine,assistant_engine
-    from apps.api.app.voice import runtime
-    from apps.api.app.startup_models import warm_models
-    barrier=threading.Barrier(3,timeout=3);seen=[]
-    def ready(name):
-        seen.append(name);barrier.wait()
-    monkeypatch.setattr(engine,'start',lambda:ready('cards'))
-    monkeypatch.setattr(assistant_engine,'start',lambda:ready('assistant'))
-    monkeypatch.setattr(runtime,'warm',lambda:ready('speech'))
-    asyncio.run(warm_models())
-    assert set(seen)=={'cards','assistant','speech'}
-    assert not barrier.broken
-
 
 def ask(c,text,dialog=None):
     r=post(c,'/assistant/interpret',{'text':text,'context':{'page':'/learning'},**({'dialog':dialog} if dialog else {})})

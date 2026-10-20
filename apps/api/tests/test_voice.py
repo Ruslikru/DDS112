@@ -97,12 +97,12 @@ def test_retry_failed_requeues_all_failed_for_staff():
 def test_old_voice_settings_migrate_without_losing_voice_or_devices(tmp_path):
     import json
     from local_ai.voice import VoiceRuntime
-    from local_ai.model_catalog import ASSISTANT_MODEL
+    from local_ai.model_catalog import CARD_MODEL
     (tmp_path/'voice-settings.json').write_text(json.dumps({'_version':2,
         'pre':{'llm':'models/Qwen3-0.6B-Q4_K_M.gguf','tts':'silero'},
         'live':{'llm':'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf','tts':'piper-ruslan','stt':'base','stt_device':'gpu','chat_enabled':True}}))
     settings=VoiceRuntime(tmp_path).settings()
-    assert settings['pre']['llm']==settings['live']['llm']==ASSISTANT_MODEL
+    assert settings['pre']['llm']==settings['live']['llm']==CARD_MODEL
     assert settings['pre']['tts']=='piper'
     assert settings['live']['tts']=='piper-ruslan'
     assert settings['live']['stt']=='gigaam'

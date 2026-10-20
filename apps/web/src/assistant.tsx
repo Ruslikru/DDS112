@@ -104,7 +104,7 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const navigate=useNavigate(),location=useLocation();
  const {messages,setMessages,dialog,setDialog,origin,creation,autoRecord,holding}=store;
  const [text,setText]=useState(''),[busy,setBusy]=useState<''|'ask'|'run'|'generate'>('');
- const [voice,setVoice]=useState<VoiceSource>(()=>hasVoiceBridge()?'bridge':'checking'),[recording,setRecording]=useState(false),[listening,setListening]=useState(''),[heard,setHeard]=useState('');
+ const [voice,setVoice]=useState<VoiceSource>('checking'),[recording,setRecording]=useState(false),[listening,setListening]=useState(''),[heard,setHeard]=useState('');
  const stopRecording=useRef<((cancel?:boolean)=>void)|undefined>(undefined),startedAt=useRef(0);
  /** Input level while recording and the loudest moment of the last recording (to tell a silent microphone from unclear speech). */
  const [level,setLevel]=useState(0),peak=useRef(0);
@@ -116,7 +116,7 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  useEffect(()=>{
   if(voice!=='checking')return;
   let alive=true;
-  api('/voice/settings').then((s:Obj)=>{if(alive)setVoice(s?.available?'server':'none');}).catch(()=>{if(alive)setVoice('none');});
+  api('/voice/call-status').then(()=>{if(alive)setVoice('server');}).catch(()=>{if(alive)setVoice('none');});
   return()=>{alive=false;};
  },[voice]);
  useEffect(()=>()=>{stopRecording.current?.();},[]);

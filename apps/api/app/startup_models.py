@@ -26,36 +26,33 @@ class CpuMeter:
         return round(max(0,min(100,100*(1-(value[0]-old[0])/(value[1]-old[1])))),1)
 
 def workers():
-    from local_ai.engine import engine,assistant_engine
+    from local_ai.engine import engine
     from .voice import runtime
-    from .ai_routes import get_dialogue_engine
-    return engine,assistant_engine,get_dialogue_engine(),runtime
+    return engine,runtime
 
 def alive(worker):return worker.process is not None and worker.process.poll() is None
 
 def signatures(items):
-    cards,assistant,dialogue,speech=items;cfg=speech.settings()['live']
-    return {'cards':(cards.config()['model'],cards.config()['mode'],cards.config()['threads']),
-            'assistant':(assistant.config()['model'],assistant.config()['mode'],assistant.config()['threads']),
-            'dialogue':(cfg['dialogue_threads'],),'speech':(cfg['stt_threads'],cfg['tts_threads'],cfg['stt_device'])}
+    cards,speech=items;cfg=speech.settings()['live'];text=cards.config()
+    return {'cards':(text['model'],text['mode'],text['threads']),
+            'speech':(cfg['stt_threads'],cfg['tts_threads'],cfg['stt_device'])}
 
 def ready(key,worker,signature):
     row=_rows.get(key,{})
     return alive(worker) and row.get('state')=='ready' and row.get('pid')==worker.process.pid and row.get('signature')==signature
 
 def status():
-    items=workers();sigs=signatures(items);cfg=items[3].settings()['live']
-    names=('cards','assistant','dialogue','speech');result={}
+    items=workers();sigs=signatures(items);cfg=items[1].settings()['live'];result={}
     with _lock:
-        for key,worker in zip(names,items):
+        for key,worker in zip(('cards','speech'),items):
             row=_rows.get(key,{})
-            result[key]={'state':'ready' if ready(key,worker,sigs[key]) else ('warming' if row.get('state')=='warming' else 'error' if row.get('state')=='error' else 'cold'),
-                         'threads':cfg['stt_threads'] if key=='speech' else sigs[key][-1],
-                         'mode':cfg['stt_device'] if key=='speech' else worker.config()['mode'],
-                         'model':'GigaAM / Piper' if key=='speech' else worker.config()['model']}
-
-        result['stt']={**result['speech'],'threads':cfg['stt_threads'],'model':'GigaAM v3'}
-        result['tts']={**result['speech'],'threads':cfg['tts_threads'],'model':'Piper','mode':'cpu'}
+            state='ready' if ready(key,worker,sigs[key]) else ('warming' if row.get('state')=='warming' else 'error' if row.get('state')=='error' else 'cold')
+            if key=='cards':
+                result[key]={'state':state,'threads':sigs[key][-1],'mode':sigs[key][1],'model':sigs[key][0]}
+            else:
+                # GigaAM and Piper share a process; its warm-up exercises both models.
+                result['stt']={'state':state,'threads':cfg['stt_threads'],'mode':cfg['stt_device'],'model':'GigaAM v3'}
+                result['tts']={'state':state,'threads':cfg['tts_threads'],'mode':'cpu','model':'Piper'}
         return {'models':result,'cpu_percent':_cpu,'cpu_scope':'machine','sample_seconds':2}
 
 async def warm_models():
@@ -76,7 +73,7 @@ async def warm_models():
     try:
         while True:
             sigs=signatures(items)
-            for key,worker in zip(('cards','assistant','dialogue','speech'),items):
+            for key,worker in zip(('cards','speech'),items):
                 if key in tasks and not tasks[key].done():continue
                 with _lock:needs=not ready(key,worker,sigs[key]) and time.monotonic()>=_rows.get(key,{}).get('retry_at',0)
                 # Do not steal the worker from an in-flight conversation.

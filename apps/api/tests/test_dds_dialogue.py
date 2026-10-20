@@ -104,7 +104,12 @@ def test_cancelled_session_never_commits_answer(monkeypatch):
         command(c,latest,'abort')
 
 
-def test_thread_settings_validation_and_roles():
+def test_thread_settings_validation_and_roles(monkeypatch,tmp_path):
+    from local_ai.engine import engine
+    monkeypatch.setattr(engine,'data',tmp_path)
+    from apps.api.app import startup_models
+    async def idle():pass
+    monkeypatch.setattr(startup_models,'warm_models',idle)
     with TestClient(app) as c:
         login(c,'admin')
         r=post(c,'/voice/dialogue-settings',{'dialogue_threads':4,'stt_threads':2,'tts_threads':2})

@@ -1,16 +1,15 @@
-"""Models shipped with the application, including the trained assistant adapter."""
+"""The application ships one shared text model. Legacy names support offline training tools."""
 CARD_MODEL = 'models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
 ASSISTANT_MODEL = 'models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf'
 ASSISTANT_ADAPTER = 'models/qwen-dds-1000-f32.gguf'
 MODELS = {
-    CARD_MODEL: 'Qwen3 4B Instruct · генерация карточек',
-    ASSISTANT_MODEL: 'Qwen 2.5 1.5B Instruct · обучение 1000 шагов',
+    CARD_MODEL: 'Qwen3 4B Instruct · общая текстовая модель',
 }
-MODEL_FILES = (CARD_MODEL, ASSISTANT_MODEL, ASSISTANT_ADAPTER)
+MODEL_FILES = (CARD_MODEL,)
 
 
 def model_files(model):
-    return (model, ASSISTANT_ADAPTER) if model == ASSISTANT_MODEL else (model,)
+    return (model,)
 
 
 def model_available(root, model):

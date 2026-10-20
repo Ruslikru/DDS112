@@ -17,9 +17,9 @@ from logging.handlers import RotatingFileHandler
 class AIUnavailable(RuntimeError):
     pass
 
-from .model_catalog import MODELS, CARD_MODEL, ASSISTANT_MODEL, ASSISTANT_ADAPTER, model_available
+from .model_catalog import MODELS, CARD_MODEL, model_available
 DEFAULT_MODEL = CARD_MODEL
-FAST_MODEL = ASSISTANT_MODEL
+FAST_MODEL = CARD_MODEL
 
 
 class LocalEngine:
@@ -48,8 +48,8 @@ class LocalEngine:
         config.setdefault('execution','server')
         config.setdefault('worker_ids',[])
         config.setdefault('device','')
-        # Never silently run the untrained base or substitute the card generator.
-        config['assistant_model']=ASSISTANT_MODEL
+        # Migrate old assistant settings to the single shared text model.
+        config['assistant_model']=config['model']
         return config
 
     def gpu_devices(self):
@@ -87,9 +87,10 @@ class LocalEngine:
     def set_mode(self, mode):
         self.set_settings(mode=mode)
 
-    def set_settings(self, mode=None, execution=None, worker_ids=None, device=None, model=None, assistant_model=None):
+    def set_settings(self, mode=None, execution=None, worker_ids=None, device=None, model=None, assistant_model=None, threads=None):
         if mode is not None and mode not in ('cpu','gpu'): raise ValueError('Выберите CPU или GPU')
-        if assistant_model is not None and assistant_model != ASSISTANT_MODEL: raise ValueError('Ассистент использует Qwen 2.5 1.5B после 1000 шагов обучения')
+        if assistant_model is not None and assistant_model != CARD_MODEL: raise ValueError('Все текстовые задачи используют Qwen 4B')
+        if threads is not None and (type(threads) is not int or not 1<=threads<=16):raise ValueError('Число потоков должно быть от 1 до 16')
         if assistant_model is not None and not model_available(self.root,assistant_model): raise ValueError('Не найдены база или адаптер обученной модели')
         if execution is not None and execution not in ('server','workstations'): raise ValueError('Выберите место вычислений')
         if model is not None and model not in MODELS: raise ValueError('Неизвестная модель')
@@ -106,6 +107,7 @@ class LocalEngine:
             c = self.config()
             if model is not None:c['model']=model
             if assistant_model is not None:c['assistant_model']=assistant_model
+            if threads is not None:c['threads']=threads
             if mode is not None:c['mode']=mode
             if device is not None:c['device']=device
             if execution is not None:c['execution']=execution
@@ -132,7 +134,6 @@ class LocalEngine:
                 '-t', str(c['threads']), '-tb', str(c['threads']), '-ngl', '0' if c['mode'] == 'cpu' else '99',
                 '-c', str(c['context']), '-np', '1', '--reasoning', 'off', '--api-key', self.key]
         if c['mode']=='gpu' and c['device']:args+=['--device',c['device']]
-        if c['model']==ASSISTANT_MODEL:args+=['--lora',str(self.root/ASSISTANT_ADAPTER)]
         logger=logging.getLogger('training112.llama.'+str(id(self)));logger.setLevel(logging.INFO);logger.propagate=False;logger.disabled=False
         for old in logger.handlers[:]: old.close();logger.removeHandler(old)
         self.log_handler=RotatingFileHandler(logs/'local-ai.log',maxBytes=5_000_000,backupCount=2,encoding='utf-8')
@@ -149,7 +150,7 @@ class LocalEngine:
         self.on_event('ai_starting',mode=c['mode'],threads=c['threads'],model=model.name,pid=self.process.pid)
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
-            if self.process.poll() is not None: break
+            if self.process is None or self.process.poll() is not None: break
             try:
                 req = urllib.request.Request(self.url + '/health', headers={'Authorization': 'Bearer ' + self.key})
                 with urllib.request.urlopen(req, timeout=1) as response:
@@ -189,7 +190,6 @@ class LocalEngine:
             self.on_event('ai_request_finished',**timing,usage=result.get('usage',{}))
             return value, {'model':Path(self.config()['model']).stem,'mode':self.config()['mode'],
                            'warm':warm,'threads':self.config()['threads'],
-                           **({'adapter':ASSISTANT_ADAPTER,'training_steps':1000} if self.config()['model']==ASSISTANT_MODEL else {}),
                            **timing,'usage':result.get('usage',{})}
         except AIUnavailable as error:
             self.on_event('ai_request_failed',error=str(error))
@@ -202,37 +202,4 @@ class LocalEngine:
         finally: self.lock.release()
 
 
-class DialogueEngine(LocalEngine):
-    """Independent CPU conversation worker; never changes training or teacher settings."""
-    def __init__(self,main,settings):
-        super().__init__(main.root,main.data/'dds-dialogue')
-        self.main=main;self.settings=settings;self.active_threads=None
-
-    def config(self):
-        c=self.main.config()
-        c.update(model=CARD_MODEL,mode='cpu',execution='server',context=2048,
-                 threads=self.active_threads or self.settings().get('dialogue_threads',4))
-        return c
-
-    def start(self):
-        threads=self.settings().get('dialogue_threads',4)
-        if self.active_threads!=threads:
-            self.stop();self.active_threads=threads
-        super().start()
-
-
-class AssistantEngine(LocalEngine):
-    """Second llama-server with the assistant model; mode, threads and context follow the main engine's settings."""
-    def __init__(self, main):
-        super().__init__(main.root, main.data / 'assistant-llm')
-        self.main = main
-
-    def config(self):
-        c = self.main.config(); c['model'] = c['assistant_model']; return c
-
-    def set_settings(self, *args, **kwargs):
-        raise ValueError('Настройки модели ассистента меняются в основном движке')
-
-
 engine = LocalEngine()
-assistant_engine = AssistantEngine(engine)

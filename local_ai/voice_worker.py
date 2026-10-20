@@ -64,9 +64,11 @@ def run(req):
             voice=piper_voice(candidate,threads=tts_threads)
             import io
             with wav_module.open(io.BytesIO(),'wb') as wav_file:voice.synthesize_wav('На связи.',wav_file)
-        # Exercise the acoustic path too, rather than marking loaded weights as warmed.
+        # Warm decoding and audio imports too: the first utterance uses this same path.
+        import av
         with torch.inference_mode():
-            stt.model.forward(torch.zeros((1,16000),device=device),torch.tensor([16000],device=device))
+            encoded,encoded_len=stt.model.forward(torch.zeros((1,16000),device=device),torch.tensor([16000],device=device))
+            stt.model.decoding.decode(stt.model.head,encoded,encoded_len)
         if ('piper',name,tts_threads)!=tts_key:
             tts=piper_voice(name,threads=tts_threads)
             tts_key=('piper',name,tts_threads)

@@ -7,7 +7,7 @@ import re
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from . import main as m
-from .voice import runtime
+from local_ai.engine import engine as text_engine
 from .scenario_facts import GEOGRAPHY_PROMPT, clean_story, scene_seed, scene_matches, positive_facts
 from .assistant_tickets import (GENERIC_TOPICS, active_services, classifier_search, classifier_traits, confirmed_by_text, match_service,
                                 normalize, parse_create, resolve_incident, service_tags, stem, traits_in_text)
@@ -24,7 +24,7 @@ class ModelDown(Exception):
 def complete(*args,**kwargs):
     """The main («pre») model, as in the wizard. A model that cannot run raises ModelDown with the reason;
     a busy model is an error the teacher can retry."""
-    try:return runtime.complete_pre(*args,**kwargs)
+    try:return text_engine.complete(*args,**kwargs)
     except Exception as error:
         if 'занят' in str(error).casefold():m.fail(str(error),503)
         logging.warning('Prompt ticket extraction without model: %s',error)

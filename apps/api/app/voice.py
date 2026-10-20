@@ -246,7 +246,8 @@ def settings(u=Depends(m.current)):
 def dialogue_settings(u=Depends(m.current)):
     m.staff(u)
     cfg=runtime.settings()['live']
-    return {'editable':u.role=='admin',**{k:cfg[k] for k in ('dialogue_threads','stt_threads','tts_threads')}}
+    from local_ai.engine import engine
+    return {'editable':u.role=='admin','dialogue_threads':engine.config()['threads'],**{k:cfg[k] for k in ('stt_threads','tts_threads')}}
 
 @router.get('/call-status')
 def call_status(u=Depends(m.current)):
@@ -257,8 +258,11 @@ def call_status(u=Depends(m.current)):
 def save_dialogue_settings(data:dict,u=Depends(m.current)):
     m.admin(u)
     if set(data)-{'dialogue_threads','stt_threads','tts_threads'}:m.fail('Неизвестная настройка потоков')
-    try:runtime.save({'live':data})
-    except ValueError as error:m.fail(str(error))
+    from local_ai.engine import engine,AIUnavailable
+    try:
+        if 'dialogue_threads' in data:engine.set_settings(threads=data['dialogue_threads'])
+        runtime.save({'live':{k:v for k,v in data.items() if k!='dialogue_threads'}})
+    except (ValueError,AIUnavailable) as error:m.fail(str(error))
     return dialogue_settings(u)
 
 @router.post('/settings')

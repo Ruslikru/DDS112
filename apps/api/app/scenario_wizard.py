@@ -10,9 +10,9 @@ from sqlalchemy import select
 from . import main as m
 from .db import Classifier
 from .classroom_models import ServiceDefinition
-from .voice import runtime
+from local_ai.engine import engine as text_engine
 def complete(*args,**kwargs):
-    try:return runtime.complete_pre(*args,**kwargs)
+    try:return text_engine.complete(*args,**kwargs)
     except Exception as e:m.fail(str(e),503)
 from .dds_scenarios import generated_dds, default_brigade_reports
 from .schemas import TicketData

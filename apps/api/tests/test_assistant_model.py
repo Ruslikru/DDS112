@@ -1,64 +1,43 @@
-"""Teacher assistant: command parsing uses the small assistant model, ticket generation keeps the main one; test catalogue refuses creation."""
+"""One Qwen 4B handles command extraction, authoring and conversations."""
 import json
-from pathlib import Path
 import pytest
-from test_flows import app, TestClient, login, post
-from local_ai.engine import LocalEngine, AssistantEngine, FAST_MODEL, DEFAULT_MODEL
-
-def engine_root(tmp_path,files):
-    root=tmp_path/'ai';(root/'runtime/cpu').mkdir(parents=True);(root/'models').mkdir()
-    for name in files:(root/'models'/name).touch()
-    (root/'runtime/cpu/llama-server.exe').touch()
-    (root/'config.json').write_text(json.dumps({'model':DEFAULT_MODEL,'mode':'cpu','threads':6,'context':4096}))
-    return root
-
-def test_assistant_requires_trained_base_and_adapter_without_fallback(tmp_path):
-    from local_ai.model_catalog import ASSISTANT_ADAPTER
-    from local_ai.engine import AIUnavailable
-    root=engine_root(tmp_path,[Path(FAST_MODEL).name,Path(DEFAULT_MODEL).name])
-    e=LocalEngine(root,tmp_path/'data')
-    assert e.config()['assistant_model']==FAST_MODEL
-    assert not e.status()['assistant_available']
-    second=AssistantEngine(e)
-    with pytest.raises(AIUnavailable):second.start()
-    assert second.process is None
-    (root/ASSISTANT_ADAPTER).touch()
-    assert e.status()['assistant_available']
-    e.set_settings(assistant_model=FAST_MODEL)
-    assert second.config()['model']==FAST_MODEL
-    with pytest.raises(ValueError):e.set_settings(assistant_model=DEFAULT_MODEL)
-    with pytest.raises(ValueError):e.set_settings(assistant_model='models/nope.gguf')
-    (tmp_path/'data'/'ai-settings.json').write_text(json.dumps({**e.config(),'assistant_model':DEFAULT_MODEL}))
-    assert e.config()['assistant_model']==FAST_MODEL
+from test_flows import app,TestClient,login,post
+from local_ai.engine import LocalEngine,DEFAULT_MODEL
 
 
-def test_ask_model_goes_to_assistant_engine(monkeypatch):
-    from apps.api.app import ai_routes, assistant_tickets, scenario_wizard
+def test_old_settings_migrate_to_one_model_without_adapter(tmp_path):
+    root=tmp_path/'ai';(root/'models').mkdir(parents=True)
+    (root/DEFAULT_MODEL).touch()
+    (root/'config.json').write_text(json.dumps({'model':DEFAULT_MODEL,'assistant_model':'models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf','mode':'cpu','threads':6,'context':4096}))
+    engine=LocalEngine(root,tmp_path/'data')
+    assert engine.config()['assistant_model']==DEFAULT_MODEL
+    assert engine.status()['assistant_available']
+    assert len(engine.status()['models'])==1
+    with pytest.raises(ValueError):engine.set_settings(assistant_model='models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf')
+    engine.set_settings(threads=6)
+    assert engine.config()['threads']==6
+
+
+def test_all_text_routes_share_one_engine(monkeypatch):
+    from apps.api.app import ai_routes,prompt_ticket,scenario_wizard,assistant_tickets
+    from local_ai.voice import VoiceRuntime
     calls=[]
-    monkeypatch.setattr(ai_routes.ai,'config',lambda:{'model':DEFAULT_MODEL,'assistant_model':FAST_MODEL})
-    monkeypatch.setattr(ai_routes.assistant_ai,'complete',lambda *a,**kw:(calls.append('assistant') or ({'incident':'лифт','victims':'no','victims_count':0,'difficulty':2,'mode':'dds'},{'model':'fast'})))
-    monkeypatch.setattr(ai_routes.ai,'complete',lambda *a,**kw:(calls.append('main') or ({'description':'Лифт остановился между этажами. Доступ свободен.'},{'model':'main'})))
-    monkeypatch.setattr(scenario_wizard,'complete',lambda *a,**kw:(calls.append('wizard') or ({'description':'Лифт остановился между этажами. Доступ свободен.'},{'model':'main'})))
-    with TestClient(app) as c:
-        login(c,'teacher')
-        r=post(c,'/assistant/interpret',{'text':'создай билет, лифт застрял между этажами','context':{'page':'/'}}).json()
-        assert calls==['assistant'] and r['slots']['incident_type']=='лифт'
-        # When both settings name the same model there is no second server: the main engine answers.
-        monkeypatch.setattr(ai_routes.ai,'config',lambda:{'model':DEFAULT_MODEL,'assistant_model':DEFAULT_MODEL})
-        post(c,'/assistant/interpret',{'text':'создай билет, лифт застрял между этажами','context':{'page':'/'}})
-        assert calls==['assistant','main']
+    monkeypatch.setattr(ai_routes.ai,'complete',lambda *a,**kw:(calls.append(a[0]) or ({'incident':'лифт'},{'model':'Qwen4B'})))
+    assert ai_routes.get_dialogue_engine() is ai_routes.ai
+    for name,call in [('assistant',assistant_tickets.complete),('phone',ai_routes.dialogue_complete),('ticket',prompt_ticket.complete),('wizard',scenario_wizard.complete)]:
+        call(name,'test',{})
+    assert calls==['assistant','phone','ticket','wizard']
 
-def test_assistant_model_route_is_admin_only(monkeypatch):
+
+def test_online_command_does_not_use_llm(monkeypatch):
     from apps.api.app import ai_routes
-    saved=[]
-    monkeypatch.setattr(ai_routes.ai,'set_settings',lambda **kw:saved.append(kw))
-    monkeypatch.setattr(ai_routes.assistant_ai,'stop',lambda:saved.append('stopped'))
-    with TestClient(app) as c:
-        login(c,'teacher')
-        assert post(c,'/ai/assistant-model',{'model':FAST_MODEL}).status_code==403
-        post(c,'/logout');login(c,'admin')
-        assert post(c,'/ai/assistant-model',{'model':FAST_MODEL}).status_code==200
-        assert saved==[{'assistant_model':FAST_MODEL},'stopped']
+    monkeypatch.setattr(ai_routes.ai,'complete',lambda *a,**kw:pytest.fail('Rules command must not call a model'))
+    with TestClient(app) as client:
+        login(client,'teacher')
+        result=post(client,'/assistant/interpret',{'text':'Кто из студентов сейчас онлайн?','context':{'page':'/'}})
+        assert result.status_code==200
+        assert result.json()['intent']=='who_online'
+
 
 def test_test_catalog_refuses_ticket_creation(monkeypatch):
     from apps.api.app import assistant_tickets
