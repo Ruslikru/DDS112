@@ -162,3 +162,20 @@ def test_model_quote_is_verified_and_bad_quote_is_not_shown():
     assert verified_quote('воду перекрыли.','Воду перекрыли.')==('Воду перекрыли.','')
     quote,warning=verified_quote('Утечку устранили','Воду перекрыли.')
     assert quote=='' and warning
+
+def test_enforced_workstations_still_serve_audio_without_header(monkeypatch):
+    """<audio src> and plain fetches cannot send X-Workstation: an admitted student's media must still stream."""
+    monkeypatch.setenv('ENFORCE_WORKSTATIONS','1')
+    with TestClient(app) as c:
+        row=post(c,'/classroom/register',{'number':'audio-'+uuid.uuid4().hex[:6]}).json()
+        login(c,'admin')
+        assert c.patch('/api/classroom/stations/'+row['id'],json={'approved':True,'blocked':False},headers=HEAD).status_code==200
+        c.headers['X-Workstation']=row['token']
+        login(c,'student')
+        library=c.get('/api/call-audio/library').json()['assets']
+        url=library['ring']['url']
+        bare=TestClient(app);bare.cookies=c.cookies
+        assert bare.get(url).status_code==200
+        assert bare.get('/api/attempts/999999').status_code==403
+        c.headers.pop('X-Workstation')
+        assert c.get('/api/classroom/stations').status_code==403

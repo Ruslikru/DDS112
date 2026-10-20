@@ -22,7 +22,10 @@ function useNativeReady(){
 }
 export function useVoiceChat(){
  const ready=useNativeReady(),[value,setValue]=useState(false);
- useEffect(()=>{let alive=true;const update=()=>{bridge()?.voice_status?.().then((v:Obj)=>{if(alive)setValue(v.settings?.live?.chat_enabled===true);}).catch(()=>{});};update();window.addEventListener('voice-chat-settings',update);return()=>{alive=false;window.removeEventListener('voice-chat-settings',update);};},[ready]);return value;
+ useEffect(()=>{let alive=true;const update=()=>{
+  // A browser client (phone, second PC without the Windows app) has no native microphone pipeline: the text chat is its only way to talk.
+  if(!bridge()?.voice_status){if(alive)setValue(true);return;}
+  bridge().voice_status().then((v:Obj)=>{if(alive)setValue(v.settings?.live?.chat_enabled===true);}).catch(()=>{});};update();window.addEventListener('voice-chat-settings',update);return()=>{alive=false;window.removeEventListener('voice-chat-settings',update);};},[ready]);return value;
 }
 async function voiceBridge(){
  // The UI may arrive from a newer classroom server than the native client.

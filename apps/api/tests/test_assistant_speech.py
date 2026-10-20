@@ -58,7 +58,9 @@ def test_whisper_prompt_lists_services_and_digits():
     from test_flows import SessionLocal
     from apps.api.app.db import User
     from sqlalchemy import select
+    with TestClient(app):pass
     with SessionLocal() as db:
         teacher=db.scalar(select(User).where(User.login=='teacher'))
         prompt=speech_prompt(db,teacher)
     assert 'Служба 101' in prompt and 'Создай билет ДДС' in prompt and 'Ученики:' in prompt
+    assert 'на 3 звезды' in prompt and 'билете 12' in prompt

@@ -37,7 +37,10 @@ def current(request:Request,db:Session=Depends(getdb)):
         from .classroom import station
         workstation=station(request,db,False)
         if workstation and workstation.blocked:fail('Устройство исключено из учебного контура',403)
-    if user.role=='student' and (request.headers.get('x-workstation') or os.getenv('ENFORCE_WORKSTATIONS')=='1'):
+    # Audio streams are requested by <audio> elements and plain fetches that cannot carry the workstation header;
+    # the session cookie and the per-attempt media checks still apply to them.
+    media_stream=request.method=='GET' and request.url.path.startswith(('/api/media/','/api/call-audio/assets/'))
+    if user.role=='student' and (request.headers.get('x-workstation') or os.getenv('ENFORCE_WORKSTATIONS')=='1' and not media_stream):
         from .classroom import station
         station(request,db)
     request.state.actor_id=user.id
@@ -94,7 +97,7 @@ def process_events(db):
                 state['brigade_next_at']=time.time()+30
                 state['brigade_waiting_record']=event.id
             state.setdefault('incoming_calls',[]).append({'id':event.id,'contact_id':data.get('contact_id'),'who':data.get('who','Старший бригады'),'received_at':now(),'call_audio':data.get('call_audio',{})})
-        else: state.setdefault('messages',[]).append({**data,'audio':None if state.get('text_only') else data.get('audio_id'),'at':now()})
+        else: state.setdefault('messages',[]).append({**data,'who':data.get('who') or 'Бригада','audio':None if state.get('text_only') else data.get('audio_id'),'at':now()})
         a.state=state; a.revision+=1
         db.add(AttemptEvent(attempt_id=a.id,kind='simulation',data=data)); audit(db,None,'simulation',a.id,data)
     db.commit()

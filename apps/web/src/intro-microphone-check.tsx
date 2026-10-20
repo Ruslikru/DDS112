@@ -2,8 +2,9 @@ import React,{useEffect,useRef,useState} from 'react';
 import {MicButton,record,serverTranscribe} from './voice';
 import './intro-microphone-check.css';
 
-export function IntroMicrophoneCheck({onRecognized}:{onRecognized:(text:string)=>void}){
+export function IntroMicrophoneCheck({onRecognized,onBusyChange}:{onRecognized:(text:string)=>void,onBusyChange?:(busy:boolean)=>void}){
  const [recording,setRecording]=useState(false),[busy,setBusy]=useState(false),[text,setText]=useState(''),[hint,setHint]=useState(''),[level,setLevel]=useState(0);
+ useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
  const stop=useRef<((cancel?:boolean)=>void)|undefined>(undefined),alive=useRef(true);
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;stop.current?.(true);};},[]);
  async function start(){

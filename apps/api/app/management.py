@@ -116,7 +116,7 @@ def devices(request:Request,u=Depends(m.current),db=Depends(m.getdb)):
             agent_online=time.time()-info.get('seen',0)<15
             if time.time()-w.last_seen>=15 and not agent_online:continue
             user=db.get(m.User,w.user_id) if w.user_id else None
-            rows.append({'id':w.id,'number':w.number,'mode':'server' if w.id==server_id() else 'client',
+            rows.append({'id':w.id,'number':w.number,'mode':'server' if w.id==server_id() else 'client','approved':bool(w.approved),
                 'current':bool(own and own.id==w.id),'name':user.name if user else 'Не вошёл','user_id':w.user_id,'online':True,'agent_online':agent_online,
                 'metrics':info.get('metrics',{}) if agent_online and u.role=='admin' else {},'seen':info.get('seen')})
     return sorted(rows,key=lambda r:(r['mode']!='server',r['number']))

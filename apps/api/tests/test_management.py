@@ -208,3 +208,18 @@ def test_server_display_name_is_persistent():
         assert post(admin,'/management/server-name',{'name':' Кабинет 204 '}).status_code==200
         assert identity()=={'name':'Кабинет 204','named':True}
         assert teacher.get('/api/classroom/connection').json()['name']=='Кабинет 204'
+
+def test_admin_sees_pending_workstation_and_admits_it(monkeypatch):
+    monkeypatch.setenv('ENFORCE_WORKSTATIONS','1')
+    with TestClient(app) as admin,TestClient(app) as station:
+        row=post(station,'/classroom/register',{'number':'lan-'+uuid.uuid4().hex[:6]}).json()
+        station.headers['X-Workstation']=row['token']
+        assert post(station,'/classroom/heartbeat').status_code==200
+        refused=station.post('/api/login',json={'login':'student','password':'Training112!'},headers=HEAD)
+        assert refused.status_code==403 and 'допуска' in refused.json()['detail']
+        login(admin,'admin')
+        device=next(d for d in admin.get('/api/management/devices').json() if d['id']==row['id'])
+        assert device['approved'] is False
+        assert admin.patch('/api/classroom/stations/'+row['id'],json={'approved':True,'blocked':False},headers=HEAD).status_code==200
+        assert next(d for d in admin.get('/api/management/devices').json() if d['id']==row['id'])['approved'] is True
+        assert station.post('/api/login',json={'login':'student','password':'Training112!'},headers=HEAD).status_code==200
