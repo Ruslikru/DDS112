@@ -36,7 +36,9 @@ def generate(id):
     try:
         payload=json.dumps({'criterion':c['label'],'expected':c['expected'],'learner_text':c['actual'],'context':model_context(context),'teacher_approved_examples':approved,'teacher_rejected_examples':rejected},ensure_ascii=False,separators=(',',':'))
         if len(payload)>14000:raise ValueError('Слишком большой объём разговора для локальной проверки')
-        value,meta=ai.complete(SYSTEM,payload,SCHEMA,tokens=240,priority=10)
+        from local_ai.context import on_device
+        with on_device(p.state.get('ai_device_id')):
+            value,meta=ai.complete(SYSTEM,payload,SCHEMA,tokens=240,priority=10)
         evaluation=grounded_evaluation(value,c['actual'],meta)
         cached={'signature':key,'evaluation':evaluation}
     except Exception as error:

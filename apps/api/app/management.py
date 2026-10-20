@@ -152,22 +152,30 @@ def action(wid:str,data:Action,u=Depends(m.current),db=Depends(m.getdb)):
     m.audit(db,u,'device_'+data.kind,wid);db.commit();return {'id':row.id}
 
 class AIConfig(BaseModel):
-    mode:Literal['cpu','gpu','server']
+    mode:Literal['cpu','gpu']
     device:str=Field(default='',max_length=100)
+    threads_auto:bool=True
+    threads:int|None=Field(default=None,ge=1,le=1024)
+    stt_threads:int|None=Field(default=None,ge=1,le=1024)
+    tts_threads:int|None=Field(default=None,ge=1,le=1024)
+    stt_device:Literal['cpu','gpu']='cpu'
 
 @router.post('/devices/{wid}/ai')
 def ai_config(wid:str,data:AIConfig,u=Depends(m.current),db=Depends(m.getdb)):
     m.admin(u);device(db,wid)
-    if wid==server_id() and data.mode=='server':m.fail('На сервере выберите CPU или GPU')
-    gpus=state.get(wid,{}).get('metrics',{}).get('ai',{}).get('gpus',[])
-    if data.mode=='gpu' and data.device not in [gpu['id'] for gpu in gpus]:m.fail('Выбранная видеокарта недоступна')
-    row=enqueue(db,wid,'ai',data.model_dump())
-    if wid!=server_id():
-        from local_ai.engine import engine
-        config=engine.config();ids=[x for x in config['worker_ids'] if x!=wid]
-        if data.mode!='server':ids.append(wid)
-        try:engine.set_settings(execution='workstations' if ids else 'server',worker_ids=ids)
-        except Exception as e:m.fail(str(e),409)
+    metrics=state.get(wid,{}).get('metrics',{})
+    ai=metrics.get('ai',{})
+    if data.mode=='gpu' and data.device not in [gpu['id'] for gpu in ai.get('gpus',[])]:m.fail('Выбранная видеокарта недоступна')
+    if data.stt_device=='gpu' and not ai.get('stt_gpu_available'):m.fail('GPU для GigaAM недоступен на этом ПК')
+    payload=data.model_dump(exclude_none=True)
+    if data.threads_auto:
+        for key in ('threads','stt_threads','tts_threads'):payload.pop(key,None)
+    if not data.threads_auto:
+        counts=[payload.get(k) for k in ('threads','stt_threads','tts_threads')]
+        capacity=ai.get('cpu_threads') or metrics.get('cores')
+        if not capacity:m.fail('Дождитесь сведений о процессоре устройства')
+        if any(v is None or v>capacity for v in counts) or sum(counts)>max(3,capacity):m.fail('Распределите потоки в пределах возможностей процессора')
+    row=enqueue(db,wid,'ai',payload)
     m.audit(db,u,'device_ai_settings',wid,data.model_dump());db.commit();return {'id':row.id}
 
 @router.post('/devices/{wid}/desktop')

@@ -9,11 +9,12 @@ from .domain import EMPTY_CARD
 
 
 def create_attempt(db, assignment, task, index, delivered_at=None, flow='sequential', preview=False):
-    from .voice import ensure_ready,attach_audio,readiness
-    # A ticket whose voicing is not complete runs entirely as text: no half-voiced calls, the student is told so.
-    sound=readiness({"tasks":[task]},db) if preview else ensure_ready({"tasks":[task]},db,text_ok=True)
-    text_only=not preview and not sound['ready']
-    task=attach_audio(task,db,text_only=text_only)
+    from .voice import ensure_ready,attach_audio,readiness,device_audio_ready
+    ensure_ready({"tasks":[task]},db)
+    if not device_audio_ready(db,assignment.version_id,assignment.student_id):
+        from .main import fail
+        fail('Записи билета ещё загружаются на этот ПК. Задание начнётся после загрузки.',409)
+    task=attach_audio(task,db)
     # Give simulated callers distinct numbers; preserve any authored number.
     if task.get('phone') in (None,'','+7 (000) 000-00-01'):
         import hashlib
@@ -32,7 +33,7 @@ def create_attempt(db, assignment, task, index, delivered_at=None, flow='sequent
            'brigade_pacing':'timed' if assignment.lesson_id and db.get(Lesson,assignment.lesson_id).config.get('delivery_mode') in ('sprint','dds_stream','cooperative') else 'sequential'}
     from .learning import onboarding_needed
     if task.get('onboarding') and onboarding_needed(db,assignment.student_id):state.update(teacher_assisted=True,guided=True)
-    if text_only:state.update(text_only=True,voice_at_start={'generated':sound['generated'],'total':sound['total']})
+
     if not dds:
         from .classroom_models import Workstation
         station=db.scalar(select(Workstation).where(Workstation.user_id==assignment.student_id,Workstation.approved==True,Workstation.blocked==False).order_by(Workstation.last_seen.desc()))
@@ -71,6 +72,8 @@ def deliver_lesson(db, lesson, timestamp=None):
             due=base+index*interval
             if due>stamp: break
             if index not in existing:
+                from .voice import readiness,device_audio_ready
+                if not readiness({'tasks':[task]},db)['ready'] or not device_audio_ready(db,a.version_id,a.student_id):continue
                 try:
                     with db.begin_nested():
                         create_attempt(db,a,task,index,datetime.fromtimestamp(due,timezone.utc).isoformat(),'dds_stream')

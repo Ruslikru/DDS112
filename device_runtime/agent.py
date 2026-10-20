@@ -163,7 +163,9 @@ class Desktop:
 
 
 class Agent:
-    def __init__(self,config,data,base_data,window,worker,version):
+    def __init__(self,config,data,base_data,window,worker,version,voice=None):
+        self.voice=voice
+        self.voice_capabilities_checked=False
         self.config=config;self.data=data;self.base_data=base_data;self.window=window;self.worker=worker;self.version=version
         from local_ai.engine import engine
         self.engine=worker.engine if worker else engine
@@ -213,8 +215,9 @@ class Agent:
             self.window.evaluate_js("void fetch('/api/logout',{method:'POST',headers:{'X-Requested-With':'Training112','X-Workstation':localStorage.getItem('training112:station-token')||''}}).finally(()=>location.reload())")
         elif kind in ('close','remove'):self.close_after_ack=True
         elif kind=='ai':
-            if self.worker:self.worker.configure(payload['mode'],payload.get('device',''))
-            else:self.engine.set_settings(mode=payload['mode'],device=payload.get('device',''))
+            if payload.get('stt_device')=='gpu' and (not self.voice or not self.voice.status().get('gpu')):raise ValueError('GPU для GigaAM недоступен на этом ПК')
+            self.engine.set_settings(**payload)
+            if self.worker:self.worker.enabled=True
         elif kind=='update':return self.prepare_update(command)
         return {'message':'Выполнено'}
 
@@ -224,7 +227,19 @@ class Agent:
             try:
                 if time.monotonic()-sample_at>2:
                     metrics=self.metrics.read();ai=self.engine.status();sample_at=time.monotonic()
-                ai['compute_mode']='server' if self.worker and not self.worker.enabled else ai['mode']
+                    if self.voice and not self.voice_capabilities_checked:
+                        self.voice.status();self.voice_capabilities_checked=True
+                ai['compute_mode']=ai['mode']
+                if self.voice:
+                    ai['stt_gpu_available']=bool(self.voice.last.get('status',{}).get('gpu'))
+                    ai['stt_device']=self.voice.settings()['live']['stt_device']
+                    if getattr(self.voice,'sync',None):metrics['voice_sync']=self.voice.sync.status
+                    alive=self.voice.process is not None and self.voice.process.poll() is None
+                    models={'cards':{'state':'ready' if ai.get('ready') else 'warming' if ai.get('running') else 'cold','threads':ai['threads'],'mode':ai['mode'],'model':'Qwen 4B'}}
+                    for key,operation in (('stt','transcribe'),('tts','synthesize')):
+                        warm=alive and bool(self.voice.last.get('warm') or self.voice.last.get(operation))
+                        models[key]={'state':'ready' if warm else 'cold','threads':ai[key+'_threads'],'mode':ai.get('stt_device','cpu') if key=='stt' else 'cpu','model':'GigaAM' if key=='stt' else 'Piper'}
+                    metrics['local_models']=models
                 metrics.update(version=self.version,ai=ai,network_ms=latency,desktop_error=error,
                     desktop_scope='window' if self.config.get('demo') else 'desktop',database='Доступна' if self.config['mode']=='server' and (self.data/'dispetcher.db').exists() else None)
                 frame=''

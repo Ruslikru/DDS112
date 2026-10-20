@@ -140,15 +140,8 @@ export function VoiceSettings(_props:{localOnly?:boolean}={}){
   {!nativeReady&&<p className="sound-native-note">Для настройки текстового чата откройте приложение Windows на этом ПК.</p>}
   <div className="sound-microphone-section"><h3>Микрофон</h3><AssistantMicrophoneSettings inline value={mic} disabled={testing} onChange={value=>{setMic(value);selectMicrophone(value);setResult('');}}/>
    <div className="sound-microphone-test"><MicButton recording={recording} disabled={testing&&!recording} onStart={testMicrophone} title="Удерживайте для проверки микрофона"/><div><strong>{recording?'Говорите — запись идёт':testing?'Распознаю запись…':'Проверка микрофона'}</strong><p>{recording?'Отпустите кнопку, чтобы проверить запись.':'Удерживайте кнопку и произнесите короткую фразу.'}</p></div><meter min={0} max={1} value={Math.min(1,level*6)} aria-label="Уровень микрофона"/></div>
-  </div><RuntimeStatsSettings/>{!_props.localOnly&&<DialogueThreads/>}<Notice>{error}</Notice>{result&&<p className="sound-test-result" role="status">{result}</p>}
+  </div><RuntimeStatsSettings/><Notice>{error}</Notice>{result&&<p className="sound-test-result" role="status">{result}</p>}
  </div></section>;
-}
-
-function DialogueThreads(){
- const [value,setValue]=useState<Obj>(),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
- useEffect(()=>{let live=true;api('/voice/dialogue-settings').then(v=>{if(live)setValue(v);}).catch(()=>{});return()=>{live=false;};},[]);
- if(!value)return null;
- return <fieldset disabled={busy||!value.editable}><legend>Нейросети · потоки процессора сервера</legend><p>Qwen 4B общая для ассистента, билетов и разговоров. Новые значения применятся к следующему запросу.</p>{[['dialogue_threads','Qwen 4B — все текстовые задачи'],['stt_threads','Распознавание GigaAM'],['tts_threads','Озвучка']].map(([key,label])=><label key={key}>{label}<input aria-label={label+' — потоки'} type="number" min={1} max={16} value={value[key]} onChange={e=>setValue({...value,[key]:Number(e.target.value)})}/></label>)}<button onClick={async()=>{setBusy(true);setMessage('');try{const {editable,...settings}=value;setValue(await api('/voice/dialogue-settings','POST',settings));setMessage('Настройки сохранены');}catch(e:any){setMessage(e.message);}finally{setBusy(false);}}}>Сохранить потоки</button><p role="status">{message}</p></fieldset>;
 }
 
 export function BrigadeAudio({id,autoPlay=false,playKey=id,hidden=false,onEnded,onPlaying,onError,beforePlay}:{id:string,autoPlay?:boolean,playKey?:string,hidden?:boolean,onEnded?:()=>void,onPlaying?:()=>void,onError?:(message:string)=>void,beforePlay?:(player:HTMLAudioElement)=>Promise<void>}){

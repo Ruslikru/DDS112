@@ -5,7 +5,12 @@ import React,{createContext,useContext,useEffect,useLayoutEffect,useRef,useState
 import html2canvas from 'html2canvas';
 import {api,Obj,UserContext,Notice} from './shared';
 
-export const ClassroomContext=createContext<{links:Obj[],sharing:boolean,setSharing:(v:boolean)=>void,microphone:boolean,setMicrophone:(v:boolean)=>void}>({links:[],sharing:false,setSharing:()=>{},microphone:false,setMicrophone:()=>{}});
+export const ClassroomContext=createContext<{links:Obj[],sharing:boolean,setSharing:(v:boolean)=>void,microphone:boolean,setMicrophone:(v:boolean)=>void,startBroadcast:(students:number[])=>Promise<number>}>({links:[],sharing:false,setSharing:()=>{},microphone:false,setMicrophone:()=>{},startBroadcast:async()=>{throw new Error('Подключение к классу недоступно.');}});
+
+async function captureFrame(){
+ const canvas=await html2canvas(document.body,{scale:Math.min(1,1920/window.innerWidth),logging:false,ignoreElements:e=>e.hasAttribute('data-no-capture')&&!e.classList.contains('teacher-live-bar'),onclone:document=>{document.querySelectorAll<HTMLElement>('.teacher-live-bar').forEach(bar=>{bar.style.visibility='hidden';});},windowWidth:window.innerWidth,windowHeight:window.innerHeight,width:window.innerWidth,height:window.innerHeight,x:window.scrollX,y:window.scrollY,scrollX:window.scrollX,scrollY:window.scrollY});
+ return canvas.toDataURL('image/jpeg',.65);
+}
 
 export function ClassroomClient({children}:React.PropsWithChildren){
  const user=useContext(UserContext),[links,setLinks]=useState<Obj[]>([]),[sharing,setSharing]=useState(()=>user.role==='student'||sessionStorage.getItem('training112:sharing:'+user.id)==='true'),[microphone,setMicrophone]=useState(false),[micPrompt,setMicPrompt]=useState(false),[error,setError]=useState(''),[registered,setRegistered]=useState(()=>!!localStorage.getItem('training112:station-token')&&(localStorage.getItem('training112:demo-role')!=='client'||localStorage.getItem('training112:station-configured')==='true'));
@@ -21,6 +26,30 @@ export function ClassroomClient({children}:React.PropsWithChildren){
   return()=>observer.disconnect();
  },[presenting]);
  const current=useRef({links,sharing,microphone});current.current={links,sharing,microphone};
+ const startingBroadcast=useRef(false);
+ async function startBroadcast(students:number[]){
+  if(startingBroadcast.current)throw new Error('Трансляция уже подключается.');
+  if(!registered)throw new Error('Сначала подключите рабочее место преподавателя к классу.');
+  const ids=[...new Set(students)].filter(id=>Number.isInteger(id)&&id>0);
+  if(!ids.length)throw new Error('Выберите учеников в разделе «Обучение → Делай как я» или назовите ученика.');
+  startingBroadcast.current=true;
+  const wasSharing=current.current.sharing;
+  try{
+   const frame=await captureFrame();
+   // Publish a real frame before connecting pupils; they never receive an empty first screen.
+   await api('/classroom/presence','POST',{page:location.pathname,sharing:true,frame});
+   await api('/classroom/links','POST',{students:ids,mode:'demo'});
+   const incoming:Obj[]=await api('/classroom/presence','POST',{page:location.pathname,sharing:true,frame});
+   const connected=incoming.filter(link=>link.teacher_id===user.id&&link.mode==='demo'&&ids.includes(link.student_id)&&link.frame);
+   if(!ids.every(id=>connected.some(link=>link.student_id===id)))throw new Error('Не удалось подключить всех выбранных учеников. Проверьте, что они ещё в сети, и повторите запуск.');
+   current.current={...current.current,links:incoming,sharing:true};
+   setLinks(incoming);setSharing(true);setError('');
+   return connected.length;
+  }catch(e:any){
+   current.current={...current.current,sharing:wasSharing};setSharing(wasSharing);setError(e.message);
+   throw e;
+  }finally{startingBroadcast.current=false;}
+ }
  const peers=useRef(new Map<string,RTCPeerConnection>()),audios=useRef(new Map<string,HTMLAudioElement>()),stream=useRef<MediaStream|null>(null),pointer=useRef<HTMLDivElement>(null),ice=useRef(new Map<string,RTCIceCandidateInit[]>());
  const signal=(id:string,kind:string,payload:Obj)=>api(`/classroom/links/${id}/signal`,'POST',{kind,payload});
  useEffect(()=>{let active=true;
@@ -28,9 +57,9 @@ export function ClassroomClient({children}:React.PropsWithChildren){
   return()=>{active=false;stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;peers.current.forEach(p=>p.close());peers.current.clear();};
  },[microphone]);
  useEffect(()=>{let stop=false,busy=false;
-  async function tick(){if(stop||busy||!registered)return;busy=true;
+  async function tick(){if(stop||busy||!registered||startingBroadcast.current)return;busy=true;
    try{let frame='';
-    if(current.current.sharing){const canvas=await html2canvas(document.body,{scale:Math.min(1,1920/window.innerWidth),logging:false,ignoreElements:e=>e.hasAttribute('data-no-capture')&&!e.classList.contains('teacher-live-bar'),onclone:document=>{document.querySelectorAll<HTMLElement>('.teacher-live-bar').forEach(bar=>{bar.style.visibility='hidden';});},windowWidth:window.innerWidth,windowHeight:window.innerHeight,width:window.innerWidth,height:window.innerHeight,x:window.scrollX,y:window.scrollY,scrollX:window.scrollX,scrollY:window.scrollY});frame=canvas.toDataURL('image/jpeg',.65);}
+    if(current.current.sharing)frame=await captureFrame();
     const incoming=await api('/classroom/presence','POST',{page:location.pathname,sharing:current.current.sharing,frame});if(!stop){setLinks(incoming);setError('');}
    }catch(e:any){if(!stop){setError(e.message);setLinks([]);}}finally{busy=false;}
   }tick();const timer=setInterval(tick,1800);return()=>{stop=true;clearInterval(timer);};
@@ -68,7 +97,7 @@ export function ClassroomClient({children}:React.PropsWithChildren){
  useEffect(()=>{let last=0;const move=(e:MouseEvent)=>{if(Date.now()-last<120)return;last=Date.now();for(const link of current.current.links)if(link.teacher_id===user.id&&link.mode==='demo')signal(link.id,'pointer',{x:e.clientX/innerWidth,y:e.clientY/innerHeight}).catch(()=>{});};document.addEventListener('mousemove',move);return()=>document.removeEventListener('mousemove',move);},[user.id]);
  useEffect(()=>{if(!links.length&&pointer.current)pointer.current.style.display='none';},[links.length]);
  const demo=links.find(l=>l.student_id===user.id&&l.mode==='demo');
- return <ClassroomContext.Provider value={{links,sharing,setSharing,microphone,setMicrophone:(v)=>v?setMicPrompt(true):setMicrophone(false)}}><div className={'classroom-shell'+(presenting?' is-presenting':'')} style={{'--classroom-bar-height':barHeight+'px'} as React.CSSProperties}>
+ return <ClassroomContext.Provider value={{links,sharing,setSharing,startBroadcast,microphone,setMicrophone:(v)=>v?setMicPrompt(true):setMicrophone(false)}}><div className={'classroom-shell'+(presenting?' is-presenting':'')} style={{'--classroom-bar-height':barHeight+'px'} as React.CSSProperties}>
   {user.role!=='student'&&(links.length>0||sharing||microphone)&&<div ref={liveBar} className="teacher-live-bar" data-no-capture aria-label="Управление трансляцией"><b>{sharing?'Трансляция экрана':microphone?'Микрофон включён':'Подключение к ученику'}</b><span>Получателей: {links.length}</span><button onClick={()=>microphone?setMicrophone(false):setMicPrompt(true)}>{microphone?'Выключить микрофон':'Включить микрофон'}</button><button onClick={async()=>{try{for(const l of links)await api('/classroom/links/'+l.id,'DELETE');setSharing(false);setMicrophone(false);setLinks([]);}catch(e:any){setError(e.message);}}}>Завершить показ · ученики повторяют</button>{error&&<span role="alert">{error}</span>}</div>}
   {children}</div>
   {user.role==='student'&&links.some(l=>l.student_id===user.id)&&<div className="classroom-connection" data-no-capture><b>Преподаватель подключён</b><button onClick={()=>audios.current.forEach(a=>a.play())}>Включить звук преподавателя</button><button onClick={()=>links.filter(l=>l.student_id===user.id).forEach(l=>api('/classroom/links/'+l.id,'DELETE'))}>Завершить подключение</button>{error&&<span role="status">{error}</span>}</div>}

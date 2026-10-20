@@ -1,5 +1,7 @@
 """Class-scoped inference jobs: only explicitly authorized native PCs can claim them."""
 import secrets
+import json
+from typing import Any
 import threading
 import time
 from pathlib import Path
@@ -9,6 +11,24 @@ from local_ai.engine import engine, DEFAULT_MODEL
 from . import main as m
 from .classroom import station
 from .classroom_models import Workstation
+
+
+def valid_result(value,schema,depth=0):
+    if depth>12:return False
+    if 'enum' in schema and value not in schema['enum']:return False
+    kind=schema.get('type')
+    if kind=='object':
+        if not isinstance(value,dict):return False
+        props=schema.get('properties',{})
+        if not set(schema.get('required',[]))<=set(value):return False
+        if schema.get('additionalProperties',False) is False and not set(value)<=set(props):return False
+        return all(valid_result(v,props.get(k,{}),depth+1) for k,v in value.items())
+    if kind=='array':return isinstance(value,list) and schema.get('minItems',0)<=len(value)<=schema.get('maxItems',500) and all(valid_result(v,schema.get('items',{}),depth+1) for v in value)
+    if kind=='string':return isinstance(value,str) and schema.get('minLength',0)<=len(value)<=schema.get('maxLength',12000)
+    if kind=='boolean':return type(value) is bool
+    if kind in ('integer','number'):return type(value) in ((int,) if kind=='integer' else (int,float)) and schema.get('minimum',float('-inf'))<=value<=schema.get('maximum',float('inf'))
+    if kind=='null':return value is None
+    return False
 
 
 class Broker:
@@ -22,7 +42,7 @@ class Broker:
     def poll(self, wid, available, mode='cpu'):
         with self.lock:
             self.workers[wid]={'seen':time.monotonic(),'available':available,'mode':mode}
-            if wid not in self.config()['worker_ids'] or not available:
+            if not available:
                 return None
             for job in self.jobs.values():
                 if job['worker']==wid and not job['sent']:
@@ -34,36 +54,32 @@ class Broker:
         with self.lock:
             job=self.jobs.get(jid)
             if not job or job['worker']!=wid or not job['sent'] or job['event'].is_set():return False
-            if wid not in self.config()['worker_ids']:return False
-            # Current app schemas are objects of bounded strings/enums. Reject anything else.
-            schema=job['payload']['schema']
-            props=schema.get('properties',{})
-            valid=isinstance(value,dict) and set(schema.get('required',[]))<=set(value) and set(value)<=set(props)
-            if valid:
-                for key,text in value.items():
-                    rule=props[key]
-                    if not isinstance(text,str) or len(text)>rule.get('maxLength',12000) or ('enum' in rule and text not in rule['enum']):
-                        valid=False;break
+            valid=valid_result(value,job['payload']['schema'])
             job['value']=value if valid and not error else None
             job['event'].set()
             return True
 
     def dispatch(self, system, prompt, schema, tokens, temperature):
+        return self.submit({'system':system,'prompt':prompt,'schema':schema,'tokens':tokens,'temperature':temperature,'model':self.config().get('model',DEFAULT_MODEL)})
+
+    def submit(self,payload):
+        from local_ai.context import device_id
+        from local_ai.engine import AIUnavailable
+        wid=device_id.get()
+        if not wid:return None
         started=time.monotonic()
         with self.lock:
-            busy={j['worker'] for j in self.jobs.values()}
-            allowed=self.config()['worker_ids']
-            wid=next((wid for wid,w in self.workers.items() if wid in allowed and wid not in busy and w['available'] and started-w['seen']<5),None)
-            if wid is None:return None
+            worker=self.workers.get(wid,{})
+            busy=any(j['worker']==wid for j in self.jobs.values())
+            if not busy and (not worker.get('available') or started-worker.get('seen',0)>8):
+                raise AIUnavailable('Локальная модель рабочего места пока недоступна. Запрос сохранён для повторной проверки.')
             jid=secrets.token_hex(20)
-            job={'id':jid,'worker':wid,'event':threading.Event(),'sent':False,'value':None,
-                 'payload':{'system':system,'prompt':prompt,'schema':schema,'tokens':tokens,'temperature':temperature,
-                            'model':self.config().get('model',DEFAULT_MODEL)}}
+            job={'id':jid,'worker':wid,'event':threading.Event(),'sent':False,'value':None,'payload':payload}
             self.jobs[jid]=job
         try:
             if not job['event'].wait(self.timeout) or job['value'] is None:
-                return None
-            return job['value'],{'model':Path(job['payload']['model']).stem,'mode':self.workers.get(wid,{}).get('mode','cpu'),'execution':'workstation',
+                raise AIUnavailable('Рабочее место не завершило локальное вычисление')
+            return job['value'],{'model':Path(job['payload'].get('model','speech')).stem,'mode':self.workers.get(wid,{}).get('mode','cpu'),'execution':'workstation',
                                   'worker_id':wid,'seconds':round(time.monotonic()-started,3)}
         finally:
             with self.lock:self.jobs.pop(jid,None)
@@ -82,7 +98,7 @@ class Poll(BaseModel):
     mode:str=Field(default='cpu',pattern='^(cpu|gpu)$')
 
 class Result(BaseModel):
-    value:dict[str,str]=Field(default_factory=dict,max_length=30)
+    value:dict[str,Any]=Field(default_factory=dict,max_length=30)
     error:str=Field(default='',max_length=500)
 
 @router.post('/poll')
@@ -93,7 +109,7 @@ def poll(data:Poll,request:Request,db=Depends(m.getdb)):
 @router.post('/{jid}/result')
 def result(jid:str,data:Result,request:Request,db=Depends(m.getdb)):
     w=station(request,db)
-    if sum(len(x) for x in data.value.values())>50000:m.fail('Слишком большой ответ')
+    if len(json.dumps(data.value,ensure_ascii=False))>16000000:m.fail('Слишком большой ответ')
     if not broker.finish(w.id,jid,data.value,data.error):m.fail('Задание больше недоступно',409)
     return {'ok':True}
 

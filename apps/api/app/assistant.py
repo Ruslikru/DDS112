@@ -192,7 +192,7 @@ def detect(text):
     if re.search(r'(созда|сдела|добав|нов\w*).*(мини[ -]?вопрос|мини[ -]?задани)',t):return 'create_question'
     if re.search(r'(редакт|измен|поменя|исправ|поправ).*(мини[ -]?вопрос|мини[ -]?задани)',t):return 'edit_question'
     if re.search(r'опублику|публикац|выложи\w*\s+билет',t):return 'publish_ticket'
-    if re.search(r'делай как я|(?:покажи|покажу|транслируй|выведи)\w*\s+(?:мой|свой)\s+экран|(?:включи|начни|запусти)\w*\s+трансляц|трансляци\w+ (?:моего )?экрана',t):return 'demo_mode'
+    if re.search(r'делай как я|(?:покажи|покажу|транслируй|выведи)\w*\s+(?:мой|свой)\s+экран|(?:включи|начни|начать|запусти|запустить)\w*\s+трансляц|трансляци\w+ (?:моего )?экрана',t):return 'demo_mode'
     if re.search(r'(отправ|назнач|выдай|передай|\bдай\b).*(билет|задани)',t):return 'assign_ticket'
     if re.search(r'\bглавн(ая|ую)\b|все (компьютер\w*|пк|рабочие места)',t):return 'open_page:stations'
     if (re.search(r'(подключ|покаж|открой|перейд|посмотр)\w*.*(рабоч|компьют|\bпк\b|стол|экран)',t) or re.search(r'^подключ\w*\s+(?:к|ко)\s+\w+|посмотр\w*,? (?:что|чем) (?:делает|занят)|на экране у',t)) and not re.search(r'рабочие места|рабочих мест',t):
@@ -271,7 +271,9 @@ def group_step(slots,text,answer_slot,u,db):
     if not slots.get('all_active') and not slots.get('members_text'):
         return reply('create_group','Кого добавить в группу? Назовите учеников через запятую или скажите «всех активных».',slots=slots,missing=[{'slot':'members','question':'Участники группы'}])
     members=[]
-    if slots.get('all_active') or re.search(r'всех|все[хм]? активн',normalize(slots.get('members_text',''))):
+    slots['empty_group']=bool(re.fullmatch(r'(?:пока )?никого|пуст(?:ую|ая)(?: групп[ау])?|без (?:учеников|студентов|участников)|добавлю позже|позже',normalize(slots.get('members_text','')).strip(' .!?,;')))
+    if slots['empty_group']:slots['all_active']=False
+    elif slots.get('all_active') or re.search(r'всех|все[хм]? активн',normalize(slots.get('members_text',''))):
         members=[s for s in db.scalars(select(User).where(User.role=='student',User.active==True,User.deleted_at.is_(None))) if m.visible(db,u,s.id)]
         slots['all_active']=True
     else:
@@ -281,8 +283,9 @@ def group_step(slots,text,answer_slot,u,db):
             found=resolve_students(db,u,student_query(name) or words(name))
             if len(found)!=1:return reply('create_group',f'Не могу однозначно найти ученика «{name}». Уточните состав группы, перечислив полные имена через запятую.',slots={**slots,'members_text':''},missing=[{'slot':'members','question':'Участники группы'}])
             members.append(found[0])
-    if not members:return reply('create_group','Не нашёл доступных активных учеников. Уточните состав группы.',slots={**slots,'members_text':''},missing=[{'slot':'members','question':'Участники группы'}])
+    if not members and not slots['empty_group']:return reply('create_group','Не нашёл доступных активных учеников. Уточните состав группы.',slots={**slots,'members_text':''},missing=[{'slot':'members','question':'Участники группы'}])
     slots['student_ids']=list(dict.fromkeys(s.id for s in members))
+    if slots['empty_group']:return reply('create_group',f'Создать пустую группу «{slots["name"]}»? Учеников можно добавить позже.',slots=slots,confirm=confirm_token(u,'create_group',slots))
     return reply('create_group',f'Создать группу «{slots["name"]}» и добавить {len(slots["student_ids"])} учеников: '+', '.join(s.name for s in members)+'?',slots=slots,confirm=confirm_token(u,'create_group',slots))
 
 def open_group_step(slots,text,answer_slot,u,db):
@@ -383,7 +386,8 @@ def question_step(intent,slots,text,answer_slot,u,db):
             slots['options']=[] if re.search(r'^(?:без вариантов|нет|текст|ввод текста)',normalize(text)) else [v.strip(' ,.;') for v in re.split(r'[;,]',text) if v.strip(' ,.;')]
             slots['options_answered']=True
     elif answer_slot=='audio_text':
-        slots['audio_text']='' if re.search(r'^без (звука|озвучки)|^не нужно|^нет$',normalize(text)) else text.strip()
+        no_audio=re.fullmatch(r'(?:нет(?: спасибо)?|(?:пока )?без (?:звука|озвучки)|(?:озвучка|озвучивание|звук) (?:пока )?не (?:нужен|нужн[аоы]?|требуется)|(?:пока )?не (?:нужно|надо)(?: озвучивать| озвучить| озвучки| звука)?|не озвучивай(?:те)?|остав[ьи]?(?:те)? без озвучки)',normalize(text).strip(' .!?,;'))
+        slots['audio_text']='' if no_audio else text.strip()
         slots['audio_answered']=True
     if slots.get('answer'):slots['answer']=normalize_shortcut(slots['answer'])
     if slots.get('options'):slots['options']=[normalize_shortcut(v) for v in slots['options']]
@@ -460,8 +464,8 @@ def assignment_step(slots,text,answer_slot,u,db):
     draft_note=' Билет ещё черновик: сначала опубликую его.' if slots['publish_first'] else ''
     sound=version.get('voice') or {}
     if sound.get('total') and not sound.get('ready'):
-        # Not voiced yet: the ticket can still be sent, the students' attempts start as text — the teacher is told before confirming.
-        draft_note+=(f'\nОзвучка {sound.get("generated",0)} из {sound.get("total",0)}: у учеников билет запустится без озвучки, текстом, '
+        # A ticket can only be assigned after speech preparation is complete.
+        draft_note+=(f'\nОзвучка {sound.get("generated",0)} из {sound.get("total",0)}: билет ещё не готов к назначению, '
                      'потому что она ещё не готова. Чтобы был звук, дождитесь озвучки и отправьте позже.')
     recipient_text=str(slots.get('student_query') or text)
     chunks=re.split(r'\s+и\s+|[,;]',recipient_text)
@@ -511,10 +515,15 @@ def interpret(data:Interpret,u=Depends(m.current),db=Depends(m.getdb)):
     text=clean_speech(data.text)
     # Typos and mis-heard command words are corrected, but never the names of the teacher's students.
     names=[w for s in db.scalars(select(User).where(User.role=='student',User.deleted_at.is_(None))) if m.visible(db,u,s.id) for w in re.split(r'[\s-]+',s.name) if w]
-    text=fix_keywords(text,names)
+    literal_answer=data.dialog and data.dialog.intent in ('create_question','edit_question') and data.dialog.slots.get('answer_slot') in ('prompt','answer','audio_text','options','value')
+    if not literal_answer:text=fix_keywords(text,names)
     intent=detect(text)
+    if data.dialog and data.dialog.intent=='demo_mode' and (data.dialog.slots.get('student_id') or intent=='unknown'):
+        intent='demo_mode'
+        if data.dialog.slots.get('start'):text='Запусти трансляцию для '+text
     query=student_query(text)
     dialog=data.dialog
+    if dialog and dialog.intent=='create_group' and dialog.slots.get('answer_slot')=='members' and re.fullmatch(r'(?:пока )?никого|пуст(?:ую|ая)(?: групп[ау])?|без (?:учеников|студентов|участников)|добавлю позже|позже',normalize(text).strip(' .!?,;')):intent='create_group'
     # A field answer remains data even when it mentions a page, such as "журнал".
     if dialog and dialog.intent in ('create_question','edit_question') and dialog.slots.get('answer_slot') in ('prompt','answer','audio_text','options','value'):
         explicit=re.match(r'^(?:открой|открыть|покажи|перейди|закрой|подключись|создай|создать|отмена|отмени|стоп)\b',normalize(text)) or normalize(text).strip(' .!?') in ('журнал','аналитика','студенты','рабочие места','проверить работы')
@@ -567,7 +576,7 @@ def interpret(data:Interpret,u=Depends(m.current),db=Depends(m.getdb)):
                 return result
     if dialog and dialog.intent=='create_question' and re.search(r'\b(?:заново|сначала|пересоздай)\b',normalize(text)) and set(words(text))<={'заново','сначала','пересоздай','давай','давайте','сделаем','начнем','начать','начни','составь','составить','сделай','новый','минивопрос','вопрос','пожалуйста','создай'}:
         return question_step('create_question',{},'',None,u,db)
-    if dialog and dialog.intent in DIALOG_INTENTS and re.fullmatch(r'(?:отмена|отмени|отменить|стоп|не надо|не нужно|передумал\w*)[.!]?',normalize(text)):
+    if dialog and dialog.intent in DIALOG_INTENTS and not (dialog.slots.get('answer_slot')=='audio_text' and normalize(text) in ('не надо','не нужно')) and re.fullmatch(r'(?:отмена|отмени|отменить|стоп|не надо|не нужно|передумал\w*)[.!]?',normalize(text)):
         # «Отмена» in the middle of the questions cancels them; the assistant window stays open.
         result=reply('cancel','Отменено. Ничего не изменено.')
         m.audit(db,u,'assistant_command','cancel',{'text':text[:300],'intent':'cancel','page':str(data.context.get('page',''))[:100]});db.commit()
@@ -614,15 +623,23 @@ def pick_student(intent,query,dialog,u,db):
 
 def handle(intent,text,query,dialog,u,db):
     if intent=='demo_mode':
+        start=bool(re.search(r'\b(?:запусти\w*|начни|начать|включи\w*|транслируй)\b',normalize(text)))
         named=re.search(r'(?:\bдля|\bученик\w*|\bученице|\bстудент\w*)\s+(.+)$',text,flags=re.I)
-        found=resolve_students(db,u,student_query(named.group(1))) if named and student_query(named.group(1)) else []
+        selected=(dialog.slots.get('student_id') if dialog and dialog.intent==intent else None)
+        if selected:
+            student=db.get(User,selected)
+            found=[student] if student and student.role=='student' and not student.deleted_at and m.visible(db,u,student.id) else []
+        else:found=resolve_students(db,u,student_query(named.group(1))) if named and student_query(named.group(1)) else []
         if len(found)==1:
             s=found[0];row=next((r for r in station_rows(u,db) if r['user_id']==s.id and r['online']),None)
             to=f'/classroom/modes?mode=demo&students={s.id}'
-            if not row:return reply(intent,f'Открываю «Делай как я» с учеником {s.name}. Он сейчас не в сети: когда войдёт на рабочее место, он уже будет отмечен — останется нажать «Начать трансляцию».',slots={'student_id':s.id},action={'kind':'navigate','to':to})
-            return reply(intent,f'Открываю «Делай как я»: выбран {s.name} (ПК №{row["number"]}). Нажмите «Начать трансляцию».',slots={'student_id':s.id},action={'kind':'navigate','to':to})
-        if len(found)>1:return reply(intent,'Нашёл нескольких учеников. Кому показать экран?',candidates=[student_card(s) for s in found])
-        return reply(intent,'Открываю «Делай как я». Выберите учеников и нажмите «Начать трансляцию».',action={'kind':'navigate','to':'/classroom/modes?mode=demo'})
+            if not row:return reply(intent,f'Выбран {s.name}. Ученик сейчас не в сети. Начать трансляцию можно после его входа на рабочее место.',slots={'student_id':s.id},action={'kind':'navigate','to':to})
+            if start:return reply(intent,'Подключаю трансляцию…',slots={'student_id':s.id},action={'kind':'start_broadcast','students':[s.id]})
+            return reply(intent,f'Открываю «Делай как я»: выбран {s.name} (ПК №{row["number"]}). Можно сказать «Начать трансляцию».',slots={'student_id':s.id},action={'kind':'navigate','to':to})
+        if len(found)>1:return reply(intent,'Нашёл нескольких учеников. Кому показать экран?',slots={'start':start},candidates=[student_card(s) for s in found])
+        if named or selected:return reply(intent,'Не нашёл этого ученика среди ваших студентов. Уточните имя.',slots={'start':start},missing=[{'slot':'student','question':'Кому показать экран?'}])
+        if start:return reply(intent,'Подключаю трансляцию выбранным ученикам…',action={'kind':'start_broadcast','students':[]})
+        return reply(intent,'Открываю «Делай как я». Выберите учеников и скажите «Начать трансляцию».',action={'kind':'navigate','to':'/classroom/modes?mode=demo'})
     if intent=='help':return reply('help',HELP)
     if intent=='voice_queue':
         from .voice import VoiceJob, waiting_label
@@ -759,7 +776,7 @@ def execute(data:Execute,u=Depends(m.current),db=Depends(m.getdb)):
         result=runner(data.slots,u,db)
     elif data.intent=='create_group':
         ids=data.slots.get('student_ids',[])
-        if not isinstance(ids,list) or not ids or len(ids)>100:m.fail('Уточните состав группы')
+        if not isinstance(ids,list) or (not ids and not data.slots.get('empty_group')) or len(ids)>100:m.fail('Уточните состав группы')
         students=[db.get(User,sid) for sid in ids]
         if any(not s or s.role!='student' or s.deleted_at or not m.visible(db,u,s.id) for s in students):m.fail('Состав группы изменился. Повторите команду.',409)
         if u.role!='admin' and any(s.group_id and (old:=db.get(Group,s.group_id)) and old.teacher_id!=u.id for s in students):m.fail('Перенос из группы другого преподавателя выполняет администратор',403)
@@ -805,7 +822,12 @@ def execute(data:Execute,u=Depends(m.current),db=Depends(m.getdb)):
         if data.intent=='edit_question' and not q:m.fail('Минивопрос не найден',404)
         options=data.slots.get('options') or []
         payload={**q.data,'active':q.active} if q else {'prompt':data.slots.get('prompt'),'answer':data.slots.get('answer'),'audio_text':data.slots.get('audio_text',''),'kind':'choice' if options else 'text','options':options,'level':1,'mode':'dds'}
-        if q:payload[data.slots.get('field')]=data.slots.get('value')
+        if q:
+            field=data.slots.get('field');value=data.slots.get('value')
+            if field=='answer' and payload.get('kind')=='choice':
+                # Keep the corrected answer selectable; other distractors are unchanged.
+                payload['options']=list(dict.fromkeys(value if option==payload.get('answer') else option for option in payload.get('options',[])))
+            payload[field]=value
         saved=save_question(MiniIn.model_validate(payload),q.id if q else None,u,db)
         result={'preview':f'Минивопрос №{saved["id"]} сохранён.','action':{'kind':'navigate','to':'/learning?question='+str(saved['id'])},'slots':{'question_id':saved['id']}}
     m.audit(db,u,'assistant_executed',data.intent,{'intent':data.intent,'ticket_id':data.slots.get('ticket_id'),'version_id':result.get('version_id'),'draft_id':data.slots.get('draft_id') or result.get('slots',{}).get('draft_id'),'incident_type':data.slots.get('incident_type'),'field':data.slots.get('field')});db.commit()

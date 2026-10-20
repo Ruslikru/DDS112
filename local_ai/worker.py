@@ -1,4 +1,5 @@
 """Native PC polls its selected classroom; never opens an inference port on the LAN."""
+import base64
 import json
 import threading
 import urllib.request
@@ -10,8 +11,8 @@ class Worker:
         self.server=server.rstrip('/')
         self.token=token
         self.engine=LocalEngine(data=data/'worker-ai')
-        policy=self.engine.data/'worker-policy.json'
-        self.enabled=not policy.exists() or json.loads(policy.read_text('utf-8')).get('mode')!='server'
+        self.voice=None
+        self.enabled=True
         self.closed=threading.Event()
         self.thread=threading.Thread(target=self.run,daemon=True)
         self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -23,12 +24,9 @@ class Worker:
 
     def start(self):self.thread.start()
 
-    def configure(self,mode,device=''):
-        if mode!='server':self.engine.set_settings(mode=mode,device=device)
-        else:self.engine.stop()
-        self.enabled=mode!='server'
-        self.engine.data.mkdir(parents=True,exist_ok=True)
-        (self.engine.data/'worker-policy.json').write_text(json.dumps({'mode':mode}),'utf-8')
+    def configure(self,mode,device='',**resources):
+        self.engine.set_settings(mode=mode,device=device,**resources)
+        self.enabled=True
 
     def run(self):
         while not self.closed.is_set():
@@ -37,9 +35,19 @@ class Worker:
                 job=self.request('/poll',{'available':self.enabled and status['available'],'mode':status['mode']}).get('job')
                 if job:
                     try:
-                        if job.get('model') and self.engine.config()['model']!=job['model']:
-                            self.engine.set_settings(model=job['model'])
-                        value,_=self.engine.complete(job['system'],job['prompt'],job['schema'],job['tokens'],job['temperature'])
+                        operation=job.get('operation')
+                        if operation:
+                            if not self.voice:raise RuntimeError('Голосовая модель запускается')
+                            args=job['args']
+                            if operation=='synthesize':
+                                path,meta=self.voice.synthesize(str(args['text'])[:5000],args.get('gender','male'),args.get('group','live'),args.get('settings'))
+                                value={'audio':base64.b64encode(path.read_bytes()).decode(),'meta':json.dumps(meta)}
+                            elif operation=='transcribe':value={'meta':json.dumps(self.voice.transcribe(args['content']),ensure_ascii=False)}
+                            else:raise ValueError('Неизвестная операция модели')
+                        else:
+                            if job.get('model') and self.engine.config()['model']!=job['model']:
+                                self.engine.set_settings(model=job['model'])
+                            value,_=self.engine.complete(job['system'],job['prompt'],job['schema'],job['tokens'],job['temperature'])
                         result={'value':value}
                     except Exception as e:result={'error':str(e)[:500]}
                     self.request('/'+job['id']+'/result',result)

@@ -47,14 +47,7 @@ class ExecutionIn(BaseModel):
 @router.post('/execution')
 def execution(data:ExecutionIn,u=Depends(m.current),db:Session=Depends(m.getdb)):
     m.admin(u)
-    from .classroom_models import Workstation
-    for wid in data.worker_ids:
-        w=db.get(Workstation,wid)
-        if not w or not w.approved or w.blocked:m.fail('Сначала допустите выбранные рабочие места')
-    try:ai.set_settings(execution=data.execution,worker_ids=data.worker_ids)
-    except (ValueError,AIUnavailable) as error:m.fail(str(error))
-    m.audit(db,u,'ai_execution_changed',detail=data.model_dump());db.commit()
-    return ai.status()
+    m.fail('ИИ выполняется локально на каждом ПК. Ресурсы настраиваются в настройках устройства.',410)
 
 class QuestionIn(BaseModel):
     text: str=Field(min_length=3,max_length=500)

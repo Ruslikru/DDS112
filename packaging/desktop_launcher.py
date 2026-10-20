@@ -243,7 +243,7 @@ def self_test(data):
             req=urllib.request.Request(server.url+'/api/classroom/stations/'+node['id'],
                 json.dumps({'approved':True}).encode(),{'Content-Type':'application/json','X-Requested-With':'Training112'},method='PATCH')
             with client.open(req,timeout=10) as response:assert response.status==200
-            request_when_ai_idle('/api/ai/execution',{'execution':'workstations','worker_ids':[node['id']]})
+            from local_ai.context import on_device
             worker=Worker(server.url,node['token'],data/'test-worker')
             worker.start()
             try:
@@ -252,12 +252,12 @@ def self_test(data):
                     if time.monotonic()>deadline:raise TimeoutError('Compute PC registration timeout')
                     time.sleep(.1)
                 schema={'type':'object','properties':{'answer':{'type':'string','enum':['ready']}},'required':['answer'],'additionalProperties':False}
-                value,meta=local_engine.complete('Return the requested JSON.','Return answer ready.',schema,tokens=32)
+                with on_device(node['id']):
+                    value,meta=local_engine.complete('Return the requested JSON.','Return answer ready.',schema,tokens=32)
                 assert value=={'answer':'ready'} and meta.get('execution')=='workstation',meta
                 report['ai_workstation']=True
             finally:
                 worker.stop()
-                request_when_ai_idle('/api/ai/execution',{'execution':'server','worker_ids':[]})
             if os.getenv('SELF_TEST_GPU')=='1':
                 try:
                     local_engine.set_mode('gpu')

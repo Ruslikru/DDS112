@@ -16,8 +16,17 @@ from . import main as m
 from .schemas import TicketData
 from .caller import caller_gender
 from local_ai.voice import VoiceRuntime
+from local_ai.engine import AIUnavailable
 
 runtime=VoiceRuntime(DATA)
+
+def local_speech(operation,args):
+    from .ai_workers import broker
+    schema={'type':'object','properties':{'audio':{'type':'string','maxLength':15000000},'meta':{'type':'string','maxLength':50000}},'required':['meta'],'additionalProperties':False}
+    response=broker.submit({'operation':operation,'args':args,'schema':schema})
+    return response[0] if response is not None else None
+
+runtime.remote=local_speech
 stopping=threading.Event()
 # Lines a teacher is waiting for right now (a publication or an assignment refused for missing sound):
 # kept in memory because the refused request rolls its own transaction back.
@@ -70,7 +79,9 @@ def prepare(data,db,owner,preserve=False,soon=False):
             spec={'speaker_id':speaker,'text':event['text'],'gender':gender,'settings':{**cfg,**({'tts':voices[speaker]} if voices.get(speaker) else {})},'revision':'voice-v1'}
             key=hashlib.sha256(json.dumps(spec,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
             event['voice_key']=key
-            if not db.get(VoiceJob,key):db.add(VoiceJob(id=key,data={**spec,'owner':owner},status='pending'))
+            if not db.get(VoiceJob,key):
+                from local_ai.context import device_id
+                db.add(VoiceJob(id=key,data={**spec,'owner':owner,'device_id':device_id.get()},status='pending'))
     db.flush()
     restore_builtin(db)
     if soon:prioritize(db,keys(result))
@@ -98,13 +109,44 @@ def waiting_label(lines,db):
     minutes=round(total/60)
     return f'около {minutes} мин'
 
+_verified_recordings={}
+def recording_ready(job):
+    if not job or job.status!='ready' or not job.audio_id:return False
+    path=DATA/'media'/job.audio_id
+    try:
+        stat=path.stat();fingerprint=(stat.st_mtime_ns,stat.st_size)
+        if _verified_recordings.get(str(path))==fingerprint:return True
+        raw=path.read_bytes()
+        valid=raw[:4]==b'RIFF' and raw[8:12]==b'WAVE' and hashlib.sha256(raw).hexdigest()==job.audio_id
+        if valid:_verified_recordings[str(path)]=fingerprint
+        return valid
+    except OSError:return False
+
 def readiness(data,db):
     required=keys(data)
-    if not required:return {'ready':True,'generated':0,'total':0,'failed':0}
-    states={key:status for key,status in db.execute(select(VoiceJob.id,VoiceJob.status).where(VoiceJob.id.in_(required)))}
-    generated=sum(states.get(key)=='ready' for key in required)
-    failed=sum(states.get(key)=='failed' for key in required)
-    return {'ready':generated==len(required),'generated':generated,'total':len(required),'failed':failed}
+    missing=sum(1 for task in data.get('tasks',[data]) for e in speech_items(task)
+                if (e.get('spoken') or e.get('kind')=='incoming_call') and str(e.get('text','')).strip() and not e.get('voice_key'))
+    jobs={j.id:j for j in db.scalars(select(VoiceJob).where(VoiceJob.id.in_(required)))}
+    generated=sum(recording_ready(jobs.get(key)) for key in required)
+    failed=sum(j.status=='failed' or j.status=='ready' and not recording_ready(j) for j in jobs.values())
+    total=len(required)+missing
+    return {'ready':generated==total,'generated':generated,'total':total,'failed':failed}
+
+def device_audio_ready(db,version_id,student_id=None):
+    from local_ai.context import device_id
+    from .classroom_models import Workstation
+    from .management import state,server_id
+    wid=device_id.get()
+    if wid is None and student_id is not None:
+        w=db.scalar(select(Workstation).where(Workstation.user_id==student_id,Workstation.approved==True,Workstation.blocked==False).order_by(Workstation.last_seen.desc()))
+        wid=w.id if w else None
+    if not wid or wid==server_id():return True
+    metrics=state.get(wid,{}).get('metrics',{})
+    # Browser sessions have no native cache; the server still requires valid audio.
+    if not metrics.get('version'):return True
+    version=db.get(TicketVersion,version_id)
+    digest=hashlib.sha256(json.dumps(version.data,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    return metrics.get('voice_sync',{}).get('versions',{}).get(str(version_id))==digest
 
 
 def attach_audio(data,db,text_only=False):
@@ -151,7 +193,8 @@ def restore_builtin(db):
 def recover():
     stopping.clear()
     with SessionLocal() as db:
-        for job in db.scalars(select(VoiceJob).where(VoiceJob.status=='running')):job.status='pending'
+        for job in db.scalars(select(VoiceJob)):
+            if job.status=='running' or job.status=='ready' and not recording_ready(job):job.status='pending'
         # Upgrade saved tickets without changing their authored content or existing recordings.
         from .db import Ticket,Attempt,Assignment
         from .caller import enrich_task, generated_details
@@ -176,13 +219,15 @@ def recover():
                 for c,n in zip(original.get('contacts',[]),updated.get('contacts',[])):c['voice_lines']=n['voice_lines']
                 a.snapshot=original
         restore_builtin(db)
-        for a in db.scalars(select(Attempt).where(Attempt.status.notin_(['completed','aborted']))):a.snapshot=attach_audio(a.snapshot,db,text_only=bool((a.state or {}).get('text_only')))
+        for a in db.scalars(select(Attempt).where(Attempt.status.notin_(['completed','aborted']))):
+            if readiness({'tasks':[a.snapshot]},db)['ready']:
+                a.state={**a.state,'text_only':False}
+                a.snapshot=attach_audio(a.snapshot,db)
         db.commit()
 
 
-def ensure_ready(data,db,text_ok=False):
-    """Call sounds must exist. Recorded lines: refused unless `text_ok` — then the not-ready state is returned
-    and the attempt runs as text. Either way the missing lines go to the front of the queue."""
+def ensure_ready(data,db):
+    """A playable ticket always requires every recording, including teacher previews."""
     from .call_audio import prepare_task,ensure_assets
     try:
         for task in data.get('tasks',[data]):
@@ -191,7 +236,6 @@ def ensure_ready(data,db,text_ok=False):
     status=readiness(data,db)
     if not status['ready']:
         with urgent_lock:urgent.update(keys(data))
-        if text_ok:return status
         label='Ошибка генерации звука. Попросите преподавателя проверить очередь.' if status['failed'] else 'Звук для билета ещё генерируется.'
         m.fail(f"{label} Готово {status['generated']} из {status['total']} записей.",409)
     return status
@@ -208,9 +252,9 @@ def next_job(db):
     with urgent_lock:waiting=list(urgent)
     if waiting:
         job=db.scalar(select(VoiceJob).where(VoiceJob.id.in_(waiting),VoiceJob.status=='pending').limit(1))
-        if job:return job
+        if job and job.data.get('retry_after',0)<=time.time():return job
         with urgent_lock:urgent.difference_update(waiting)
-    return db.scalar(select(VoiceJob).where(VoiceJob.status=='pending').order_by(VoiceJob.priority.desc()).limit(1))
+    return next((job for job in db.scalars(select(VoiceJob).where(VoiceJob.status=='pending').order_by(VoiceJob.priority.desc())) if job.data.get('retry_after',0)<=time.time()),None)
 
 def generate_one():
     with SessionLocal() as db:
@@ -219,11 +263,15 @@ def generate_one():
         with urgent_lock:urgent.discard(job.id)
         job.status='running';db.commit()
         try:
-            path,meta=runtime.synthesize(job.data['text'],job.data['gender'],'pre',job.data['settings'])
+            from local_ai.context import on_device
+            with on_device(job.data.get('device_id')):
+                path,meta=runtime.synthesize(job.data['text'],job.data['gender'],'pre',job.data['settings'])
             raw=path.read_bytes();audio_id=hashlib.sha256(raw).hexdigest();dest=DATA/'media'/audio_id
             if not dest.exists():shutil.copyfile(path,dest)
             if not db.get(Media,audio_id):db.add(Media(id=audio_id,filename=audio_id+'.wav',mime='audio/wav',size=len(raw),owner_id=job.data['owner']))
             job.audio_id=audio_id;job.data={**job.data,**meta,'size':len(raw),'sha256':audio_id,'mime':'audio/wav'};job.status='ready';job.error=''
+        except AIUnavailable as e:
+            job.status='pending';job.error=str(e)[:1000];job.data={**job.data,'retry_after':time.time()+15}
         except Exception as e:job.status='pending' if stopping.is_set() else 'failed';job.error='' if stopping.is_set() else str(e)[:1000]
         db.commit()
 
@@ -251,6 +299,16 @@ def dialogue_settings(u=Depends(m.current)):
 
 @router.get('/call-status')
 def call_status(u=Depends(m.current)):
+    from local_ai.context import device_id
+    from .management import state
+    wid=device_id.get()
+    if wid:
+        device=state.get(wid,{})
+        metrics=device.get('metrics',{})
+        models=copy.deepcopy(metrics.get('local_models',{}))
+        if time.time()-device.get('seen',0)>15:
+            for model in models.values():model['state']='cold'
+        return {'models':models,'cpu_percent':metrics.get('cpu_percent'),'cpu_scope':'machine'}
     from .startup_models import status
     return status()
 
@@ -260,8 +318,7 @@ def save_dialogue_settings(data:dict,u=Depends(m.current)):
     if set(data)-{'dialogue_threads','stt_threads','tts_threads'}:m.fail('Неизвестная настройка потоков')
     from local_ai.engine import engine,AIUnavailable
     try:
-        if 'dialogue_threads' in data:engine.set_settings(threads=data['dialogue_threads'])
-        runtime.save({'live':{k:v for k,v in data.items() if k!='dialogue_threads'}})
+        engine.set_settings(**{('threads' if k=='dialogue_threads' else k):v for k,v in data.items()},threads_auto=False)
     except (ValueError,AIUnavailable) as error:m.fail(str(error))
     return dialogue_settings(u)
 
@@ -320,13 +377,13 @@ def manifest(request:Request,db=Depends(m.getdb)):
     from .classroom import station
     station(request,db)
     versions=[];files={}
-    for v in db.scalars(select(TicketVersion).where(TicketVersion.published==True)):
+    for v in db.scalars(select(TicketVersion)):
         ids=[]
         for key in keys(v.data):
             j=db.get(VoiceJob,key)
-            if j and j.status=='ready':
+            if recording_ready(j):
                 ids.append(j.audio_id);files[j.audio_id]={'id':j.audio_id,'sha256':j.audio_id,'size':j.data['size']}
-        versions.append({'id':v.id,'sha256':hashlib.sha256(json.dumps(v.data,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),'audio':ids})
+        versions.append({'id':v.id,'sha256':hashlib.sha256(json.dumps(v.data,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),'audio':ids,'ready':readiness(v.data,db)['ready']})
     from .classroom_models import MiniQuestion
     for q in db.scalars(select(MiniQuestion).where(MiniQuestion.active==True)):
         j=db.get(VoiceJob,q.data.get('voice_key',''))

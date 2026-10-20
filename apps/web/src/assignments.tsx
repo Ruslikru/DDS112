@@ -150,7 +150,7 @@ export function Assignments() {
                   {a.tasks.map((t: Obj, i: number) => {
                     const p = a.attempts.find((x: Obj) => x.task_index === i);
                     const inProgress=p&&!["completed", "aborted"].includes(p.status);
-                    // Not voiced yet: the attempt still starts, entirely as text.
+                    // A new attempt requires complete, verified audio.
                     const textOnly=t.voice?.ready===false&&!inProgress;
                     if(!operator112&&t.mode!=='dds')return null;
                     if(operator112&&mode&&t.mode!==mode)return null;
@@ -159,12 +159,12 @@ export function Assignments() {
                         {operator112&&<span className="task-mode">
                           {t.mode === "112" ? "112" : "ДДС"}
                         </span>}
-                        <span>{t.title}{textOnly&&<small role="status">{`Озвучка ${t.voice.generated} из ${t.voice.total}`}{t.voice.failed?', есть ошибки':''} — билет запустится текстом, без звука</small>}{p?.text_only&&!textOnly&&<small className="text-only-mark">без звука</small>}</span>
+                        <span>{t.title}{textOnly&&<small role="status">{t.voice.waiting_for_device?'Звук загружается на этот ПК':`Озвучка ${t.voice.generated} из ${t.voice.total}${t.voice.failed?', есть ошибки':''} — билет ещё не готов`}</small>}{p?.text_only&&!textOnly&&<small className="text-only-mark">без звука</small>}</span>
                         {u.role === "student" ? (
                           <button
                             className="small"
-                            disabled={!a.released}
-                            title={textOnly?'Озвучка ещё не готова: билет пройдёт текстом, сообщения приходят в историю связи':undefined}
+                            disabled={!a.released||textOnly}
+                            title={textOnly?'Билет будет доступен после подготовки всех записей':undefined}
                             onClick={() => start(a.id, i)}
                           >
                             {!a.released

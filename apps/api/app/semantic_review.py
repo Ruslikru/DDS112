@@ -115,14 +115,16 @@ def review_attempt(attempt_id):
             if apply_cached(c,p.state):continue
             payload=json.dumps({'criterion':c['label'],'expected':c['expected'],'teacher_approved_examples':approved[c['id']],'teacher_rejected_examples':rejected[c['id']],'learner_text':c['actual'],'context':model_context(c.get('evidence_context',context))},ensure_ascii=False,separators=(',',':'))
             if len(payload)>14000:raise ValueError('Слишком большой объём текста для локальной проверки; нужна проверка преподавателя.')
-            value,meta=ai.complete(SYSTEM,payload,SCHEMA,tokens=240,priority=10)
+            from local_ai.context import on_device
+            with on_device(p.state.get('ai_device_id')):
+                value,meta=ai.complete(SYSTEM,payload,SCHEMA,tokens=240,priority=10)
             apply_evaluation(c,grounded_evaluation(value,c['actual'],meta))
         a['semantic_review']={'status':'done','at':now()}
         a=score(a)
     except AIUnavailable as error:
         # A live telephone request may own the model. Retry the saved job later.
         busy=ai.lock.locked()
-        a['semantic_review']={'status':'queued' if busy else 'error','at':now(),
+        a['semantic_review']={'status':'queued','at':now(),
                               'error':str(error)[:500],'retry_after':time.time()+15}
     except Exception as error:
         a['semantic_review']={'status':'error','at':now(),'error':str(error)[:500]}

@@ -208,6 +208,20 @@ async def security(request,call_next):
     return response
 
 @app.middleware('http')
+async def local_inference_destination(request,call_next):
+    from local_ai.context import on_device
+    from .classroom_models import Workstation
+    from .management import server_id
+    wid=None
+    token=request.headers.get('x-workstation','')
+    if token:
+        with SessionLocal() as db:
+            station=db.scalar(select(Workstation).where(Workstation.secret_hash==hashlib.sha256(token.encode()).hexdigest()))
+            if station and not station.blocked and (station.approved or os.getenv('DEMO_CLASSROOM')=='1' and station.number.isdigit()):
+                wid=station.id if station.id!=server_id() else None
+    with on_device(wid):return await call_next(request)
+
+@app.middleware('http')
 async def diagnostic_requests(request,call_next):
     supplied=request.headers.get('x-request-id','')
     rid=supplied if 8<=len(supplied)<=64 and all(c.isalnum() or c=='-' for c in supplied) else secrets.token_hex(12)
@@ -335,7 +349,7 @@ def add_group(data:dict,u=Depends(current),db:Session=Depends(getdb)):
 @app.get('/api/tickets')
 def tickets(u=Depends(current),db:Session=Depends(getdb)):
     staff(u)
-    from .voice import readiness
+    from .voice import readiness,device_audio_ready
     from .training_modes import operator_112_enabled
     allow_112=operator_112_enabled(db)
     from .test_catalog import library_visible
@@ -397,7 +411,7 @@ def archive(id:int,u=Depends(current),db:Session=Depends(getdb)):
     t.archived=not t.archived; audit(db,u,'ticket_archived',id); db.commit(); return {'ok':True}
 @app.get('/api/assignments')
 def assignments(u=Depends(current),db:Session=Depends(getdb)):
-    from .voice import readiness
+    from .voice import readiness,device_audio_ready
     from .training_modes import operator_112_enabled
     allow_112=operator_112_enabled(db)
     out=[]
@@ -406,7 +420,7 @@ def assignments(u=Depends(current),db:Session=Depends(getdb)):
         v=db.get(TicketVersion,a.version_id); student=db.get(User,a.student_id)
         if not catalog_available(v.data) or (not allow_112 and any(task.get('mode')!='dds' for task in v.data.get('tasks',[]))):continue
         attempts=db.scalars(select(Attempt).where(Attempt.assignment_id==a.id).order_by(Attempt.id.desc())).all()
-        out.append({'id':a.id,'lesson_id':a.lesson_id,'session_id':a.session_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'onboarding':t.get('onboarding'),'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment,'text_only':bool((p.state or {}).get('text_only'))} for p in attempts]})
+        out.append({'id':a.id,'lesson_id':a.lesson_id,'session_id':a.session_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'onboarding':t.get('onboarding'),'voice':{**readiness({'tasks':[t]},db),**({'ready':False,'waiting_for_device':True} if not device_audio_ready(db,a.version_id,u.id) else {})}} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment,'text_only':bool((p.state or {}).get('text_only'))} for p in attempts]})
     return out
 @app.post('/api/assignments')
 def assign(data:AssignmentIn,u=Depends(current),db:Session=Depends(getdb)):
@@ -419,7 +433,7 @@ def assign(data:AssignmentIn,u=Depends(current),db:Session=Depends(getdb)):
     if not operator_112_enabled(db) and any(task.get('mode')!='dds' for task in v.data.get('tasks',[])):fail('Режим 112 отключён администратором')
     if not catalog_available(v.data):fail('В тестовом каталоге доступны только два билета ДДС')
     from .voice import ensure_ready
-    ensure_ready(v.data,db,text_ok=True)  # not voiced yet: the students' attempts start as text
+    ensure_ready(v.data,db)
     for id in set(data.students):
         s=db.get(User,id)
         if not s or s.role!='student' or not s.active or s.deleted_at or not visible(db,u,id): fail('Ученик недоступен',403)
@@ -482,6 +496,8 @@ def apply_command(id,c,u,db,_trusted_ai=False):
     if p.revision!=c.revision: fail('Состояние обновилось. Повторите действие.',409)
     if p.status in ['completed','aborted']: fail('Попытка завершена')
     state=copy.deepcopy(p.state); task=p.snapshot; payload=c.payload; kind=c.type
+    from local_ai.context import device_id
+    state['ai_device_id']=device_id.get()
     if state.get('mini_started'):fail('Сначала завершите минивопрос')
     if p.status=='paused' and kind not in ['resume','abort']: fail('Продолжите тренировку')
     if kind=='accept_call':

@@ -24,5 +24,5 @@ function RuntimeStrip(){
  return <aside className="runtime-status-strip" aria-label="Состояние нейросетей" aria-live="off">{[['cards','Qwen 4B'],['stt','GigaAM'],['tts','Piper']].map(([id,label])=>{
   const model=value?.models[id],state=offline?'cold':model?.state||'warming',description=offline?'нет связи с сервером':states[state]||state;
   return <span key={id} data-model={id} data-state={state} aria-label={`${label}: ${description}`} title={`${label}: ${description}; ${model?.model||''}; ${String(model?.mode||'cpu').toUpperCase()}; потоков: ${model?.threads??'—'}`}><i className={'runtime-dot '+state}/>{label} <b>{model?.threads??'—'}</b> п.</span>;
- })}<span className="runtime-cpu" title="Общая загрузка процессора сервера, а не отдельной модели">ЦП {offline||value?.cpu_percent==null?'—':Math.round(value.cpu_percent)+'%'}</span></aside>;
+ })}<span className="runtime-cpu" title="Загрузка процессора этого устройства">ЦП {offline||value?.cpu_percent==null?'—':Math.round(value.cpu_percent)+'%'}</span></aside>;
 }

@@ -77,8 +77,8 @@ def test_video_creation_commands(teacher,classroom):
     assert parse_create('Один пострадавший',[])['victims_count']==1
     question=ask(teacher,'Создай мини задание: Какие клавиши обновляют журнал? варианты Ctrl+F5; Ctrl+F2; Ctrl+F7; верный ответ Ctrl+F5')
     assert question['intent']=='create_question' and question['confirm_required'],question
-    assert question['slots']['options']==['Ctrl+F5','Ctrl+F2','Ctrl+F7']
-    assert question['slots']['answer']=='Ctrl+F5'
+    assert question['slots']['options']==['Ctrl + F5','Ctrl + F2','Ctrl + F7']
+    assert question['slots']['answer']=='Ctrl + F5'
     student=ask(teacher,'Создай нового ученика')
     assert student['missing'][0]['slot']=='name'
     student=ask(teacher,'Тюрин Василий Денисович',dialog={'intent':'create_student','slots':{**student['slots'],'answer_slot':'name'}})
@@ -252,7 +252,9 @@ def test_connect_commands_choose_a_specific_student_or_station(teacher,classroom
     assert ask(teacher,'покажи рабочие места')['action']=={'kind':'navigate','to':'/'}
     assert ask(teacher,'выйди с этого ПК')['action']=={'kind':'logout'}
 
-def test_group_and_mini_question_dialogs(teacher):
+def test_group_and_mini_question_dialogs(teacher,monkeypatch):
+    from apps.api.app import assistant
+    monkeypatch.setattr(assistant,'generate_question_options',lambda prompt,answer:[answer,'Другая служба'])
     r=ask(teacher,'создай новую группу учеников')
     assert r['intent']=='create_group' and r['missing'][0]['slot']=='name'
     r=ask(teacher,'Тренировка',dialog={'intent':'create_group','slots':{**r['slots'],'answer_slot':'name'}})

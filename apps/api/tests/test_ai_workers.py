@@ -3,7 +3,9 @@ import time
 import uuid
 from test_flows import app,TestClient,login,post,HEAD
 from apps.api.app.ai_workers import Broker
-from local_ai.engine import LocalEngine
+from local_ai.engine import LocalEngine,AIUnavailable
+from local_ai.context import on_device
+import pytest
 
 SCHEMA={'type':'object','properties':{'id':{'type':'string','enum':['yes']}},'required':['id']}
 
@@ -12,7 +14,9 @@ def test_broker_assigns_each_job_to_one_authorized_worker():
     b=Broker(lambda:{'worker_ids':['a','b']},timeout=2)
     b.poll('a',True);b.poll('b',True)
     out=[]
-    threads=[threading.Thread(target=lambda:out.append(b.dispatch('system','text',SCHEMA,12,0))) for _ in range(2)]
+    def dispatch(wid):
+        with on_device(wid):out.append(b.dispatch('system','text',SCHEMA,12,0))
+    threads=[threading.Thread(target=dispatch,args=(wid,)) for wid in ('a','b')]
     for t in threads:t.start()
     jobs={wid:b.poll(wid,True) for wid in ('a','b')}
     assert all(jobs.values()) and jobs['a']['id']!=jobs['b']['id']
@@ -25,15 +29,19 @@ def test_broker_assigns_each_job_to_one_authorized_worker():
     assert not b.jobs
 
 
-def test_offline_invalid_and_late_worker_results_fall_back():
+def test_offline_invalid_and_late_worker_results_never_fall_back():
     b=Broker(lambda:{'worker_ids':['a']},timeout=.08)
-    assert b.dispatch('s','p',SCHEMA,12,0) is None
+    with on_device('a'),pytest.raises(AIUnavailable):b.dispatch('s','p',SCHEMA,12,0)
     b.poll('a',True)
     out=[]
-    t=threading.Thread(target=lambda:out.append(b.dispatch('s','p',SCHEMA,12,0)));t.start()
+    def dispatch():
+        with on_device('a'):
+            try:out.append(b.dispatch('s','p',SCHEMA,12,0))
+            except AIUnavailable:out.append(None)
+    t=threading.Thread(target=dispatch);t.start()
     job=b.poll('a',True);t.join(1)
     assert out==[None] and not b.finish('a',job['id'],{'id':'yes'},'')
-    t=threading.Thread(target=lambda:out.append(b.dispatch('s','p',SCHEMA,12,0)));t.start()
+    t=threading.Thread(target=dispatch);t.start()
     job=b.poll('a',True)
     assert b.finish('a',job['id'],{'id':'malformed'},'')
     t.join(1);assert out==[None,None]
@@ -55,7 +63,7 @@ def test_worker_access_and_user_roles_do_not_depend_on_machine(monkeypatch):
             login(pc,role)
             assert pc.get('/api/me').json()['role']==role
         assert post(pc,'/ai/execution',{'execution':'workstations','worker_ids':[w['id']]}).status_code==403
-        assert post(admin,'/ai/execution',{'execution':'workstations','worker_ids':[w['id']]}).status_code==200
+        assert post(admin,'/ai/execution',{'execution':'workstations','worker_ids':[w['id']]}).status_code==410
         assert post(pc,'/ai/workers/poll',{'available':True}).json()=={'job':None}
         assert pc.get('/api/ai/workers').status_code==403
         admin.patch('/api/classroom/stations/'+w['id'],json={'blocked':True},headers=HEAD)
@@ -78,8 +86,8 @@ def test_gpu_and_execution_settings_persist(tmp_path,monkeypatch):
     assert e.status()['gpu_available']
     e.set_settings(model='models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf')
     assert e.config()['model']=='models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
-    e.set_settings(model='models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf')
-    assert e.config()['model']=='models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf'
+    with pytest.raises(ValueError):e.set_settings(model='models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf')
+    assert e.config()['model']=='models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
     with __import__('pytest').raises(ValueError):e.set_settings(model='models/unknown.gguf')
 
 

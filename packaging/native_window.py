@@ -213,7 +213,9 @@ def run(data, launcher):
         from local_ai.voice import VoiceRuntime
         from device_runtime.voice_sync import VoiceSync
         voice=VoiceRuntime(data/"workstation-voice")
+        if worker:voice.llm=worker.engine;worker.voice=voice
         voice_sync=VoiceSync(config,data)
+        voice.sync=voice_sync
         class DesktopBridge(VoiceBridge):
             def report_ui_error(self,message,stack):
                 logging.error("UI error: %s | %s",str(message)[:2000],str(stack)[:4000]);return True
@@ -248,7 +250,7 @@ def run(data, launcher):
         window=webview.create_window('Тренажёр 112 / ДДС',server.url,width=1366,height=900,
                                      min_size=(1024,680),maximized=True,js_api=native_bridge)
         from device_runtime.agent import Agent
-        agent=Agent(config,data,base_data,window,worker,launcher.VERSION)
+        agent=Agent(config,data,base_data,window,worker,launcher.VERSION,voice=voice)
         identified_once=False
         def identify():
             nonlocal identified_once

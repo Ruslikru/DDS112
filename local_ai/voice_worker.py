@@ -46,9 +46,9 @@ def run(req):
     if device=='gpu' and not torch.cuda.is_available():raise ValueError('CUDA GPU недоступен. Выберите CPU.')
     device='cuda' if device=='gpu' else 'cpu'
     start=time.perf_counter()
-    threads=max(1,min(16,int(req.get('stt_threads',2))))
+    threads=max(1,min(os.cpu_count() or 1,int(req.get('stt_threads',2))))
     if torch.get_num_threads()!=threads:torch.set_num_threads(threads)
-    tts_threads=max(1,min(16,int(req.get('tts_threads',2))))
+    tts_threads=max(1,min(os.cpu_count() or 1,int(req.get('tts_threads',2))))
     warm=stt_key is not None if req['op'] in ('warm','transcribe') else ('piper',req.get('model','piper').removeprefix('piper-'),tts_threads)==tts_key
     if req['op'] in ('warm','transcribe') and req.get('model','gigaam')!='gigaam':
         raise ValueError('Распознавание доступно только через GigaAM v3')

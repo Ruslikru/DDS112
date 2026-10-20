@@ -27,6 +27,7 @@ class LocalEngine:
         self.root = Path(root or os.getenv('LOCAL_AI_DIR', Path(__file__).parent)).resolve()
         self.data = Path(data or os.getenv('DATA_DIR', self.root / 'data'))
         self.process = None
+        self.ready = False
         self.url = None
         self.key = secrets.token_urlsafe(32)
         self.lock = threading.Lock()
@@ -48,11 +49,15 @@ class LocalEngine:
             config['mode']='cpu'
             config['model']=DEFAULT_MODEL
         config.setdefault('mode','cpu')
-        config.setdefault('execution','server')
+        config['execution']='local'
         config.setdefault('worker_ids',[])
         config.setdefault('device','')
         # Migrate old assistant settings to the single shared text model.
         config['assistant_model']=config['model']
+        from .resources import effective_resources
+        config.update(effective_resources(config))
+        config['resources_configured']='stt_device' in config
+        config.setdefault('stt_device','cpu')
         return config
 
     def gpu_devices(self):
@@ -69,11 +74,12 @@ class LocalEngine:
 
     def status(self):
         c = self.config()
-        return {'mode': c['mode'], 'threads': c['threads'], 'model': Path(c['model']).stem,
+        return {**{k:c[k] for k in ('threads','stt_threads','tts_threads','threads_auto','cpu_threads','recommended_threads','stt_device')}, 'mode': c['mode'], 'model': Path(c['model']).stem,
                 'model_id':c['model'], 'assistant_model':MODELS[c['assistant_model']], 'assistant_model_id':c['assistant_model'], 'assistant_available':model_available(self.root,c['assistant_model']), 'models':[{'id':name,'label':label,'available':model_available(self.root,name)} for name,label in MODELS.items()],
                 'available': model_available(self.root,c['model']) and (self.root/'runtime'/('vulkan' if c['mode']=='gpu' else 'cpu')/'llama-server.exe').is_file(),
                 'gpu_available': bool(self.gpu_devices()),'gpus':self.gpu_devices(),'device':c['device'],
                 'execution': c['execution'],
+                'ready':self.ready and self.process is not None and self.process.poll() is None,
                 'running': self.process is not None and self.process.poll() is None,
                 'busy': self.lock.locked(), 'error': self.error}
 
@@ -83,6 +89,7 @@ class LocalEngine:
             try: self.process.wait(timeout=10)
             except subprocess.TimeoutExpired: self.process.kill(); self.process.wait(timeout=5)
         self.process = None
+        self.ready = False
         if self.log_thread: self.log_thread.join(timeout=2)
         if self.log_handler: self.log_handler.close(); self.log_handler=None
         self.on_event('ai_stopped')
@@ -90,10 +97,14 @@ class LocalEngine:
     def set_mode(self, mode):
         self.set_settings(mode=mode)
 
-    def set_settings(self, mode=None, execution=None, worker_ids=None, device=None, model=None, assistant_model=None, threads=None):
+    def set_settings(self, mode=None, execution=None, worker_ids=None, device=None, model=None, assistant_model=None, threads=None, stt_threads=None, tts_threads=None, threads_auto=None, stt_device=None):
         if mode is not None and mode not in ('cpu','gpu'): raise ValueError('Выберите CPU или GPU')
         if assistant_model is not None and assistant_model != CARD_MODEL: raise ValueError('Все текстовые задачи используют Qwen 4B')
-        if threads is not None and (type(threads) is not int or not 1<=threads<=16):raise ValueError('Число потоков должно быть от 1 до 16')
+        from .resources import cpu_threads
+        for count in (threads,stt_threads,tts_threads):
+            if count is not None and (type(count) is not int or not 1<=count<=cpu_threads()):raise ValueError('Число потоков превышает возможности процессора')
+        if threads_auto is not None and type(threads_auto) is not bool:raise ValueError('Некорректная автонастройка')
+        if stt_device is not None and stt_device not in ('cpu','gpu'):raise ValueError('Выберите CPU или GPU')
         if assistant_model is not None and not model_available(self.root,assistant_model): raise ValueError('Не найдены база или адаптер обученной модели')
         if execution is not None and execution not in ('server','workstations'): raise ValueError('Выберите место вычислений')
         if model is not None and model not in MODELS: raise ValueError('Неизвестная модель')
@@ -110,7 +121,11 @@ class LocalEngine:
             c = self.config()
             if model is not None:c['model']=model
             if assistant_model is not None:c['assistant_model']=assistant_model
-            if threads is not None:c['threads']=threads
+            for key,value in dict(threads=threads,stt_threads=stt_threads,tts_threads=tts_threads,threads_auto=threads_auto,stt_device=stt_device).items():
+                if value is not None:c[key]=value
+            if threads is not None and threads_auto is None:c['threads_auto']=False
+            if not c.get('threads_auto',True) and sum(c[k] for k in ('threads','stt_threads','tts_threads'))>max(3,cpu_threads()):
+                raise ValueError('Сумма потоков превышает число потоков процессора')
             if mode is not None:c['mode']=mode
             if device is not None:c['device']=device
             if execution is not None:c['execution']=execution
@@ -158,7 +173,7 @@ class LocalEngine:
                 req = urllib.request.Request(self.url + '/health', headers={'Authorization': 'Bearer ' + self.key})
                 with urllib.request.urlopen(req, timeout=1) as response:
                     if response.status == 200:
-                        self.on_event('ai_ready',mode=c['mode']);return
+                        self.ready=True;self.on_event('ai_ready',mode=c['mode']);return
             except Exception: time.sleep(.15)
         self.stop()
         raise AIUnavailable('Нейросеть не запустилась. Проверьте local-ai.log; для GPU нужен драйвер Vulkan.')
@@ -186,7 +201,7 @@ class LocalEngine:
             self.queue.notify_all()
 
     def complete(self, system, prompt, schema, tokens=128, temperature=0, *, priority=0):
-        if self.delegate and self.config()['execution']=='workstations':
+        if self.delegate:
             result=self.delegate(system,prompt,schema,tokens,temperature)
             if result is not None:return result
         queued=time.monotonic()

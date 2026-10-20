@@ -44,6 +44,8 @@ def adaptive_delivery(db,lesson,stamp):
         if not suitable:suitable=[i for i in range(len(tasks)) if tasks[i].get('difficulty_level',1)<=target]
         index=random.choice(suitable) if suitable else min(pool,key=lambda i:tasks[i].get('difficulty_level',1),default=None)
         if index is not None:
+            from .voice import readiness,device_audio_ready
+            if not readiness({'tasks':[tasks[index]]},db)['ready'] or not device_audio_ready(db,a.version_id,a.student_id):continue
             delivery_index=index if index in remaining else max(done,default=-1)+1
             create_attempt(db,a,tasks[index],delivery_index,flow='dds_stream')
 

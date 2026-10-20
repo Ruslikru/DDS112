@@ -5,6 +5,7 @@ import {api,Obj,uuid} from './shared';
 import {CallAudioEngine} from './call-audio';
 import {BrigadeAudio,DDSVoiceCall,PhoneCallControl} from './voice';
 import './avaya-phone.css';
+import phoneKeySound from './assets/phone-key.wav';
 
 type Slot={contact:string,held:boolean,ready?:string,incoming?:Obj};
 type Entry={id:string,name:string,phone:string,kind:'received'|'outgoing'|'missed',at:string};
@@ -13,6 +14,9 @@ const phases:Record<string,string>={idle:'Готов к работе',dialing:'�
 
 /** Three independent conversations share the workstation lease, but never their audio or recorder. */
 export function AvayaPhone({p,active,busy,textOnly,onSelect,onUpdate,cmd,onOpen,onTranscript,onCallEnd,onCallStart}:{p:Obj,active:boolean,busy:boolean,textOnly:boolean,onSelect:(id:string)=>void,onUpdate:(value:Obj)=>void,cmd:(type:string,payload?:Obj)=>Promise<any>,onOpen:()=>void,onTranscript:(text:string)=>void,onCallEnd:()=>void,onCallStart:()=>void}){
+ const keySound=useMemo(()=>{const audio=new Audio(phoneKeySound);audio.preload='auto';audio.volume=.45;return audio;},[]);
+ useEffect(()=>()=>{keySound.pause();},[keySound]);
+ const playKey=()=>{keySound.currentTime=0;void keySound.play().catch(()=>{});};
  const engines=useMemo(()=>[new CallAudioEngine(),new CallAudioEngine(),new CallAudioEngine()],[p.id]);
  const [slots,setSlots]=useState<Slot[]>([empty(),empty(),empty()]),[selected,setSelected]=useState(0),[screen,setScreen]=useState<'phone'|'contacts'|'history'>('phone');
  const [device,setDevice]=useState<'handset'|'speaker'|'headset'|null>(null),[muted,setMuted]=useState(false),[digits,setDigits]=useState(''),[error,setError]=useState('');
@@ -93,7 +97,7 @@ export function AvayaPhone({p,active,busy,textOnly,onSelect,onUpdate,cmd,onOpen,
  function renderDevice(controls:PhoneCallControl[]){
   calls.current=controls;const control=controls[selected],connected=control.phase!=='idle'||incomingPlaying===selected;
   const status=slot.held?'Вызов на удержании':muted&&connected?'Микрофон отключён':incomingPlaying===selected?'Слушайте абонента':phases[control.phase];
-  return <div className="avaya-simulator" data-phase={incomingPlaying===selected?'greeting':control.phase} data-call-active={connected} data-screen={screen} data-selected-contact={entries[cursor]?.id||''} onKeyDown={e=>{if((e.target as HTMLElement).closest('textarea,input'))return;if(/^[0-9*#]$/.test(e.key)){e.preventDefault();pressDigit(e.key);}if(e.key==='Enter'&&e.target===e.currentTarget){e.preventDefault();choose();}if(e.key==='Backspace'){e.preventDefault();setDigits(v=>v.slice(0,-1));}}}>
+  return <div className="avaya-simulator" onClickCapture={e=>{const button=(e.target as HTMLElement).closest('button');if(button&&!button.disabled)playKey();}} data-phase={incomingPlaying===selected?'greeting':control.phase} data-call-active={connected} data-screen={screen} data-selected-contact={entries[cursor]?.id||''} onKeyDown={e=>{if((e.target as HTMLElement).closest('textarea,input'))return;if(/^[0-9*#]$/.test(e.key)){e.preventDefault();playKey();pressDigit(e.key);}if(e.key==='Enter'&&e.target===e.currentTarget){e.preventDefault();choose();}if(e.key==='Backspace'){e.preventDefault();setDigits(v=>v.slice(0,-1));}}}>
    <div className="avaya-body" aria-label="Телефон Avaya">
 
     <div className="avaya-console"><div className="avaya-brand">AVAYA <small>{p.task.own_service||'ДДС'}</small></div>

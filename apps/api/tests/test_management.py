@@ -40,7 +40,7 @@ def test_remote_desktop_lease_and_gpu_validation(monkeypatch):
         login(admin,'admin');row=register(agent);prefix=f'/management/devices/{row["id"]}'
         assert post(admin,prefix+'/ai',{'mode':'gpu','device':'Vulkan99'}).status_code==400
         monkeypatch.setenv('CLASSROOM_SERVER_STATION_ID',row['id'])
-        assert post(admin,prefix+'/ai',{'mode':'server'}).status_code==400
+        assert post(admin,prefix+'/ai',{'mode':'server'}).status_code==422
         token=post(admin,prefix+'/desktop').json()['token'];path=prefix+'/desktop/'+token
         assert post(admin,path+'/input',{'kind':'click','x':.5,'y':.4}).status_code==200
         p=post(agent,'/management/agent/poll',{'frame':'data:image/jpeg;base64,dGVzdA=='}).json()

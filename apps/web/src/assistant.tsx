@@ -5,6 +5,7 @@ import {Sparkles,Send,Mic,MicOff,History,Trash2} from 'lucide-react';
 import {api,UserContext,type Obj} from './shared';
 import {ArmDialog} from './arm-ui';
 import {record,hasVoiceBridge,serverTranscribe} from './voice';
+import {ClassroomContext} from './classroom-client';
 import {AssistantMicrophoneSettings} from './assistant-microphone-settings';
 
 /** Teacher assistant: text commands parsed by server rules. Reading and navigation run at once,
@@ -103,7 +104,7 @@ export function TeacherAssistant(){
 }
 
 function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
- const navigate=useNavigate(),location=useLocation();
+ const navigate=useNavigate(),location=useLocation(),room=useContext(ClassroomContext);
  const {messages,setMessages,dialog,setDialog,origin,creation,autoRecord,holding}=store;
  const [text,setText]=useState(''),[busy,setBusy]=useState<''|'ask'|'run'|'generate'>('');
  const [voice,setVoice]=useState<VoiceSource>('checking'),[recording,setRecording]=useState(false),[listening,setListening]=useState(''),[heard,setHeard]=useState('');
@@ -181,11 +182,19 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
    const body:Obj={text:phrase,context:{page:location.pathname,version_id:sessionStorage.getItem('assistant:last-version')?Number(sessionStorage.getItem('assistant:last-version')):undefined}};
    if(dialog)body.dialog={intent:dialog.intent,slots:{...dialog.slots,...(slots||{}),...(slots?{answer_slot:Object.keys(slots)[0]}:dialog.missing?{answer_slot:dialog.missing}:{})}};
    const r:Obj=await api('/assistant/interpret','POST',body);
+   if(r.action?.kind==='start_broadcast'){
+    const selection:{students:number[]}={students:[]};
+    if(!r.action.students?.length)window.dispatchEvent(new CustomEvent('training112:broadcast-selection',{detail:selection}));
+    const ids=r.action.students?.length?r.action.students:selection.students;
+    const count=await room.startBroadcast(ids);
+    push({who:'assistant',text:`Трансляция начата. Подключено учеников: ${count}.`});
+    setDialog(null);return r;
+   }
    const question=r.missing?.[0];
    const gathered=r.intent==='create_ticket'&&(question||r.candidates?.length)?collected(r.slots||{}):[];
    push({who:'assistant',text:r.preview||'Готово.',candidates:r.candidates?.length?r.candidates:undefined,options:question?.options?.length?{slot:question.slot,options:question.options}:undefined,confirm:r.confirm_required?{intent:r.intent,slots:r.slots,token:r.confirm_token}:undefined,links:r.links?.length?r.links:undefined,collected:gathered.length?gathered:undefined});
    if(finish(r.action))return r;
-   if(r.candidates?.length||question||r.confirm_required){if(!dialog)origin.current=phrase;setDialog({intent:r.intent,slots:DIALOG_INTENTS.includes(r.intent)?r.slots:{},missing:question?.slot});}
+   if(r.candidates?.length||question||r.confirm_required){if(!dialog)origin.current=phrase;setDialog({intent:r.intent,slots:DIALOG_INTENTS.includes(r.intent)||r.intent==='demo_mode'?r.slots:{},missing:question?.slot});}
    else setDialog(null);
    return r;
   }catch(e:any){push({who:'assistant',text:e.message,error:true});return null;}

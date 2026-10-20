@@ -17,6 +17,8 @@ def test_brigade_sequential_waits_for_record_without_timeout(monkeypatch):
    task=next(t for v in db.scalars(select(TicketVersion)) for t in v.data['tasks'] if t['mode']=='dds')
    task=copy.deepcopy(task)
    task['service_events']=[{'kind':'incoming_call','contact_id':'unit1','who':'Бригада','text':str(i),'after':20+i*25} for i in range(3)]
+   # This fixture exercises timing with synthetic reports; audio readiness has its own tests.
+   monkeypatch.setattr('apps.api.app.voice.ensure_ready',lambda *a,**k:{'ready':True})
    p=create_attempt(db,assignment,task,987);db.commit()
    stamp=time.time();clock=[stamp+3];monkeypatch.setattr(m.time,'time',lambda:clock[0])
    m.process_events(db);db.refresh(p)
