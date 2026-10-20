@@ -16,7 +16,7 @@ def test_teacher_group_profile_stars_and_excel():
         r=c.put(f'/api/teacher/groups/{gid}/members',json={'students':[sid]},headers=HEAD);assert r.status_code==200,r.text
         with SessionLocal() as db:
             teacher=db.scalar(select(User).where(User.login=='teacher'))
-            version=db.scalar(select(TicketVersion).where(TicketVersion.published==True))
+            version=next(v for v in db.scalars(select(TicketVersion).where(TicketVersion.published==True)) if v.data['tasks'][0]['mode']=='dds')
             assignment=Assignment(version_id=version.id,student_id=sid,teacher_id=teacher.id,title='Проверка профиля')
             db.add(assignment);db.flush()
             for i in range(4):
@@ -71,7 +71,7 @@ def test_demo_students_have_different_playable_levels(monkeypatch):
             assignments=c.get('/api/assignments').json()
             selected=next(a for a in assignments if a['title'].startswith('★'*n+' ·'))
             p=post(c,f'/assignments/{selected["id"]}/start').json()
-            assert p['task']['limit_seconds']=={1:90,3:45,5:30}[n]
+            assert p['task']['limit_seconds']==300
             assert bool(p['card']['house'])==(n<4)
             mini=post(c,f'/learning/drill/{p["id"]}').json()
             assert mini and mini['level']=={1:0,3:2,5:5}[n]

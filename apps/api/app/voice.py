@@ -33,10 +33,13 @@ def prepare(data,db,owner,preserve=False):
     from .caller import enrich_task
     result['tasks']=[enrich_task(t) for t in result['tasks']]
     for task in result['tasks']:
+        from .call_audio import prepare_task
+        prepare_task(task)
         if preserve:
             old=next((db.get(VoiceJob,line['voice_key']) for c in task.get('contacts',[]) for line in c.get('voice_lines',[]) if line.get('voice_key') and db.get(VoiceJob,line['voice_key'])),None)
             if old:cfg=old.data['settings']
         speakers={c['id']:c.get('voice_gender','male') for c in task.get('contacts',[])}
+        voices={c['id']:c.get('voice_tts') for c in task.get('contacts',[])}
         for contact in task.get('contacts',[]):
             contact['voice_lines']=[{'text':text,'spoken':True,'contact_id':contact['id'],'voice_gender':contact.get('voice_gender','male')} for text in dict.fromkeys([contact.get('response',''),*contact.get('updates',[]),*[q['answer'] for q in contact.get('questions',[])]]) if text.strip()]
         for contact in task.get('contacts',[]):
@@ -50,11 +53,12 @@ def prepare(data,db,owner,preserve=False):
             speaker=event.get('contact_id') or event.get('who','brigade')
             gender=speakers.setdefault(speaker,event.get('voice_gender','male'))
             event['voice_gender']=gender
-            spec={'speaker_id':speaker,'text':event['text'],'gender':gender,'settings':cfg,'revision':'voice-v1'}
+            spec={'speaker_id':speaker,'text':event['text'],'gender':gender,'settings':{**cfg,**({'tts':voices[speaker]} if voices.get(speaker) else {})},'revision':'voice-v1'}
             key=hashlib.sha256(json.dumps(spec,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
             event['voice_key']=key
             if not db.get(VoiceJob,key):db.add(VoiceJob(id=key,data={**spec,'owner':owner},status='pending'))
     db.flush()
+    restore_builtin(db)
     return result
 
 def speech_items(task):
@@ -77,6 +81,8 @@ def readiness(data,db):
 def attach_audio(data,db):
     result=copy.deepcopy(data)
     for task in result.get('tasks',[result]):
+        from .call_audio import prepare_task
+        prepare_task(task)
         for event in speech_items(task):
             job=db.get(VoiceJob,event.get('voice_key',''))
             if job and job.status=='ready':event['audio_id']=job.audio_id
@@ -142,6 +148,11 @@ def recover():
 
 
 def ensure_ready(data,db):
+    from .call_audio import prepare_task,ensure_assets
+    try:
+        for task in data.get('tasks',[data]):
+            if task.get('mode')=='dds':ensure_assets(prepare_task(copy.deepcopy(task)))
+    except (OSError,ValueError,KeyError):m.fail('Не удалось подготовить звуковое окружение звонка. Проверьте файлы программы.',409)
     status=readiness(data,db)
     if not status['ready']:
         label='Ошибка генерации звука. Попросите преподавателя проверить очередь.' if status['failed'] else 'Звук для билета ещё генерируется.'
@@ -189,15 +200,18 @@ class TranscribeIn(BaseModel):
 @router.post('/transcribe')
 def transcribe(data:TranscribeIn,u=Depends(m.current),db=Depends(m.getdb)):
     """Speech to text on the server for the teacher assistant: a browser without the native bridge, same length limit as the bridge."""
-    m.staff(u)
     from .assistant import speech_prompt
-    # The assistant uses the bigger Whisper model when it is installed and a hint with the command vocabulary and service names: short commands like «билет» or «служба сто два» are otherwise mis-heard.
-    try:value=runtime.transcribe(data.audio,prompt=speech_prompt(db),model='base')
+    # Распознавание команд преподавателя использует локальную GigaAM.
+    try:value=runtime.transcribe(data.audio,prompt=speech_prompt(db,u) if u.role in ('teacher','admin') else '',model='gigaam')
     except ValueError as e:m.fail(str(e))
     except Exception as e:
         # An empty recording is the speaker's problem, not an outage: Whisper reports it as an error string.
         if 'не распознана' in str(e):m.fail('Речь не распознана. Удерживайте кнопку, пока говорите, и проверьте, что микрофон включён.')
-        m.fail('Распознавание на сервере недоступно: '+str(e),503)
+        if any(part in str(e) for part in ('End of file','Invalid data','В записи нет звука','пустая','слишком короткая')):
+            m.fail('Запись не получилась. Удерживайте микрофон, произнесите фразу и отпустите кнопку.')
+        import logging
+        logging.exception('Microphone transcription failed')
+        m.fail('Не удалось распознать запись. Повторите попытку. Если ошибка повторяется, сообщите преподавателю.',503)
     return {**{k:v for k,v in (value or {}).items() if k!='text'},'text':str((value or {}).get('text','')).strip()}
 
 @router.post('/prepare')

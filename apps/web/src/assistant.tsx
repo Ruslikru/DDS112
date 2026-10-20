@@ -1,9 +1,11 @@
+import {selectedMicrophone,selectMicrophone,MICROPHONE_CHANGED} from './microphone-preference';
 import React,{useContext,useEffect,useRef,useState} from 'react';
 import {useLocation,useNavigate} from 'react-router-dom';
 import {Sparkles,Send,Mic,MicOff,History,Trash2} from 'lucide-react';
 import {api,UserContext,type Obj} from './shared';
 import {ArmDialog} from './arm-ui';
-import {record,hasVoiceBridge,serverTranscribe,listMicrophones} from './voice';
+import {record,hasVoiceBridge,serverTranscribe} from './voice';
+import {AssistantMicrophoneSettings} from './assistant-microphone-settings';
 
 /** Teacher assistant: text commands parsed by server rules. Reading and navigation run at once,
  *  changing commands (tickets) go through a slot form and confirmation cards with a server token.
@@ -21,24 +23,24 @@ const VOICE_HINT='Голосовой ввод доступен в приложе
 const HOLD_HINT='Удерживайте микрофон или Ctrl+Space и говорите. Отпустите, и фраза отправится.';
 /** Below this input level (RMS) the whole recording counts as silence: the microphone gave no sound. */
 const SILENT_LEVEL=0.004;
-const SILENT_HINT='Микрофон не передал звук. Проверьте, что он включён и не заглушён, или выберите другой микрофон под полем ввода.';
-const MIC_KEY='training112:assistant-mic';
+const SILENT_HINT='Микрофон не передал звук. Проверьте, что он включён и не заглушён, или выберите другой микрофон через шестерёнку вверху ассистента.';
+
 /** Lines like «Страницы: …» get a bold label; the rest of the text is shown as written. */
 function Text({text}:{text:string}){
  return <p>{text.split('\n').map((line,i)=>{const m=/^([А-ЯЁ][а-яё]+):\s(.+)$/.exec(line);return <React.Fragment key={i}>{i>0&&<br/>}{m?<><b>{m[1]}:</b> {m[2]}</>:line}</React.Fragment>;})}</p>;
 }
 /** Spoken answers to an open confirmation card are handled on the client, without the server. JS \b ignores Cyrillic, hence the lookahead. */
-const VOICE_YES=/^(да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|сохрани|сохранить|ок|окей|хорошо)(?=[\s.,!?]|$)/i;
+const VOICE_YES=/^(создай|создать|отправь|отправить|опубликуй|да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|сохрани|сохранить|ок|окей|хорошо)(?=[\s.,!?]|$)/i;
 const VOICE_NO=/^(нет|отмена|отмени|отменить|не надо|не нужно|стоп|не выполняй)(?=[\s.,!?]|$)/i;
 const HINTS=['Что умеешь?','Журнал','Проверить работы','Кто сейчас в классе?','Новый билет'];
-const DIALOG_INTENTS=['create_ticket','edit_ticket','save_ticket'];
+const DIALOG_INTENTS=['create_ticket','edit_ticket','save_ticket','create_group','open_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'];
 const HISTORY_KEY='training112:assistant-history';
 const HISTORY_SIZE=10;
 const WELCOME:Message={who:'assistant',text:'Напишите или скажите команду: «открой журнал», «где сидит Кузнецов», «создай билет про пожар на 3 звезды». Переходы выполняются сразу, билеты создаются и меняются только после вашего подтверждения.'};
 /** Last typed commands, newest first; kept per browser only as a convenience. */
 function readHistory():string[]{try{const list=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');return Array.isArray(list)?list.filter(x=>typeof x==='string').slice(0,HISTORY_SIZE):[];}catch{return [];}}
 function remember(list:string[],phrase:string):string[]{const next=[phrase,...list.filter(x=>x!==phrase)].slice(0,HISTORY_SIZE);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next));}catch{}return next;}
-const allowed=(role:string)=>role==='teacher'||role==='admin';
+const allowed=(role:string)=>role==='teacher';
 /** What the ticket slot form has collected so far, shown above the next question. */
 function collected(slots:Obj):string[]{
  const out:string[]=[];
@@ -68,7 +70,7 @@ type VoiceSource='checking'|'bridge'|'server'|'none';
 export function AssistantButton(){
  const u=useContext(UserContext);
  if(!allowed(u.role))return null;
- return <button type="button" className="assistant-button" title="Ассистент преподавателя (Ctrl+Space)" onClick={()=>window.dispatchEvent(new Event(TOGGLE))}><Sparkles size={17}/><span>ассистент</span></button>;
+ return <button type="button" className="assistant-button" title="Ассистент преподавателя (Ctrl+Space)" aria-label="Открыть AI ассистента" onClick={()=>window.dispatchEvent(new Event(TOGGLE))}><Sparkles size={24}/><span>AI</span></button>;
 }
 
 export function TeacherAssistant(){
@@ -100,8 +102,9 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const stopRecording=useRef<((cancel?:boolean)=>void)|undefined>(undefined),startedAt=useRef(0);
  /** Input level while recording and the loudest moment of the last recording (to tell a silent microphone from unclear speech). */
  const [level,setLevel]=useState(0),peak=useRef(0);
- const [mics,setMics]=useState<{id:string,label:string}[]>([]),[mic,setMic]=useState(()=>{try{return localStorage.getItem(MIC_KEY)||'';}catch{return '';}});
- const chooseMic=(id:string)=>{setMic(id);try{if(id)localStorage.setItem(MIC_KEY,id);else localStorage.removeItem(MIC_KEY);}catch{}};
+ const [mic,setMic]=useState(selectedMicrophone);
+ useEffect(()=>{const changed=()=>setMic(selectedMicrophone());window.addEventListener(MICROPHONE_CHANGED,changed);return()=>window.removeEventListener(MICROPHONE_CHANGED,changed);},[]);
+ const chooseMic=(id:string)=>{setMic(id);selectMicrophone(id);};
  /** Recognition finishes asynchronously, so spoken answers must look at the current log and slot form, not at the ones captured when recording started. */
  const latest=useRef({messages,dialog});latest.current={messages,dialog};
  useEffect(()=>{
@@ -147,19 +150,26 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  /** Navigation keeps the panel open: the page changes behind it and the answer stays in the log. */
  const go=(to:string)=>{navigate(to);focus();};
  const finish=(action:Obj|undefined)=>{
-  if(action?.kind==='navigate'){go(action.to);return true;}
+  if(action?.kind==='navigate'){setDialog(null);go(action.to);return true;}
   if(action?.kind==='close'){onClose();return true;}
+  if(action?.kind==='logout'){api('/logout','POST').finally(()=>{window.dispatchEvent(new Event('auth-expired'));navigate('/');});onClose();return true;}
   return false;
  };
  /** Sends a phrase; `slots` carries an answer given with a button, `shown` is what the log displays. */
  const send=async(command:string,slots?:Obj,shown?:string):Promise<Obj|null>=>{
   const phrase=command.trim();
   if(!phrase&&!slots)return null;
+  const pending=latest.current.messages.at(-1)?.confirm;
+  if(/^(?:да[, ]+)?подтвер(?:ди|дить|ждаю)(?:\s+оценку)?[.!]?$/i.test(phrase)&&document.querySelector('[data-review-open]')){window.dispatchEvent(new CustomEvent('training112:review-command',{detail:{command:/^да/i.test(phrase)?'confirm':'request'}}));return null;}
+  if(pending&&VOICE_YES.test(phrase)&&!slots){run(pending,phrase);return null;}
+  if(dialog?.intent==='save_ticket'&&pending?.intent==='save_ticket'&&(/^(?:сохрани|сохранить)$/i.test(phrase)||/(?:открой|открыть|покажи|сохрани).*редактор/i.test(phrase))){
+   run(pending,'Сохранить и открыть');return null;
+  }
   if(dialog&&!slots)settle(dialog.missing?'отвечено':'уточнено');
   push({who:'user',text:shown||phrase});setText('');setCursor(-1);setBusy('ask');
   if(!slots&&phrase&&!dialog?.missing)setHistory(list=>remember(list,phrase));
   try{
-   const body:Obj={text:phrase,context:{page:location.pathname}};
+   const body:Obj={text:phrase,context:{page:location.pathname,version_id:sessionStorage.getItem('assistant:last-version')?Number(sessionStorage.getItem('assistant:last-version')):undefined}};
    if(dialog)body.dialog={intent:dialog.intent,slots:{...dialog.slots,...(slots||{}),...(slots?{answer_slot:Object.keys(slots)[0]}:dialog.missing?{answer_slot:dialog.missing}:{})}};
    const r:Obj=await api('/assistant/interpret','POST',body);
    const question=r.missing?.[0];
@@ -177,10 +187,11 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const heardText=async(spoken:string)=>{
   const phrase=spoken.trim();
   setListening('');setHeard(phrase);
+  if(/^(?:да[, ]+)?подтвер(?:ди|дить|ждаю)(?:\s+оценку)?[.!]?$/i.test(phrase)&&document.querySelector('[data-review-open]')){await send(phrase);return;}
   const {messages:log,dialog:form}=latest.current;
   const card=log[log.length-1]?.confirm;
   if(card&&form){
-   if(VOICE_YES.test(phrase)){run(card,card.intent==='save_ticket'?'Сохранить':'Выполнить');return;}
+   if(VOICE_YES.test(phrase)||card.intent==='save_ticket'&&/(?:открой|покажи).*редактор/i.test(phrase)){run(card,card.intent==='save_ticket'?'Сохранить и открыть':'Выполнить');return;}
    if(VOICE_NO.test(phrase)){cancel();return;}
   }
   if(phrase.length<3){setHeard('');push({who:'assistant',text:'Речь не распознана, повторите.',error:true});return;}
@@ -218,15 +229,6 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  useEffect(()=>{const start=()=>{voiceStart.current();},stop=()=>{voiceStop.current();};window.addEventListener(VOICE_START,start);window.addEventListener(VOICE_STOP,stop);return()=>{window.removeEventListener(VOICE_START,start);window.removeEventListener(VOICE_STOP,stop);};},[]);
  useEffect(()=>{if(autoRecord.current&&voice!=='checking'){autoRecord.current=false;if(voice!=='none'&&holding.current)voiceStart.current();else holding.current=false;}},[voice]);
  useEffect(()=>()=>{stopRecording.current?.(true);},[]);
- // Ask for the microphone when the window opens, so the browser's permission prompt does not fall into the first held recording.
- useEffect(()=>{
-  if(voice!=='server'&&voice!=='bridge')return;
-  let alive=true;
-  const refresh=()=>listMicrophones().then(list=>{if(alive)setMics(list);});
-  navigator.mediaDevices?.getUserMedia?.({audio:true}).then(stream=>stream.getTracks().forEach(track=>track.stop())).catch(()=>{}).finally(refresh);
-  navigator.mediaDevices?.addEventListener?.('devicechange',refresh);
-  return()=>{alive=false;navigator.mediaDevices?.removeEventListener?.('devicechange',refresh);};
- },[voice]);
  const micDisabled=!recording&&(!!busy||voice==='none'||voice==='checking');
  const micTitle=voice==='none'?VOICE_HINT:voice==='checking'?'Проверяем голосовой модуль…':recording?'Отпустите, чтобы отправить':'Удерживайте и говорите (Ctrl+Space)'+(voice==='server'?'. Распознавание на сервере':'');
  /** The line under the log always says what the microphone will do, not only while it is busy. */
@@ -242,12 +244,14 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   if(confirm.intent==='create_ticket')creation.current=confirm;
   try{
    const r:Obj=await api('/assistant/execute','POST',{intent:confirm.intent,slots:confirm.slots,confirm_token:confirm.token});
+   if(r.slots?.version_id)sessionStorage.setItem('assistant:last-version',String(r.slots.version_id));
+   if(r.action?.to?.match(/^\/tickets\/\d+$/))sessionStorage.setItem('assistant:last-version',r.action.to.split('/').at(-1));
    const next=r.confirm_required?{intent:r.intent,slots:r.slots,token:r.confirm_token}:undefined;
    push({who:'assistant',text:r.preview||'Выполнено.',confirm:next,links:r.links?.length?r.links:undefined});
    if(next)setDialog({intent:r.intent,slots:r.slots});
    else{setDialog(null);creation.current=null;finish(r.action);}
   }catch(e:any){
-   // 409: the token or draft is older than ten minutes, so the command has to be composed again; anything else can simply be retried.
+   // 409: the token or draft has expired; other errors can be retried with the same confirmation.
    const expired=e.status===409;
    push({who:'assistant',text:e.message,error:true,retry:expired?{origin:origin.current}:{confirm}});
   }
@@ -268,12 +272,12 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
  const pick=(slot:string,option:Obj)=>{if(busy)return;settle('выбрано: '+option.label);send(option.label,{[slot]:option.value},option.label);};
  const cancel=()=>{settle('отменено');setDialog(null);creation.current=null;push({who:'assistant',text:'Отменено. Ничего не изменено.'});focus();};
  const clear=()=>{setMessages([WELCOME]);setDialog(null);creation.current=null;focus();};
- const adjust=()=>{settle('уточнение');push({who:'assistant',text:'Напишите, что поменять: например «сложность 4», «режим 112» или «без пострадавших».'});focus();};
+ const adjust=()=>{settle('уточнение');push({who:'assistant',text:dialog?.intent==='create_group'?'Напишите новое название или состав группы.':dialog?.intent?.includes('question')?'Напишите, какой текст вопроса, ответа или озвучки изменить.':'Напишите, что поменять: например «сложность 4» или «без пострадавших».'});focus();};
  const openWizard=(slots:Obj)=>{settle('открыто в мастере');setDialog(null);creation.current=null;navigate('/tickets',{state:{wizard:{own_service:slots.own_service,services:slots.services,incident_type:slots.incident_type,mode:slots.mode,difficulty_stars:slots.difficulty,victims_state:slots.victims,victims_count:slots.victims_count||1,traits:slots.traits||[]}}});focus();};
  const last=messages.length-1;
- const busyText=busy==='generate'?'Создаю черновик… Модель работает локально, это может занять до минуты.':busy==='run'?'Выполняю…':'Разбираю команду…';
+  const busyText=busy==='generate'?'Создаю черновик: собираю историю, звонки и проверочные факты. Обычно это занимает около минуты.':busy==='run'?'Сохраняю изменения…':'Разбираю команду…';
  const cancelButton=<button type="button" disabled={!!busy} onClick={cancel}>Отмена</button>;
- return <ArmDialog title="Ассистент" className="assistant-shade" modal={false} onClose={onClose}>
+ return <ArmDialog title="Ассистент" className="assistant-shade" modal={false} onClose={onClose} headerActions={<AssistantMicrophoneSettings value={mic} onChange={chooseMic} disabled={recording||!!stopRecording.current}/> }>
   <div className="assistant-log" ref={log} aria-live="polite">
    {messages.map((message,index)=>{
     const card=isCard(message),active=card&&index===last&&!message.done&&(!!dialog||!!message.retry);
@@ -296,13 +300,13 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
       </div>
      :<div className="assistant-confirm" role="group" aria-label="Подтверждение команды">
        <button type="button" className="primary" disabled={!!busy} onClick={()=>run(message.confirm!)}>Выполнить</button>
-       <button type="button" disabled={!!busy} onClick={adjust}>Изменить</button>
+       <button type="button" disabled={!!busy} onClick={message.confirm.intent==='create_group'||message.confirm.intent.includes('question')?()=>recompose(origin.current):adjust}>{message.confirm.intent==='create_group'||message.confirm.intent.includes('question')?'Составить заново':'Изменить'}</button>
        {message.confirm.intent==='create_ticket'&&<button type="button" disabled={!!busy} onClick={()=>openWizard(message.confirm!.slots)}>Открыть в мастере</button>}
        {cancelButton}
       </div>)}
     {card&&!active&&<small className="assistant-done">{message.done||'без ответа'}</small>}
    </div>;})}
-   {busy&&<div className="assistant-message assistant busy"><p>{busyText}</p></div>}
+    {busy&&<div className="assistant-message assistant busy" role="status"><p>{busyText}</p>{busy==='generate'&&<div className="assistant-progress" aria-label="Создание черновика выполняется"><span/></div>}</div>}
   </div>
   <div className="assistant-hints">
    {HINTS.map(hint=><button type="button" key={hint} disabled={!!busy} onClick={()=>send(hint)}>{hint}</button>)}
@@ -319,6 +323,5 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
    <textarea ref={input} aria-label="Команда ассистенту" rows={2} value={text} maxLength={500} placeholder={dialog?.missing==='student'?'Фамилия или имя ученика':dialog?.missing?'Ответ на вопрос ассистента':dialog?'Что изменить в команде?':'Команда ассистенту. Enter отправит, стрелка вверх повторит прошлую'} onChange={e=>{setText(e.target.value);setCursor(-1);}} onKeyDown={keys} disabled={!!busy}/>
    <button type="submit" className="assistant-send" disabled={!!busy||!text.trim()} title="Отправить (Enter)" aria-label="Отправить"><Send size={20}/></button>
   </form>
-  {mics.length>1&&<label className="assistant-mic-choice">Микрофон <select value={mics.some(m=>m.id===mic)?mic:''} disabled={recording} onChange={e=>chooseMic(e.target.value)}><option value="">по умолчанию</option>{mics.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</select></label>}
  </ArmDialog>;
 }

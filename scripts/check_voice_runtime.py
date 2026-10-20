@@ -7,7 +7,7 @@ import importlib
 import sys
 from pathlib import Path
 
-REQUIRED = ('numpy', 'torch', 'torchaudio', 'soundfile', 'qwen_tts', 'faster_whisper')
+REQUIRED = ('numpy', 'torch', 'torchaudio', 'soundfile', 'av', 'hydra', 'sentencepiece', 'piper', 'onnxruntime')
 
 runtime = Path(sys.prefix).resolve()
 site = runtime / 'Lib' / 'site-packages'

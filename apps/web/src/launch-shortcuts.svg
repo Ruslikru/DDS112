@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="126" viewBox="0 0 440 126">
+  <rect width="440" height="126" rx="10" fill="#f2f6f8"/>
+  <rect x="12" y="12" width="416" height="48" rx="6" fill="#e2f2fa" stroke="#1683b3"/>
+  <g fill="none" stroke="#1683b3" stroke-width="2"><rect x="28" y="24" width="26" height="18" rx="2"/><path d="M41 42v6m-8 0h16"/></g>
+  <text x="70" y="42" font-family="Segoe UI, sans-serif" font-size="17" fill="#203746">На одном ПК</text>
+  <path d="m392 30 6 6-6 6m-11-6h17" fill="none" stroke="#1683b3" stroke-width="2"/>
+  <g fill="none" stroke="#6a7e8c" stroke-width="2"><rect x="34" y="74" width="14" height="10" rx="1"/><path d="M41 84v8m-13 0h26m-26 0v6m26-6v6"/><rect x="23" y="98" width="10" height="8"/><rect x="49" y="98" width="10" height="8"/></g>
+  <text x="70" y="98" font-family="Segoe UI, sans-serif" font-size="17" fill="#607888">В локальной сети</text>
+</svg>

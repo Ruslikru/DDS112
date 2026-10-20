@@ -22,16 +22,33 @@ DEFAULT_SERVICES={
 
 def profile(db,sid):
     p=db.get(TrainingProfile,sid)
-    if not p:p=TrainingProfile(user_id=sid,data={});db.add(p);db.flush()
+    if not p:
+        from sqlalchemy.exc import IntegrityError
+        try:
+            with db.begin_nested():
+                p=TrainingProfile(user_id=sid,data={});db.add(p);db.flush()
+        except IntegrityError:p=db.get(TrainingProfile,sid)
     return p
 
+
+def onboarding_needed(db,sid):
+    p=db.get(TrainingProfile,sid)
+    if p and p.data.get('demo_level',0)>0:return False
+    attempts=db.scalars(select(Attempt).where(Attempt.student_id==sid,Attempt.status!='aborted')).all()
+    if any(not a.snapshot.get('onboarding') and a.status=='completed' for a in attempts):return False
+    return len({a.snapshot.get('onboarding') for a in attempts if a.status=='completed'})<2
+
 def summary(db,sid):
-    attempts=db.scalars(select(Attempt).where(Attempt.student_id==sid,Attempt.status=='completed').order_by(Attempt.id.desc()).limit(30)).all()
+    attempts=db.scalars(select(Attempt).where(Attempt.student_id==sid,Attempt.status=='completed').order_by(Attempt.id.desc())).all()
+    from .training_modes import operator_112_enabled
+    if not operator_112_enabled(db):attempts=[a for a in attempts if a.snapshot.get('mode')=='dds']
+    attempts=attempts[:30]
     assessments=[a.assessment for a in attempts if a.assessment]
     confirmed=[a for a in assessments if not a.get('pending') and not a.get('ai_preliminary') and not a.get('assisted')]
     scores=[a['score'] for a in confirmed if a.get('score') is not None]
     avg=round(statistics.mean(scores)) if scores else None
-    p=profile(db,sid);intro=p.data.get('intro_complete',False)
+    p=profile(db,sid);needs_onboarding=onboarding_needed(db,sid)
+    intro=p.data.get('intro_complete',False) or not needs_onboarding
     level=0 if not intro else 1 if len(scores)<3 else 4 if avg>=90 else 3 if avg>=75 else 2 if avg>=50 else 1
     levels={}
     for attempt in attempts:
@@ -47,7 +64,7 @@ def summary(db,sid):
         mastered=max(0,p.data['demo_stars']-1)
     level=max(level,min(5,mastered)) if intro else 0
     times=[a['measured_seconds'] for a in confirmed if a.get('measured_seconds') is not None]
-    return {'mastered_stars':mastered,'recommended_stars':min(5,mastered+1) if mastered else 1,'level':level,'intro_complete':intro,'score':avg,'completed':len(attempts),'confirmed':len(scores),
+    return {'needs_onboarding':needs_onboarding,'needs_intro':needs_onboarding and not intro,'mastered_stars':mastered,'recommended_stars':min(5,mastered+1) if mastered else 1,'level':level,'intro_complete':intro,'score':avg,'completed':len(attempts),'confirmed':len(scores),
         'seconds':round(statistics.mean(times),1) if times else None,
         'text_errors':sum(len(a.get('text_checks',[])) for a in assessments),
         'drills':len(p.data.get('drills',[])),'mini_correct':sum(x['correct'] for x in p.data.get('drills',[]))}
@@ -60,12 +77,14 @@ def seed_catalog(db):
         for data in [
             {'prompt':'Введите название улицы точно: Добненская','kind':'text','answer':'Добненская','options':[],'level':1},
             {'prompt':'Выберите правильное написание','kind':'choice','answer':'Задымление','options':['Задымление','Задымленее'],'level':1},
-            {'prompt':'Примите входящий звонок сочетанием Ctrl + Enter (клавиша тренажёра).','kind':'hotkey','answer':'Ctrl+Enter','options':[],'level':0},
+            {'prompt':'Примите входящий звонок сочетанием Ctrl + Enter (клавиша тренажёра).','kind':'hotkey','answer':'Ctrl+Enter','options':[],'level':0,'mode':'112'},
             {'prompt':'Откройте подсказки по клавишам: нажмите Alt.','kind':'hotkey','answer':'Alt','options':[],'level':0}]:
             db.add(MiniQuestion(owner_id=owner.id,data=data))
     db.commit()
-    from .catalog_expansion import seed_expansion
-    seed_expansion(db)
+    from .initial_library import seed_reference_content
+    seed_reference_content(db)
+    from .dictation import seed as seed_dictation
+    seed_dictation(db)
 
 @router.get('/profile')
 def my_profile(u=Depends(m.current),db=Depends(m.getdb)):
@@ -144,6 +163,11 @@ class MiniIn(BaseModel):
     options:list[str]=Field(default_factory=list,max_length=10)
     level:int=Field(default=1,ge=0,le=4)
     active:bool=True
+    mode:Literal['dds','112']='dds'
+
+def question_available(q,db):
+    from .training_modes import operator_112_enabled
+    return operator_112_enabled(db) or (q.data.get('mode','dds')=='dds' and not q.data.get('prompt','').startswith('Примите входящий звонок сочетанием'))
 
 def question_view(q,db,student=False):
     from .voice import VoiceJob
@@ -151,17 +175,21 @@ def question_view(q,db,student=False):
     job=db.get(VoiceJob,data['voice_key']) if data.get('voice_key') else None
     data.update(audio_id=job.audio_id if job and job.status=='ready' else None,audio_status=job.status if job else '',audio_error=job.error if job else '')
     if student:
+        from .dictation import is_dictation,PROMPT
+        if is_dictation(data):data.update(prompt=PROMPT,dictation=True)
         for key in ('answer','audio_text','voice_key'):data.pop(key,None)
     return {'id':q.id,**data,'active':q.active}
 
 @router.get('/questions')
 def questions(u=Depends(m.current),db=Depends(m.getdb)):
-    m.staff(u);return [question_view(q,db) for q in db.scalars(select(MiniQuestion))]
+    m.staff(u);return [question_view(q,db) for q in db.scalars(select(MiniQuestion)) if question_available(q,db)]
 
 @router.post('/questions')
 @router.put('/questions/{id}')
 def save_question(data:MiniIn,id:int|None=None,u=Depends(m.current),db=Depends(m.getdb)):
     m.staff(u)
+    from .training_modes import operator_112_enabled
+    if data.mode=='112' and not operator_112_enabled(db):m.fail('Режим 112 отключён администратором')
     if data.kind=='choice' and data.answer not in data.options:m.fail('Правильный ответ должен быть среди вариантов')
     row=db.get(MiniQuestion,id) if id else MiniQuestion(owner_id=u.id)
     if not row:m.fail('Вопрос недоступен',404)
@@ -170,31 +198,58 @@ def save_question(data:MiniIn,id:int|None=None,u=Depends(m.current),db=Depends(m
         from .voice import prepare
         prepared=prepare({'tasks':[{'contacts':[{'id':'mini','response':data.audio_text,'voice_gender':data.voice_gender}]}]},db,u.id)
         saved['voice_key']=prepared['tasks'][0]['contacts'][0]['voice_lines'][0]['voice_key']
+    from .dictation import prepare as prepare_dictation
+    saved=prepare_dictation(saved,db,u.id)
     row.data=saved;row.active=data.active;db.add(row);db.commit();return question_view(row,db)
 
 @router.post('/drill/{attempt_id}')
 def drill(attempt_id:int,u=Depends(m.current),db=Depends(m.getdb)):
     a=db.get(Attempt,attempt_id)
     if not a or a.student_id!=u.id:m.fail('Задание недоступно',403)
-    if a.status in ('completed','aborted') or a.snapshot.get('onboarding') or a.state.get('preview'):return None
-    p=profile(db,u.id);data=copy.deepcopy(p.data); key=str(attempt_id)
+    grade=a.assessment or {}
+    report=(grade.get('report_job') or {}).get('status')
+    semantic=(grade.get('semantic_review') or {}).get('status')
+    waiting=report in ('queued','running') or report!='error' and grade.get('pending') and semantic in (None,'queued','running')
+    if a.status=='aborted' or a.status=='completed' and not waiting or a.state.get('preview') or a.state.get('guided') and a.status!='completed':
+        if a.state.get('guided') and a.state.get('mini_started'):
+            state=copy.deepcopy(a.state);elapsed=max(0,time.time()-state.pop('mini_started'));state['paused_seconds']=state.get('paused_seconds',0)+elapsed;a.state=state
+        p=profile(db,u.id)
+        if (p.data.get('pending_drill') or {}).get('attempt')==attempt_id:
+            p.data={**p.data,'pending_drill':None}
+        db.commit()
+        return None
+    review_wait=a.status=='completed'
+    p=profile(db,u.id);data=copy.deepcopy(p.data); key=str(attempt_id)+(':review' if review_wait else '')
     pending=data.get('pending_drill')
+    if pending and pending['attempt']!=attempt_id:
+        previous=db.get(Attempt,pending['attempt'])
+        if not previous or previous.status in ('completed','aborted'):
+            pending=None;data['pending_drill']=None
     if pending and pending['attempt']==attempt_id:
+        from .dictation import is_dictation,prepare as prepare_dictation
+        if is_dictation(pending['data']) and not pending['data'].get('voice_key'):
+            pending={**pending,'data':prepare_dictation(pending['data'],db,u.id)}
+            p.data={**data,'pending_drill':pending};db.commit()
         return question_view(type('Pending',(),{'id':pending['id'],'data':pending['data'],'active':True})(),db,True)
     if pending:return None
-    if key in data.get('drill_offered',[]):return None
-    info=summary(db,u.id);data.setdefault('drill_offered',[]).append(key)
-    p.data=data;db.commit()
-    if info['level']>0 and not (os.getenv('DEMO_CLASSROOM')=='1' and p.data.get('demo_learning_v1')) and secrets.randbelow(4)!=0:return None
+    if not review_wait and key in data.get('drill_offered',[]):return None
+    info=summary(db,u.id)
     group=db.get(Group,u.group_id) if u.group_id else None
     owners=list(db.scalars(select(User.id).where(User.role=='admin')))+([group.teacher_id] if group else [])
-    qs=[q for q in db.scalars(select(MiniQuestion).where(MiniQuestion.active==True,MiniQuestion.owner_id.in_(owners))) if q.data.get('level',1)<=info['level']]
+    qs=[q for q in db.scalars(select(MiniQuestion).where(MiniQuestion.active==True,MiniQuestion.owner_id.in_(owners))) if q.data.get('level',1)<=max(1,info['level']) and question_available(q,db)]
     qs=[q for q in qs if not q.data.get('voice_key') or question_view(q,db).get('audio_id')]
     if not qs:return None
-    top=max(q.data.get('level',1) for q in qs)
-    qs=[q for q in qs if q.data.get('level',1)==top]
-    q=secrets.choice(qs);p.data={**p.data,'pending_drill':{'id':q.id,'attempt':attempt_id,'data':q.data}}
-    a.state={**a.state,'mini_started':time.time()};a.revision+=1;db.commit()
+    # Сначала проходим всю доступную подборку без повторов, затем начинаем новый круг.
+    history=[item['question'] for item in data.get('drills',[])]
+    recent=set(history[-min(len(qs)-1, len(history)):]) if len(qs)>1 and history else set()
+    fresh=[item for item in qs if item.id not in recent] or qs
+    occupied={other.data.get('pending_drill',{}).get('id') for other in db.scalars(select(TrainingProfile).join(User,User.id==TrainingProfile.user_id).where(User.group_id==u.group_id,User.id!=u.id)) if other.data.get('pending_drill')}
+    q=secrets.choice([item for item in fresh if item.id not in occupied] or fresh)
+    if not review_wait:data.setdefault('drill_offered',[]).append(key)
+    p.data={**data,'pending_drill':{'id':q.id,'attempt':attempt_id,'data':q.data}}
+    if not review_wait:
+        a.state={**a.state,'mini_started':time.time()};a.revision+=1
+    db.commit()
     return question_view(q,db,True)
 
 @router.post('/drill-answer')

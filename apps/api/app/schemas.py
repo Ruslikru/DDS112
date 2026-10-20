@@ -23,6 +23,8 @@ class Criterion(BaseModel):
     skill: str = 'Полнота карточки'
 
 class Contact(BaseModel):
+    voice_tts: Literal["piper-denis","piper-irina","piper-ruslan"] | None = None
+    call_audio: dict = Field(default_factory=dict)
     voice_gender: Literal["male","female"] = "male"
     voice_lines: list[dict] = Field(default_factory=list,max_length=60)
     id: str = Field(min_length=1, max_length=80)
@@ -35,6 +37,7 @@ class Contact(BaseModel):
     questions: list[Question] = Field(default_factory=list,max_length=30)
 
 class Task(BaseModel):
+    workplace: dict[str,str] = Field(default_factory=dict)
     caller_gender: Literal['male','female'] | None = None
     scenario_details: dict[str,str] = Field(default_factory=dict)
     onboarding: Literal["112-1","112-2","dds-1","dds-2"] | None = None

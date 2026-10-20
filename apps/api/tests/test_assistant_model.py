@@ -1,5 +1,6 @@
 """Teacher assistant: command parsing uses the small assistant model, ticket generation keeps the main one; test catalogue refuses creation."""
 import json
+from pathlib import Path
 import pytest
 from test_flows import app, TestClient, login, post
 from local_ai.engine import LocalEngine, AssistantEngine, FAST_MODEL, DEFAULT_MODEL
@@ -11,18 +12,25 @@ def engine_root(tmp_path,files):
     (root/'config.json').write_text(json.dumps({'model':DEFAULT_MODEL,'mode':'cpu','threads':6,'context':4096}))
     return root
 
-def test_assistant_model_defaults_to_fast_and_falls_back_when_missing(tmp_path):
-    root=engine_root(tmp_path,['Qwen3-0.6B-Q4_K_M.gguf','Qwen3-4B-Instruct-2507-Q4_K_M.gguf'])
+def test_assistant_requires_trained_base_and_adapter_without_fallback(tmp_path):
+    from local_ai.model_catalog import ASSISTANT_ADAPTER
+    from local_ai.engine import AIUnavailable
+    root=engine_root(tmp_path,[Path(FAST_MODEL).name,Path(DEFAULT_MODEL).name])
     e=LocalEngine(root,tmp_path/'data')
-    assert e.config()['assistant_model']==FAST_MODEL and e.status()['assistant_model_id']==FAST_MODEL
-    e.set_settings(assistant_model=DEFAULT_MODEL)
-    assert e.config()['assistant_model']==DEFAULT_MODEL
-    with pytest.raises(ValueError):e.set_settings(assistant_model='models/nope.gguf')
+    assert e.config()['assistant_model']==FAST_MODEL
+    assert not e.status()['assistant_available']
     second=AssistantEngine(e)
-    assert second.config()['model']==DEFAULT_MODEL and second.config()['threads']==6
-    (root/'models/Qwen3-0.6B-Q4_K_M.gguf').unlink()
-    e.set_settings(assistant_model=DEFAULT_MODEL);(tmp_path/'data'/'ai-settings.json').write_text(json.dumps({**e.config(),'assistant_model':FAST_MODEL}))
-    assert e.config()['assistant_model']==DEFAULT_MODEL,'a missing assistant model file silently means the main model'
+    with pytest.raises(AIUnavailable):second.start()
+    assert second.process is None
+    (root/ASSISTANT_ADAPTER).touch()
+    assert e.status()['assistant_available']
+    e.set_settings(assistant_model=FAST_MODEL)
+    assert second.config()['model']==FAST_MODEL
+    with pytest.raises(ValueError):e.set_settings(assistant_model=DEFAULT_MODEL)
+    with pytest.raises(ValueError):e.set_settings(assistant_model='models/nope.gguf')
+    (tmp_path/'data'/'ai-settings.json').write_text(json.dumps({**e.config(),'assistant_model':DEFAULT_MODEL}))
+    assert e.config()['assistant_model']==FAST_MODEL
+
 
 def test_ask_model_goes_to_assistant_engine(monkeypatch):
     from apps.api.app import ai_routes, assistant_tickets, scenario_wizard

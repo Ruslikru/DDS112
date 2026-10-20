@@ -10,7 +10,7 @@ from argon2 import PasswordHasher
 from .db import *
 from .schemas import *
 from .domain import *
-from .seed import seed
+from .initial_library import seed
 from .test_catalog import enabled as test_catalog_enabled, available as catalog_available, versions as catalog_versions
 from .caller import caller_questions, contact_questions
 from .dds_flow import create_attempt, deliver_due
@@ -52,8 +52,12 @@ def visible(db,u,student):
     return u.role=='teacher' and g and g.teacher_id==u.id
 def person(u): return {k:getattr(u,k) for k in ['id','login','name','role','active','audit_access','group_id','must_change_password']}
 def attempt_view(a,u):
+    from .learning import onboarding_needed
+    state=a.state
     from .voice import attach_audio
-    with SessionLocal() as voice_db:task=attach_audio(a.snapshot,voice_db)
+    with SessionLocal() as voice_db:
+        task=attach_audio(a.snapshot,voice_db)
+        if a.snapshot.get('onboarding') and state.get('guided_source')!='requested' and not onboarding_needed(voice_db,a.student_id):state={**state,'guided':False}
     if a.status not in ['completed','aborted']:
         task['questions']=caller_questions(task)
     if u.role=='student' and not a.assessment:
@@ -61,11 +65,14 @@ def attempt_view(a,u):
         task['contacts']=[{k:v for k,v in c.items() if k not in ['response','updates','questions','voice_lines']} for c in task.get('contacts',[])]
         task['questions']=[{'id':q['id'],'question':q['question']} for q in task['questions']]
         if a.status=='ringing': task['intro']=''; task['intro_audio']=None
-    return {'id':a.id,'assignment_id':a.assignment_id,'student_id':a.student_id,'task_index':a.task_index,'status':a.status,'revision':a.revision,'task':task,'card':a.card,'state':a.state,'assessment':a.assessment,'started_at':a.started_at,'duration':duration(a),'allowed_statuses':allowed_statuses(a.state.get('services',{}).get(a.snapshot['own_service'],[]))}
+    return {'id':a.id,'assignment_id':a.assignment_id,'student_id':a.student_id,'task_index':a.task_index,'status':a.status,'revision':a.revision,'task':task,'card':a.card,'state':state,'assessment':a.assessment,'started_at':a.started_at,'duration':duration(a),'allowed_statuses':allowed_statuses(a.state.get('services',{}).get(a.snapshot['own_service'],[]))}
+
 def process_events(db):
     for event in db.scalars(select(ScheduledEvent).where(ScheduledEvent.done==False,ScheduledEvent.due<=time.time()).order_by(ScheduledEvent.due,ScheduledEvent.id).with_for_update(skip_locked=True)).all():
         a=db.scalar(select(Attempt).where(Attempt.id==event.attempt_id).with_for_update())
         if a.status=='paused' or a.state.get('mini_started'): continue
+        from .call_audio import line_busy
+        if event.data.get('kind')=='incoming_call' and (line_busy(a.id) or a.state.get('incoming_calls')):continue
         if a.state.get('brigade_pacing')=='sequential' and event.data.get('kind')=='incoming_call':
             if a.state.get('incoming_calls') or a.state.get('brigade_waiting_record'):continue
             if a.snapshot.get('onboarding'):
@@ -86,7 +93,7 @@ def process_events(db):
             if state.get('brigade_pacing')=='sequential':
                 state['brigade_next_at']=time.time()+30
                 state['brigade_waiting_record']=event.id
-            state.setdefault('incoming_calls',[]).append({'id':event.id,'contact_id':data.get('contact_id'),'who':data.get('who','Старший бригады'),'received_at':now()})
+            state.setdefault('incoming_calls',[]).append({'id':event.id,'contact_id':data.get('contact_id'),'who':data.get('who','Старший бригады'),'received_at':now(),'call_audio':data.get('call_audio',{})})
         else: state.setdefault('messages',[]).append({**data,'audio':data.get('audio_id'),'at':now()})
         a.state=state; a.revision+=1
         db.add(AttemptEvent(attempt_id=a.id,kind='simulation',data=data)); audit(db,None,'simulation',a.id,data)
@@ -115,8 +122,6 @@ async def lifespan(app):
     with SessionLocal() as db:
         if os.getenv('SEED_DEMO','true').lower()=='true':
             seed(db)
-            from .seed_workflow import seed_workflow
-            seed_workflow(db)
             if os.getenv('DEMO_CLASSROOM')=='1':
                 from .seed import ensure_local_demo_students
                 ensure_local_demo_students(db)
@@ -139,8 +144,8 @@ async def lifespan(app):
     if not test_catalog_enabled():
         from .tutorials import seed as seed_tutorials
         with SessionLocal() as db:seed_tutorials(db)
-        from .communication_examples import seed as seed_communications
-        with SessionLocal() as db:seed_communications(db)
+    from .practice_library import seed as seed_practice
+    with SessionLocal() as db:seed_practice(db)
     from .voice import recover
     recover()
     from .result_report import recover as recover_reports
@@ -154,11 +159,24 @@ async def lifespan(app):
     local_engine.on_event=diagnostic_event
     from local_ai.engine import assistant_engine
     assistant_engine.on_event=diagnostic_event
+    async def warm_models():
+        from .voice import runtime
+        def warm_llm():
+            with local_engine.lock:
+                local_engine.start()
+        for name,loader in (('речь',runtime.warm),('создание билетов',runtime.warm_pre),('анализ',warm_llm)):
+            try:
+                await asyncio.to_thread(loader)
+                diagnostic_event('model_warm_ready',model=name)
+            except Exception as error:
+                diagnostic_event('model_warm_failed',model=name,error=str(error))
+    warm_job=asyncio.create_task(warm_models())
     diagnostic_event('server_ready')
     from .backups import worker as backup_worker
     backup_job=asyncio.create_task(backup_worker())
     yield
     backup_job.cancel()
+    warm_job.cancel()
     from .voice import stopping
     stopping.set()
     if voice_job:voice_job.cancel()
@@ -176,7 +194,8 @@ async def security(request,call_next):
         return Response('Missing request header',403)
     response=await call_next(request)
     response.headers['X-Content-Type-Options']='nosniff'
-    response.headers['Cache-Control']='no-store' if request.url.path.startswith('/api') else 'no-cache'
+    if not request.url.path.startswith('/api/call-audio/assets/'):
+        response.headers['Cache-Control']='no-store' if request.url.path.startswith('/api') else 'no-cache'
     response.headers['X-Frame-Options']='DENY'
     return response
 
@@ -309,10 +328,15 @@ def add_group(data:dict,u=Depends(current),db:Session=Depends(getdb)):
 def tickets(u=Depends(current),db:Session=Depends(getdb)):
     staff(u)
     from .voice import readiness
-    return [{'id':v.id,'ticket_id':v.ticket_id,'number':v.number,'published':v.published,'data':v.data,'editable':True,'archived':db.get(Ticket,v.ticket_id).archived,'voice':readiness(v.data,db)} for v in catalog_versions(db.scalars(select(TicketVersion).order_by(TicketVersion.id.desc()))) if v.data.get('description')!='Снимок занятия']
+    from .training_modes import operator_112_enabled
+    allow_112=operator_112_enabled(db)
+    from .test_catalog import library_visible
+    return [{'id':v.id,'ticket_id':v.ticket_id,'number':v.number,'published':v.published,'data':v.data,'editable':True,'archived':db.get(Ticket,v.ticket_id).archived,'voice':readiness(v.data,db)} for v in catalog_versions(db.scalars(select(TicketVersion).order_by(TicketVersion.id.desc()))) if v.data.get('description')!='Снимок занятия' and library_visible(v.data) and (allow_112 or all(task.get('mode')=='dds' for task in v.data.get('tasks',[])))]
 @app.post('/api/tickets')
 def save_ticket(data:TicketData,ticket_id:int|None=None,u=Depends(current),db:Session=Depends(getdb)):
     staff(u)
+    from .training_modes import operator_112_enabled
+    if not operator_112_enabled(db) and any(task.mode!='dds' for task in data.tasks):fail('Режим 112 отключён администратором')
     t=db.get(Ticket,ticket_id) if ticket_id else Ticket(title=data.title,created_by=u.id)
     if not t: fail('Билет не найден',404)
     db.add(t); db.flush(); number=(db.scalar(select(func.max(TicketVersion.number)).where(TicketVersion.ticket_id==t.id)) or 0)+1
@@ -363,18 +387,22 @@ def archive(id:int,u=Depends(current),db:Session=Depends(getdb)):
 @app.get('/api/assignments')
 def assignments(u=Depends(current),db:Session=Depends(getdb)):
     from .voice import readiness
+    from .training_modes import operator_112_enabled
+    allow_112=operator_112_enabled(db)
     out=[]
     for a in db.scalars(select(Assignment).order_by(Assignment.id.desc())):
         if not visible(db,u,a.student_id): continue
         v=db.get(TicketVersion,a.version_id); student=db.get(User,a.student_id)
-        if not catalog_available(v.data):continue
+        if not catalog_available(v.data) or (not allow_112 and any(task.get('mode')!='dds' for task in v.data.get('tasks',[]))):continue
         attempts=db.scalars(select(Attempt).where(Attempt.assignment_id==a.id).order_by(Attempt.id.desc())).all()
-        out.append({'id':a.id,'lesson_id':a.lesson_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment} for p in attempts]})
+        out.append({'id':a.id,'lesson_id':a.lesson_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'onboarding':t.get('onboarding'),'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment} for p in attempts]})
     return out
 @app.post('/api/assignments')
 def assign(data:AssignmentIn,u=Depends(current),db:Session=Depends(getdb)):
     staff(u); v=db.get(TicketVersion,data.version_id)
     if not v or not v.published or db.get(Ticket,v.ticket_id).archived: fail('Выберите опубликованный билет')
+    from .training_modes import operator_112_enabled
+    if not operator_112_enabled(db) and any(task.get('mode')!='dds' for task in v.data.get('tasks',[])):fail('Режим 112 отключён администратором')
     if not catalog_available(v.data):fail('В тестовом каталоге доступны только два билета ДДС')
     from .voice import ensure_ready
     ensure_ready(v.data,db)
@@ -395,6 +423,8 @@ def start(id:int,data:dict,u=Depends(current),db:Session=Depends(getdb)):
     if lesson_id: db.scalar(select(Lesson).where(Lesson.id==lesson_id).with_for_update())
     a=db.scalar(select(Assignment).where(Assignment.id==id).with_for_update())
     if not a or a.student_id!=u.id: fail('Это назначение другого ученика',403)
+    from .training_modes import operator_112_enabled
+    if not operator_112_enabled(db) and any(task.get('mode')!='dds' for task in db.get(TicketVersion,a.version_id).data.get('tasks',[])):fail('Режим 112 отключён администратором')
     if not catalog_available(db.get(TicketVersion,a.version_id).data):fail('В тестовом каталоге доступны только два билета ДДС')
     if a.lesson_id:
         lesson=db.scalar(select(Lesson).where(Lesson.id==a.lesson_id).with_for_update())
@@ -473,7 +503,7 @@ def apply_command(id,c,u,db,_trusted_ai=False):
             from .voice import VoiceJob
             job=db.get(VoiceJob,event.data['voice_key'])
             if job and job.status=='ready':event.data={**event.data,'audio_id':job.audio_id}
-        state['messages'].append({'who':incoming['who'],'text':event.data['text'],'at':now(),'direction':'incoming','event_id':event.id,'audio':event.data.get('audio_id')})
+        state['messages'].append({'who':incoming['who'],'text':event.data['text'],'at':now(),'direction':'incoming','event_id':event.id,'audio':event.data.get('audio_id'),'contact_id':incoming.get('contact_id'),'call_audio':incoming.get('call_audio',{})})
         state.setdefault('received_calls',[]).append(event.id)
         if event.data.get('stage'):state.setdefault('received_stages',[]).append(event.data['stage'])
         if incoming.get('contact_id'): state.setdefault('contacts',[]).append(incoming['contact_id'])
@@ -481,7 +511,7 @@ def apply_command(id,c,u,db,_trusted_ai=False):
         if task['mode']!='dds': fail('Исходящая учебная связь доступна в ДДС')
         contact=next((x for x in task.get('contacts',[]) if x['id']==payload.get('id')),None)
         if not contact or not contact.get('phone'): fail('Контакт или телефон недоступен')
-        if contact['kind']=='service' and contact.get('service') not in state['services']: fail('Эта служба не получала карточку')
+        if contact['kind']=='service' and contact.get('service') and contact['service'] not in state['services']: fail('Эта служба не получала карточку')
         text=str(payload.get('text','')).strip()
         if not 3<=len(text)<=4000: fail('Введите сообщение для передачи (3–4000 символов)')
         counts=state.setdefault('contact_counts',{}); count=counts.get(contact['id'],0)
@@ -608,7 +638,9 @@ def review(id:int,data:ReviewIn,u=Depends(current),db:Session=Depends(getdb)):
     audit(db,u,'assessment_reviewed',id,data.model_dump()); db.commit(); return attempt_view(p,u)
 @app.get('/api/results')
 def results(u=Depends(current),db:Session=Depends(getdb)):
-    return [{**attempt_view(p,u),'student':db.get(User,p.student_id).name} for p in db.scalars(select(Attempt).where(Attempt.status=='completed').order_by(Attempt.id.desc())) if visible(db,u,p.student_id)]
+    from .training_modes import operator_112_enabled
+    allow_112=operator_112_enabled(db)
+    return [{**attempt_view(p,u),'student':db.get(User,p.student_id).name} for p in db.scalars(select(Attempt).where(Attempt.status=='completed').order_by(Attempt.id.desc())) if visible(db,u,p.student_id) and (allow_112 or p.snapshot.get('mode')=='dds')]
 @app.get('/api/audit')
 def audit_list(q:str='',offset:int=0,u=Depends(current),db:Session=Depends(getdb)):
     if not u.audit_access: fail('Нет права просмотра журнала',403)
@@ -682,6 +714,9 @@ app.include_router(voice_router)
 
 from .tutorials import router as tutorials_router
 app.include_router(tutorials_router)
+
+from .call_audio import router as call_audio_router
+app.include_router(call_audio_router)
 
 if (ROOT/'dist').exists():
     app.mount('/assets',StaticFiles(directory=ROOT/'dist'/'assets'),name='assets')

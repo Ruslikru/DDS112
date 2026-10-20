@@ -1,0 +1,22 @@
+.student-coach{max-height:none!important;overflow:visible!important;overflow-wrap:anywhere;box-sizing:border-box}
+.student-coach.placed:before{display:none}
+.student-coach p{margin:10px 0 16px;line-height:1.5}
+.student-hint-target{outline:3px solid #e5ac00!important;outline-offset:4px;animation:student-target-pulse 1.6s ease-in-out infinite!important}
+@keyframes student-target-pulse{0%,100%{outline-color:#e5ac00;box-shadow:0 0 0 4px #ffe52d55}50%{outline-color:#fff172;box-shadow:0 0 0 9px #ffe52d88}}
+@media(prefers-reduced-motion:reduce){.student-hint-target{animation:none!important;box-shadow:0 0 0 5px #ffe52d88}}
+.analysis-mini-drill{margin-top:22px;padding:20px;background:#fff7d5;border:1px solid #d8bc67;color:#30383c}
+.analysis-mini-drill h3{font-size:18px;margin:12px 0}
+.analysis-mini-drill .mini-drill-intro{margin:8px 0 16px;max-width:65ch}
+.analysis-mini-drill .mini-drill-intro strong{display:block;margin-bottom:5px}
+.analysis-mini-drill form{display:grid;gap:12px}
+.analysis-mini-drill form>button,.analysis-mini-drill article>button{justify-self:start}
+.analysis-mini-drill label{display:flex;align-items:center;gap:10px}
+.analysis-mini-drill label input{width:auto;margin:0}
+.analysis-mini-drill small{font-size:11px;letter-spacing:.06em}
+
+.tutorial-call-script{margin:12px 0;padding:10px 12px;border-left:3px solid #9c7d00;background:#ffffff66;font-size:14px;line-height:1.5;color:#30383c}
+.tutorial-call-script strong{display:block;margin-bottom:5px;font-size:12px}
+
+.dictation-player{margin:14px 0}.dictation-player button{display:inline-flex;align-items:center;gap:8px}.dictation-player audio{display:none}
+
+.mini-drill-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:9px;border-bottom:1px solid #30383c26}.mini-drill-heading strong{font-size:14px;line-height:1.4;letter-spacing:0}.mini-drill-heading span{padding:3px 8px;background:#ffffff66;border:1px solid #30383c26;border-radius:12px;font-size:11px;line-height:1.3;white-space:nowrap}.mini-drill article .mini-drill-intro,.analysis-mini-drill .mini-drill-intro{font-size:13px!important;line-height:1.5;margin:9px 0 22px;color:#495344;max-width:60ch}

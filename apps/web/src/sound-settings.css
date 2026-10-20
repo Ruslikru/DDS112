@@ -1,0 +1,32 @@
+.minimal-sound-settings .sound-settings-content{padding:22px 26px}
+.minimal-sound-settings .sound-chat-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 20px;border:1px solid #cbd7df;background:#f7f9fa}
+.minimal-sound-settings .sound-chat-row.is-enabled{background:#edf6fb;border-color:#8bb5cf}
+.minimal-sound-settings h3{margin:0 0 6px;font-size:15px;color:#253e4e}
+.minimal-sound-settings .sound-chat-row p,.minimal-sound-settings .sound-microphone-test p{margin:0;color:#62788a;font-size:13px;line-height:1.5}
+.minimal-sound-settings .sound-chat-switch{display:flex;align-items:center;gap:10px;min-width:140px;min-height:44px;padding:0 4px;border:0;background:transparent;color:#304e62;font:inherit;cursor:pointer}
+.minimal-sound-settings .sound-chat-switch:disabled{opacity:.55;cursor:default}
+.minimal-sound-settings .sound-switch-track{display:block;flex:none;width:44px;height:26px;border-radius:20px;background:#9daeb8;padding:3px;box-sizing:border-box;transition:background .15s}
+.minimal-sound-settings .sound-switch-track>span{display:block;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #20394840;transition:transform .15s}
+.minimal-sound-settings .sound-chat-switch[aria-checked=true] .sound-switch-track{background:#1884b1}
+.minimal-sound-settings .sound-chat-switch[aria-checked=true] .sound-switch-track>span{transform:translateX(18px)}
+.minimal-sound-settings .sound-chat-switch:focus-visible{outline:2px solid #1884b1;outline-offset:4px}
+.minimal-sound-settings .sound-microphone-section{margin-top:24px;max-width:680px}
+.minimal-sound-settings .sound-native-note{color:#667f90;font-size:13px;margin:12px 0}
+.microphone-settings-inline{display:block;width:100%}
+.microphone-settings-inline .assistant-settings-panel{position:static;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.microphone-settings-inline .assistant-settings-heading{align-items:center;margin-bottom:12px}
+.microphone-settings-inline .assistant-microphone-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.microphone-settings-inline .assistant-microphone-refresh{display:flex;align-items:center;justify-content:center;flex:none;width:34px;height:34px;padding:0;border:1px solid #c5d2dc;background:#fff;color:#56758a;cursor:pointer}
+.microphone-settings-inline .assistant-microphone-field{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:10px 12px;border:1px solid #b8cbd8;background:#fff;color:#294e68;font:inherit;text-align:left;cursor:pointer}
+.microphone-settings-inline .assistant-microphone-field:focus-visible,.microphone-settings-inline .assistant-microphone-field[aria-expanded=true]{outline:2px solid #1884b1;outline-offset:1px}
+.microphone-settings-inline .assistant-microphone-field:disabled{opacity:.6;cursor:default}
+.minimal-sound-settings .sound-microphone-test{display:flex;align-items:center;gap:16px;margin-top:18px;padding-top:18px;border-top:1px solid #dce5e9}
+.minimal-sound-settings .sound-microphone-test .voice-mic{width:46px;height:46px;flex:none}
+.app.staff-app:not(.arm-app) main .minimal-sound-settings .sound-microphone-test .voice-mic{display:flex;align-items:center;justify-content:center;padding:10px;border:0;border-radius:50%;background:#208c62;color:#fff}
+.app.staff-app:not(.arm-app) main .minimal-sound-settings .sound-microphone-test .voice-mic.recording{background:#bd463e}
+.app.staff-app:not(.arm-app) main .minimal-sound-settings .sound-microphone-test .voice-mic svg{width:24px;height:24px;color:inherit}
+.minimal-sound-settings .sound-microphone-test strong{display:block;margin-bottom:5px;font-size:14px;color:#29465a}
+.minimal-sound-settings .sound-microphone-test meter{margin-left:auto;width:100px;height:10px;flex:none;accent-color:#208c62}
+.minimal-sound-settings .sound-test-result{padding:12px 14px;border-left:3px solid #1884b1;background:#edf6fb;color:#29465a;font-size:14px;line-height:1.5}
+@media(max-width:600px){.minimal-sound-settings .sound-settings-content{padding:18px}.minimal-sound-settings .sound-chat-row{gap:12px;padding:16px}.minimal-sound-settings .sound-chat-switch{min-width:0;flex-direction:column;gap:5px;font-size:12px}.minimal-sound-settings .sound-microphone-test{flex-wrap:wrap}.minimal-sound-settings .sound-microphone-test>div{flex:1;min-width:160px}.minimal-sound-settings .sound-microphone-test meter{width:100%;margin:0}}
+@media(prefers-reduced-motion:reduce){.minimal-sound-settings .sound-switch-track,.minimal-sound-settings .sound-switch-track>span{transition:none}}

@@ -1,6 +1,6 @@
 import {VoiceSettings,LiveVoice} from './voice';
 import React, {useState} from 'react';
-import {api, type Obj, useLoad, Notice, uuid} from './shared';
+import {api, type Obj, useLoad, useOperator112, Notice, uuid} from './shared';
 import {useNavigate} from 'react-router-dom';
 
 export function AISettings(){
@@ -9,11 +9,7 @@ export function AISettings(){
   async function execution(value:string, ids:string[]){setBusy(true);setErr('');try{setData(await api('/ai/execution','POST',{execution:value,worker_ids:ids}));await reloadWorkers();}catch(x:any){setErr(x.message);}finally{setBusy(false);}}
   const enabled=(workers||[]).filter((w:Obj)=>w.enabled&&w.approved).map((w:Obj)=>w.id);
   return <><VoiceSettings/><section className="panel form-panel"><h2>Локальная текстовая нейросеть</h2><p><strong>География сценариев: Москва.</strong> Районы, округа и улицы выбираются из московского справочника. Обстоятельства и заявители создаются для учебного сценария.</p><Notice>{error||err}</Notice>
-    <p>{data?.model||'Проверка модели…'} · {data?.available?'Установлена':'Файлы модели не найдены'} · {data?.busy?'Обрабатывает запрос':data?.running?'Готова':'Запустится при первом запросе'}</p>
-    <label>Модель по умолчанию <select disabled={!data||busy} value={data?.model_id||''} onChange={async e=>{setBusy(true);setErr('');try{setData(await api('/ai/model','POST',{model:e.target.value}));}catch(x:any){setErr(x.message);}finally{setBusy(false);}}}>
-      {(data?.models||[]).map((item:Obj)=><option key={item.id} value={item.id} disabled={!item.available}>{item.label}{item.available?'':' · файл не найден'}</option>)}
-    </select></label>
-    <p>0.6B отвечает быстрее; 4B лучше держит детали сценария. Выбор действует для новых запросов и сохраняется после перезапуска.</p>
+    <p>{data?.available?'Установлена':'Файлы модели не найдены'} · {data?.busy?'Обрабатывает запрос':data?.running?'Готова':'Запустится при первом запросе'}</p>
     <label>Где выполнять запросы <select disabled={!data||!workers||busy} value={data?.execution||'server'} onChange={e=>execution(e.target.value,enabled)}><option value="server">На учебном сервере</option><option value="workstations">На выбранных ПК класса</option></select></label>
     <label>Вычисления на сервере <select disabled={!data||busy} value={data?.mode||'cpu'} onChange={async e=>{setBusy(true);setErr('');try{setData(await api('/ai/mode','POST',{mode:e.target.value}));}catch(x:any){setErr(x.message);}finally{setBusy(false);}}}>
       <option value="cpu">CPU — процессор</option><option value="gpu" disabled={!data?.gpu_available}>GPU — видеокарта Vulkan</option></select></label>
@@ -25,14 +21,15 @@ export function AISettings(){
 }
 
 export function AIDraft(){
+  const operator112=useOperator112();
   const nav=useNavigate(),[topic,setTopic]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [mode,setMode]=useState('dds'),[query,setQuery]=useState(''),[incident,setIncident]=useState(''),[ownService,setOwnService]=useState('ДДС района'),[recipients,setRecipients]=useState(''),[district,setDistrict]=useState(''),[affiliation,setAffiliation]=useState('');
   const {data:types}=useLoad('/classifier?q='+encodeURIComponent(query));
   return <details className="panel form-panel"><summary>Создать ситуацию с нейросетью</summary>
-    <form onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{const draft=await api('/ai/generate','POST',{topic,mode,incident_type:incident,own_service:ownService,services:recipients.split('\n').filter(Boolean),district,affiliation});const saved=await api('/tickets','POST',draft.data);nav('/tickets/'+saved.id);}catch(x:any){setError(x.message);}finally{setBusy(false);}}}>
+    <form onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{const draft=await api('/ai/generate','POST',{topic,mode:operator112?mode:'dds',incident_type:incident,own_service:ownService,services:recipients.split('\n').filter(Boolean),district,affiliation});const saved=await api('/tickets','POST',draft.data);nav('/tickets/'+saved.id);}catch(x:any){setError(x.message);}finally{setBusy(false);}}}>
       <p>ДДС: заполненная карточка, контакты, доклады бригады и критерии. Преподаватель проверяет согласованность и утверждает черновик перед назначением.</p>
-      <label>Режим обучения<select value={mode} onChange={e=>setMode(e.target.value)}><option value="dds">Диспетчер ДДС — реагирование</option><option value="112">Оператор 112 — опрос и заполнение</option></select></label>
-      {mode==='dds'&&<div className="form-grid"><label>Поиск типа происшествия<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Например: вода"/></label>
+      {operator112&&<label>Режим обучения<select value={mode} onChange={e=>setMode(e.target.value)}><option value="dds">Диспетчер ДДС — реагирование</option><option value="112">Оператор 112 — опрос и заполнение</option></select></label>}
+      {(!operator112||mode==='dds')&&<div className="form-grid"><label>Поиск типа происшествия<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Например: вода"/></label>
         <label>Тип из классификатора<select required value={incident} onChange={e=>setIncident(e.target.value)}><option value="">Выберите тип</option>{incident&&!types?.some((t:Obj)=>t.title===incident)&&<option>{incident}</option>}{types?.map((t:Obj)=><option key={t.code} value={t.title}>{t.title}</option>)}</select></label>
         <label>Своя ДДС<input required value={ownService} onChange={e=>setOwnService(e.target.value)}/></label><label>Район обслуживания<input required value={district} onChange={e=>setDistrict(e.target.value)} placeholder="Щукино"/></label>
         <label>Подчинённость объекта<input value={affiliation} onChange={e=>setAffiliation(e.target.value)} placeholder="Например: Департамент образования"/></label><label>Другие получатели карточки<textarea value={recipients} onChange={e=>setRecipients(e.target.value)} placeholder="По одной службе на строку; определяет преподаватель"/></label></div>}

@@ -47,7 +47,7 @@ def test_full_phrase_fills_every_slot_and_creates_a_ticket(teacher):
     assert r['intent']=='create_ticket' and r['confirm_required'] and r['confirm_token'] and not r['missing'],r
     assert r['slots']['incident_type']=='пожар' and r['slots']['own_service']=='Служба 101' and r['slots']['mode']=='dds'
     assert r['slots']['difficulty']==3 and r['slots']['victims']=='yes' and r['slots']['victims_count']==2
-    assert 'Служба 101' in r['preview'] and '★★★' in r['preview'] and r['action'] is None and 'Модель:' in r['preview']
+    assert 'Служба 101' in r['preview'] and '★★★' in r['preview'] and r['action'] is None and 'Проверьте факты' in r['preview']
     draft,body=create_and_save(teacher,r)
     assert body['ok'] and body['action']['kind']=='navigate' and body['action']['to'].startswith('/tickets/') and body['links'][0]['to']==body['action']['to']
     version_id=int(body['action']['to'].rsplit('/',1)[1])
@@ -68,9 +68,7 @@ def test_slot_form_asks_one_question_at_a_time(teacher):
     assert r['slots']['incident_type']=='лифт' and r['missing'][0]['slot']=='own_service'
     assert {'value':'ДДС района','label':'ДДС района'} in r['missing'][0]['options'],'two services share the tag «лифт», so the teacher picks one'
     r=follow(teacher,r,'ДДС района',own_service='ДДС района')
-    assert r['slots']['own_service']=='ДДС района' and r['missing'][0]['slot']=='mode'
-    r=follow(teacher,r,'оператора 112')
-    assert r['slots']['mode']=='112' and r['missing'][0]['slot']=='difficulty'
+    assert r['slots']['own_service']=='ДДС района' and r['missing'][0]['slot']=='difficulty' and r['slots']['mode']=='dds'
     r=follow(teacher,r,'четыре')
     assert r['slots']['difficulty']==4 and r['missing'][0]['slot']=='victims'
     r=follow(teacher,r,'есть')
@@ -78,11 +76,11 @@ def test_slot_form_asks_one_question_at_a_time(teacher):
     r=follow(teacher,r,'много')
     assert r['missing'][0]['slot']=='victims_count','an unreadable answer repeats the same question'
     r=follow(teacher,r,'трое')
-    assert r['confirm_required'] and r['slots']['victims_count']==3 and 'оператор 112' in r['preview']
+    assert r['confirm_required'] and r['slots']['victims_count']==3 and 'ДДС района' in r['preview']
     _,done=create_and_save(teacher,r)
     version_id=int(done['action']['to'].rsplit('/',1)[1])
     saved=next(v for v in teacher.get('/api/tickets').json() if v['id']==version_id)
-    assert saved['data']['tasks'][0]['mode']=='112' and saved['data']['difficulty_stars']==4
+    assert saved['data']['tasks'][0]['mode']=='dds' and saved['data']['difficulty_stars']==4
 
 def test_option_click_and_correction_before_confirmation(teacher):
     r=ask(teacher,'создай билет про лифт для ДДС района, сложность 2, без пострадавших')
@@ -90,12 +88,12 @@ def test_option_click_and_correction_before_confirmation(teacher):
     r=follow(teacher,r,'сложность 5')
     assert r['confirm_required'] and r['slots']['difficulty']==5 and r['slots']['incident_type']=='лифт','a correction keeps the other slots'
     r=follow(teacher,r,'Оператор 112',mode='112')
-    assert r['confirm_required'] and r['slots']['mode']=='112'
+    assert r['confirm_required'] and r['slots']['mode']=='dds'
 
 def test_classifier_signs_from_the_phrase_reach_the_wizard(teacher):
     r=ask(teacher,'создай билет про пожар: мусор на улице, открытое пламя, для службы 101, режим ДДС, на 2 звезды без пострадавших')
     assert r['confirm_required'],r
-    assert r['slots']['incident_type']=='пожар: мусор' and set(r['slots']['traits'])>={'на улице','мусор','открытое пламя'} and 'признаки:' in r['preview']
+    assert r['slots']['incident_type']=='пожар: мусор' and set(r['slots']['traits'])>={'на улице','мусор','открытое пламя'} and 'Особые обстоятельства:' in r['preview']
     draft,saved=create_and_save(teacher,r)
     version_id=int(saved['action']['to'].rsplit('/',1)[1])
     task=next(v for v in teacher.get('/api/tickets').json() if v['id']==version_id)['data']['tasks'][0]

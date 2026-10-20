@@ -29,11 +29,11 @@ def assess_wizard(config, facts, services):
 
 
 DIFFICULTY_HINTS={
-    1:'Все исходные сведения доступны сразу, увеличен учебный срок.',
-    2:'Адрес известен сразу; нужно уточнить сведения о людях и обстоятельствах.',
-    3:'Самостоятельный сбор сведений и стандартная последовательность действий.',
-    4:'Нужно дополнительно уточнить адрес и доступ к месту, зафиксировать ответы.',
-    5:'Неполная исходная информация, дополнительные уточнения и задержка бригады.'}
+    1:'Одна понятная ситуация: принять заявку, получить результат и закрыть карточку.',
+    2:'К обычному ходу работ добавлено одно уточнение у заявителя или бригады.',
+    3:'Несколько последовательных докладов; изменения нужно отразить в карточке.',
+    4:'Возникает задержка бригады: уточните адрес и доступ, зафиксируйте решение.',
+    5:'Возникают несколько связанных обстоятельств; сопоставьте доклады бригады и другой службы.'}
 
 def apply_difficulty(ticket, facts, stars):
     """Explicit author choice changes playable facts, questions, pacing and rubric together."""
@@ -52,7 +52,8 @@ def apply_difficulty(ticket, facts, stars):
             q=next(q for q in task['questions'] if q['id']==key);q['required']=True
             task['criteria'].append({'id':'clarify-'+key,'kind':'question','expected':key,'label':q['question'],'weight':10,'skill':'Уточнение сведений'})
     else:
-        task['limit_seconds']={1:90,2:60,3:45,4:40,5:30}[stars]
+        # Difficulty describes decisions and changing circumstances, not a shorter timer.
+        task['limit_seconds']=300
         card=task['initial_card'];caller=next(c for c in task['contacts'] if c['id']=='caller')
         # Restore the complete starting information for lower levels.
         if stars<=3:card['address_note']=facts['address_note']
@@ -64,14 +65,21 @@ def apply_difficulty(ticket, facts, stars):
             task['criteria'] += [
                 {'id':'clarify-caller','kind':'contact','expected':'caller','label':'Уточнены сведения у заявителя','weight':10,'skill':'Уточнение сведений'},
                 {'id':'clarify-house','kind':'field','field':'house','expected':facts['house'],'label':'Уточнён номер дома','weight':10,'critical':True,'skill':'Точность адреса'}]
-        delays={1:[35,80,130],2:[30,65,100],3:[25,50,80],4:[20,45,70],5:[15,35,60]}[stars]
+        delays={1:[35,80,130],2:[30,70,120],3:[25,60,105],4:[25,75,145],5:[25,85,160]}[stars]
         for event,delay in zip(task['service_events'],delays):event['after']=delay
-        if stars==5:
-            report='На подъезде задерживаемся. Уточните у заявителя ориентир и передайте его бригаде.'
-            task['service_events'][0]['text']=report
-            task['contacts'][0]['updates'][0]=report
+        if stars>=4:
+            report='Попали в пробку и задерживаемся. Уточните свободный подъезд к месту и зафиксируйте задержку.'
+            task['service_events'].insert(1,{'kind':'incoming_call','contact_id':'brigade','trigger_contact':'brigade','who':task['contacts'][0]['name'],'after':50,'text':report})
+            task['contacts'][0]['updates'].insert(1,report)
             for criterion in task['criteria']:
                 if criterion['id']=='comments':criterion['expected']=' | '.join(e['text'] for e in task['service_events'])
             task['criteria'].append({'id':'delay-report','kind':'manual','label':'Зафиксирована задержка и передано уточнение бригаде','expected':'В комментариях отражена задержка бригады; после обращения к заявителю бригаде передан ориентир: '+facts['address_note'],'weight':15,'skill':'Координация бригады'})
+        if stars==5:
+            service=next((s for s in task['services'] if s!=task['own_service']),None)
+            if service:
+                message=f'{service}: На участке по адресу заявки временно отключено электроснабжение. Сверьте сведения с карточкой и передайте бригаде.'
+                task['contacts'].append({'id':'related-dds','name':'Диспетчер '+service,'kind':'service','service':service,'phone':'1003','response':message})
+                task['service_events'].insert(2,{'kind':'incoming_call','contact_id':'related-dds','trigger_contact':'brigade','who':'Диспетчер '+service,'after':110,'text':message})
+                task['criteria'].append({'id':'cross-service-report','kind':'manual','label':'Сверены сведения другой службы','expected':message,'weight':15,'skill':'Координация служб'})
     task['criteria']=[c for c in task['criteria'] if c['kind']!='time']
     task['criteria'].append({'id':'time','kind':'time','label':f"Учебный срок: {task['limit_seconds']} секунд",'expected':task['limit_seconds'],'weight':10,'skill':'Время'})

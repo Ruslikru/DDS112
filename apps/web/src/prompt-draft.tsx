@@ -2,7 +2,7 @@ import {VoiceDraft} from './voice';
 import React, {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {X} from 'lucide-react';
-import {api, Notice, Badge, type Obj} from './shared';
+import {api, Notice, Badge, useOperator112, type Obj} from './shared';
 import {ticketStars, starLabel} from './ticket-difficulty';
 import './tickets.css';
 
@@ -25,6 +25,7 @@ function Source({kind}:{kind?:string}){
 
 /** Simplified authoring: one description → the server reads stated facts, fills the rest, the teacher reviews the preview. */
 export function PromptDraft({onClose,onWizard}:{onClose:()=>void,onWizard:(initial:Obj)=>void}){
+  const operator112=useOperator112();
   const nav=useNavigate();
   const [prompt,setPrompt]=useState('');
   const [result,setResult]=useState<Obj|null>(null);
@@ -60,7 +61,7 @@ export function PromptDraft({onClose,onWizard}:{onClose:()=>void,onWizard:(initi
   const story=task.mode==='112'?task.intro:card.description;
   const rows:[string,React.ReactNode,string|undefined][]=draft?[
     ['Происшествие',(candidates.length>1||chosenType)?<select aria-label="Тип происшествия" value={slots.incident_type} disabled={!!busy} onChange={event=>void generate(event.target.value)}>{Array.from(new Set([slots.incident_type,...candidates])).map(title=><option key={title} value={title}>{title}</option>)}</select>:slots.incident_type,sources.incident_type],
-    ['Кого обучаем',MODES[task.mode]||task.mode,sources.mode],
+    ...(operator112?[['Кого обучаем',MODES[task.mode]||task.mode,sources.mode] as [string,React.ReactNode,string|undefined]]:[]),
     ['Своя служба',task.own_service,sources.own_service],
     ['Получатели',(task.services||[]).join(' · '),sources.services],
     ['Сложность',<span><span className="ticket-difficulty">{starLabel(ticketStars(draft))}</span>{draft.difficulty_reason&&<small>{draft.difficulty_reason}</small>}</span>,sources.difficulty],
@@ -78,11 +79,11 @@ export function PromptDraft({onClose,onWizard}:{onClose:()=>void,onWizard:(initi
         {confirmClose&&<div className="ticket-wizard-confirm" role="alertdialog" aria-label="Закрыть без сохранения?"><strong>Закрыть и потерять описание{draft?' и черновик':''}?</strong><div><button type="button" onClick={()=>setConfirmClose(false)} autoFocus>Нет, продолжить</button><button type="button" onClick={onClose}>Да, закрыть</button></div></div>}
         {!draft&&<>
           <label className="ticket-wizard-field">Что произошло?<textarea className="prompt-draft-input" value={prompt} maxLength={2000} rows={6} disabled={!!busy} autoFocus
-            placeholder="Например: пожар в школе, двое пострадавших, для оператора 112, сложность 4"
+            placeholder="Например: пожар в школе, двое пострадавших, сложность 4"
             onChange={event=>setPrompt(event.target.value)}
             onKeyDown={event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)&&prompt.trim().length>=5&&!busy){event.preventDefault();void generate();}}}/>
-            <small className="prompt-draft-hint">Опишите своими словами: происшествие, место, пострадавших, сложность (1–5 звёзд), кого обучаем (оператор 112 или диспетчер службы). Что не указано, подберётся случайно, а в черновике будет видно, какие поля заполнены автоматически.</small></label>
-          <div className="ticket-wizard-field"><span>Примеры</span><div className="prompt-draft-examples">{EXAMPLES.map(example=><button type="button" key={example} disabled={!!busy} onClick={()=>setPrompt(example)}>{example}</button>)}</div></div>
+            <small className="prompt-draft-hint">Опишите своими словами: происшествие, место, пострадавших и сложность (1–5 звёзд). Что не указано, подберётся автоматически.</small></label>
+          <div className="ticket-wizard-field"><span>Примеры</span><div className="prompt-draft-examples">{EXAMPLES.filter(example=>operator112||!example.includes('112')).map(example=><button type="button" key={example} disabled={!!busy} onClick={()=>setPrompt(example)}>{example}</button>)}</div></div>
         </>}
         {draft&&<>
           {(meta.warnings||[]).map((warning:string)=><p key={warning} className="prompt-draft-warning">{warning}</p>)}

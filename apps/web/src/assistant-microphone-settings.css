@@ -1,0 +1,31 @@
+.assistant-shade .arm-dialog>header{position:relative}
+.assistant-shade .arm-dialog-actions{display:flex;align-items:center;gap:4px}
+.assistant-settings{display:flex;align-items:center}
+.assistant-shade .assistant-settings-toggle,.assistant-shade .assistant-microphone-refresh,.assistant-shade .arm-dialog-actions>button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#667d8c;cursor:pointer;flex:none}
+.assistant-shade .assistant-settings-toggle:hover,.assistant-shade .assistant-settings-toggle[aria-expanded=true],.assistant-shade .assistant-microphone-refresh:hover:not(:disabled){background:#eaf1f6;border-color:#c6d5df;color:#245979}
+.assistant-shade .assistant-settings-toggle:focus-visible,.assistant-shade .assistant-microphone-refresh:focus-visible{outline:2px solid #2f5f8a;outline-offset:2px}
+.assistant-settings-panel{position:absolute;top:calc(100% + 7px);left:0;right:0;z-index:10;box-sizing:border-box;padding:16px;background:#fff;border:1px solid #c5d2dc;border-radius:9px;box-shadow:0 8px 24px #213b5229;text-align:left}
+.assistant-settings-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+.assistant-shade .assistant-settings-heading h3{margin:0 0 4px;color:#263b4c;font-size:15px;font-weight:600;line-height:1.35}
+.assistant-settings-heading p{margin:0;color:#62798b;font-size:13px;line-height:1.45}
+.assistant-microphone-label{display:block;margin-bottom:7px;color:#344f62;font-size:12px;font-weight:600}
+.assistant-microphone-select{position:relative}
+.assistant-shade .assistant-microphone-field{display:flex;align-items:center;gap:10px;width:100%;height:44px;padding:0 12px;box-sizing:border-box;border:1px solid #b8cbd8;border-radius:6px;background:#f7fafc;color:#294e68;text-align:left;font-family:inherit;font-size:14px;cursor:pointer}
+.assistant-microphone-field>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.assistant-microphone-field>svg{flex:none}
+.assistant-shade .assistant-microphone-field:hover:not(:disabled){background:#eef5fa;border-color:#7197b1}
+.assistant-shade .assistant-microphone-field:focus-visible,.assistant-shade .assistant-microphone-field[aria-expanded=true]{outline:2px solid #2f5f8a;outline-offset:1px}
+.assistant-shade .assistant-microphone-field:disabled{opacity:.65;cursor:default}
+.assistant-microphone-options{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:2;box-sizing:border-box;max-height:min(230px,32dvh);overflow:auto;margin:0;padding:5px;list-style:none;border:1px solid #bfced9;border-radius:7px;background:#fff;box-shadow:0 6px 18px #18385126;color:#29465c}
+.assistant-microphone-options li{display:flex;align-items:center;gap:10px;min-height:42px;padding:9px 10px;box-sizing:border-box;border-radius:4px;cursor:pointer;font-size:13px;line-height:1.4}
+.assistant-microphone-options li>span{min-width:0;flex:1;overflow-wrap:anywhere}
+.assistant-microphone-options li>svg{flex:none;color:#6a8294}
+.assistant-microphone-options li small{display:block;margin-top:2px;font-size:11px;color:#748998;font-weight:400}
+.assistant-microphone-options li.is-active{background:#edf4f9}
+.assistant-microphone-options li.is-selected{color:#215b82;font-weight:600}
+.assistant-microphone-options li.is-selected>svg:last-child{color:#257350}
+.assistant-microphone-help{margin:10px 0 0;color:#728493;font-size:12px;line-height:1.45}
+.assistant-microphone-error{margin:10px 0 0;padding:9px 10px;border-radius:5px;background:#fff3ef;color:#93402c;font-size:12px;line-height:1.5}
+.assistant-microphone-refresh .is-loading{animation:assistant-mic-refresh 1.2s linear infinite}
+@keyframes assistant-mic-refresh{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.assistant-microphone-refresh .is-loading{animation:none}}

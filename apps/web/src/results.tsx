@@ -1,3 +1,4 @@
+import {MiniDrill} from './training-tools';
 import {ArmDialog} from './arm-ui';
 import React, { useEffect, useState, useRef } from "react";
 import { AIReview } from './ai';
@@ -51,18 +52,22 @@ import {
   Empty,
   Heading,
 } from "./shared";
-export function Assessment({
+function AssessmentContent({
   p,
   onUpdate,
+  onConfirmed,
 }: {
   p: Obj;
   onUpdate?: (p: Obj) => void;
+  onConfirmed?: () => void;
 }) {
   const u = React.useContext(UserContext),
     [review, setReview] = useState<Obj>({}),
     [reason, setReason] = useState(""),
     [error, setError] = useState("");
   const [confirming,setConfirming]=useState(false),[saved,setSaved]=useState(''),[saving,setSaving]=useState(false);
+  const saveReview=async()=>{if(saving)return;if(p.assessment.criteria.some((c:Obj)=>c.passed===null&&review[c.id]===undefined)){setError('Сначала оцените все критерии.');return;}setSaving(true);try{const next=await api(`/attempts/${p.id}/review`,'POST',{criteria:review,confirm:true,reason:reason.trim()||'Оценка по всем критериям подтверждена преподавателем.'});onUpdate?.(next);setReview({});setReason('');setConfirming(false);setSaved('Оценка подтверждена. Ответы сохранены в базе примеров для обучения ИИ.');onConfirmed?.();}catch(e:any){setError(e.message);setConfirming(false);}finally{setSaving(false);}};
+  useEffect(()=>{if(u.role==='student')return;const handler=(event:Event)=>{const command=(event as CustomEvent).detail?.command;if(command==='confirm'&&confirming)void saveReview();else setConfirming(true);};window.addEventListener('training112:review-command',handler);return()=>window.removeEventListener('training112:review-command',handler);},[confirming,saving,review,reason,p.id]);
   const [elapsed,setElapsed]=useState(0);
   useEffect(()=>{const t=setInterval(()=>setElapsed(x=>x+1),1000);return()=>clearInterval(t);},[p.id]);
   const a = p.assessment;
@@ -74,7 +79,7 @@ export function Assessment({
   useEffect(()=>{if(!aiWaiting||!onUpdate)return;const timer=setInterval(()=>api('/attempts/'+p.id).then(onUpdate).catch(()=>{}),1000);return()=>clearInterval(timer);},[p.id,aiWaiting,onUpdate]);
   if(reportWaiting)return <div className="panel assessment assessment-loading" role="status" aria-live="polite"><h2>{reportJob.status==='error'?'Не удалось подготовить отчёт ИИ':'Анализ данных ИИ…'}</h2><p>{reportJob.status==='error'?reportJob.error:'Проверяем карточку, действия и телефонные разговоры. Результат появится автоматически.'}</p>{reportJob.status!=='error'?<div className="analysis-progress"><div className="analysis-track" aria-label="Анализ данных ИИ"/><p>{semantic?.status==='running'?'Проверяем реплики и комментарии по эталону':reportJob.status==='running'?'Формируем итог и рекомендации':'Ожидаем свободный вычислительный модуль'} · {elapsed} с</p><small>Можно закрыть окно: проверка продолжится в фоне.</small></div>:u.role!=='student'?<button onClick={async()=>{try{onUpdate?.(await api(`/ai/attempts/${p.id}/review`,'POST'));}catch(e:any){setError(e.message);}}}>Повторить анализ</button>:<p>Обратитесь к преподавателю для повторного запуска анализа.</p>}<Notice>{error}</Notice></div>;
   return (
-    <div className="panel assessment">
+    <div className="panel assessment" data-review-open={u.role!=='student'?p.id:undefined}>
       <div className="assessment-top">
         <div className="score-ring">
           {a.score ?? "—"}
@@ -195,7 +200,7 @@ export function Assessment({
         </form>
       )}
       {saved&&<p role="status">{saved}</p>}
-      {confirming&&<ArmDialog className="review-confirmation" title="Подтверждение оценки" onClose={()=>setConfirming(false)}><p>{Object.keys(review).length?'Вы уверены, что оценка с вашими исправлениями верна по всем критериям?':'Вы уверены, что нейросеть и автоматическая проверка верно определили оценку по всем критериям этого задания?'}</p><p>Подтверждённые ответы сохранятся как примеры для проверки этого же вопроса. Окончательное решение всегда принимает преподаватель.</p><div className="toolbar"><button className="primary" disabled={saving} onClick={async()=>{setSaving(true);try{const next=await api(`/attempts/${p.id}/review`,'POST',{criteria:review,confirm:true,reason:reason.trim()||'Оценка по всем критериям подтверждена преподавателем.'});onUpdate?.(next);setReview({});setReason('');setConfirming(false);setSaved('Данные записаны в базу примеров для обучения ИИ по этим вопросам. Последнее слово остаётся за преподавателем.');}catch(e:any){setError(e.message);setConfirming(false);}finally{setSaving(false);}}}>Да, подтвердить</button><button disabled={saving} onClick={()=>setConfirming(false)}>Нет, вернуться к проверке</button></div></ArmDialog>}
+      {confirming&&<ArmDialog className="review-confirmation" title="Подтверждение оценки" onClose={()=>setConfirming(false)}><p>{Object.keys(review).length?'Вы уверены, что оценка с вашими исправлениями верна по всем критериям?':'Вы уверены, что нейросеть и автоматическая проверка верно определили оценку по всем критериям этого задания?'}</p><p>Подтверждённые ответы сохранятся как примеры для проверки этого же вопроса. Окончательное решение всегда принимает преподаватель.</p><div className="toolbar"><button className="primary" disabled={saving} onClick={saveReview}>Да, подтвердить</button><button disabled={saving} onClick={()=>setConfirming(false)}>Нет, вернуться к проверке</button></div></ArmDialog>}
       <Notice>{error}</Notice>
       {a.reviews.map((r: Obj, i: number) => (
         <div className="review-note" key={i}>
@@ -361,4 +366,11 @@ export function Results() {
       </div>
     </div>
   );
+}
+
+export function Assessment(props:{p:Obj,onUpdate?:(p:Obj)=>void,onConfirmed?:()=>void}){
+ const u=React.useContext(UserContext),p=props.p,a=p.assessment;
+ const report=a?.report_job?.status,semantic=a?.semantic_review?.status;
+ const waiting=['queued','running'].includes(report)||report!=='error'&&a?.pending&&[undefined,'queued','running'].includes(semantic);
+ return <><AssessmentContent {...props}/>{u.role==='student'&&p.student_id===u.id&&!p.state.preview&&<MiniDrill key={p.id} attemptId={p.id} waiting enabled={!!waiting}/>}</>;
 }

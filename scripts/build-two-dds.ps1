@@ -1,4 +1,4 @@
-param([string]$SevenZip = 'C:/Program Files/7-Zip/7z.exe', [string]$PreparedSpeech = '')
+﻿param([string]$SevenZip = 'C:/Program Files/7-Zip/7z.exe', [string]$PreparedSpeech = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $tag = 'two-dds-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
@@ -24,7 +24,7 @@ try {
     foreach ($name in @('config.json','manifest.json','README.md','LICENSE-llama.cpp.txt','LICENSE-Qwen.txt','voice_worker.py','speech_text.py')) {
         Copy-Item -LiteralPath (Join-Path $root "local_ai/$name") -Destination (Join-Path $ai $name)
     }
-    foreach ($relative in @('runtime/cpu','runtime/vulkan','voice/runtime','voice/models','voice/builtin','voice/fillers')) {
+    foreach ($relative in @('runtime/cpu','runtime/vulkan','voice/runtime','voice/models/gigaam','voice/piper/FINAL_MODELS_29800','voice/builtin','voice/fillers')) {
         $source = Join-Path $root "local_ai/$relative"
         $target = Join-Path $ai $relative
         if (!(Test-Path -LiteralPath $source)) { throw "Missing: $source" }
@@ -34,7 +34,7 @@ try {
         $global:LASTEXITCODE = 0
     }
     New-Item -ItemType Directory -Path (Join-Path $ai 'models') | Out-Null
-    foreach ($name in @('Qwen3-4B-Instruct-2507-Q4_K_M.gguf','Qwen3-0.6B-Q4_K_M.gguf')) {
+    foreach ($name in @('Qwen3-4B-Instruct-2507-Q4_K_M.gguf', 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf', 'qwen-dds-1000-f32.gguf')) {
         Copy-Item -LiteralPath (Join-Path $root "local_ai/models/$name") -Destination (Join-Path $ai "models/$name")
     }
     Copy-Item -LiteralPath (Join-Path $root 'packaging/QUICKSTART.txt') -Destination (Join-Path $app 'README.txt')

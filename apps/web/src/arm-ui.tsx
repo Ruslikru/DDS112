@@ -1,20 +1,24 @@
 import {createPortal} from 'react-dom';
-import React, {useEffect, useRef} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {X} from 'lucide-react';
 
 /** Keyboard focus stays inside an open ARM dialog, then returns to its trigger. */
-export function ArmDialog({title,onClose,children,className='',modal=true}:React.PropsWithChildren<{title:string,onClose:()=>void,className?:string,modal?:boolean}>){
- const side=['Учебный телефон ДДС','Учебный телефон 112','Управление обучением'].includes(title)?document.getElementById('student-side-panels'):null;
- if(side)modal=false;
+export function ArmDialog({title,onClose,children,className='',modal=true,dismissible=true,headerActions}:React.PropsWithChildren<{title:string,onClose:()=>void,className?:string,modal?:boolean,dismissible?:boolean,headerActions?:React.ReactNode}>){
+ const sidebar=['Учебный телефон ДДС','Учебный телефон 112','Управление обучением'].includes(title);
+ const [side,setSide]=useState<HTMLElement|null>(()=>sidebar?document.getElementById('student-side-panels'):null);
+ useEffect(()=>{setSide(sidebar?document.getElementById('student-side-panels'):null);},[sidebar]);
+ if(sidebar)modal=false;
  const ref=useRef<HTMLDivElement>(null);
  const close=useRef(onClose);close.current=onClose;
  useEffect(()=>{const previous=document.activeElement as HTMLElement;const el=ref.current;if(!el)return;
   const focusable=()=>Array.from(el.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]'));
   (focusable()[0]||el).focus();
-  const key=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.stopPropagation();close.current();}if(modal&&e.key==='Tab'){const all=focusable();const first=all[0],last=all.at(-1);if(!first){e.preventDefault();el.focus();}else if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}};
+  const key=(e:KeyboardEvent)=>{if(dismissible&&e.key==='Escape'){e.stopPropagation();close.current();}if(modal&&e.key==='Tab'){const all=focusable();const first=all[0],last=all.at(-1);if(!first){e.preventDefault();el.focus();}else if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}};
   el.addEventListener('keydown',key);return()=>{el.removeEventListener('keydown',key);previous?.focus();};
- },[]);
- const content=<div className={(side?'side-dialog ':'arm-shade ')+className}><div ref={ref} className="arm-dialog" role="dialog" aria-modal={modal} aria-label={title} tabIndex={-1}><header><h2>{title}</h2><button title="Закрыть окно" onClick={onClose}><X size={20}/></button></header>{children}</div></div>;
+ },[side]);
+ if(sidebar&&!side)return null;
+ const closeButton=dismissible&&<button title="Закрыть окно" onClick={onClose}><X size={20}/></button>;
+ const content=<div className={(side?'side-dialog ':'arm-shade ')+className}><div ref={ref} className="arm-dialog" role="dialog" aria-modal={modal} aria-label={title} tabIndex={-1}><header><h2>{title}</h2>{headerActions?<div className="arm-dialog-actions">{headerActions}{closeButton}</div>:closeButton}</header>{children}</div></div>;
  return createPortal(content,side||document.body);
 }
 export function TraitButtons({traits,value,onChange,disabled=false}:{traits:string[],value:string[],onChange:(v:string[])=>void,disabled?:boolean}){

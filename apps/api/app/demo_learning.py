@@ -21,11 +21,13 @@ def seed_demo_learning(db):
         if not user:continue
         profile=db.get(TrainingProfile,user.id)
         if not profile:profile=TrainingProfile(user_id=user.id,data={});db.add(profile)
+        if n<=2 and not profile.data.get('demo_novice_v2'):
+            profile.data={**profile.data,'demo_novice_v2':True,'demo_level':0,'intro_complete':False}
         if profile.data.get('demo_learning_v1'):continue
-        profile.data={**profile.data,'demo_learning_v1':True,'demo_level':n-1 if n<5 else 5,'demo_stars':n,'intro_complete':False if n==1 else True}
+        profile.data={**profile.data,'demo_learning_v1':True,'demo_level':0 if n<=2 else n-1 if n<5 else 5,'demo_stars':n,'intro_complete':n>2}
         group=db.get(Group,user.group_id) if user.group_id else None
         teacher_id=group.teacher_id if group and group.teacher_id else owner.id
-        if enabled():continue
+        continue  # Starting library consists only of the two guided DDS tickets.
         for index,(incident,description,service) in enumerate([
             ('Остановка лифта','В жилом доме лифт остановился между этажами. Два человека отвечают через двери.','ДДС района'),
             ('Прорыв трубы','В подвале жилого дома течёт вода из трубы. Вода растекается по полу.','ДДС района'),
@@ -36,7 +38,7 @@ def seed_demo_learning(db):
             facts['title']=f'{incident} · {titles[n-1]}'
             ticket=generated_dds(config,facts,{'model':'Подготовленный пример'}).model_dump()
             apply_difficulty(ticket,facts,n)
-            task=ticket['tasks'][0];task['source']='Демонстрационное задание для знакомства с уровнем';task['difficulty_level']=n
+            task=ticket['tasks'][0];task['source']='Учебное задание для знакомства с уровнем';task['difficulty_level']=n
             data=TicketData.model_validate(ticket).model_dump()
             t=Ticket(title=data['title'],created_by=owner.id);db.add(t);db.flush()
             v=TicketVersion(ticket_id=t.id,number=1,published=True,data=data);db.add(v);db.flush()

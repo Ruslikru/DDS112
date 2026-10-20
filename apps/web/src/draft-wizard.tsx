@@ -2,7 +2,7 @@ import {VoiceDraft} from './voice';
 import React, {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {X} from 'lucide-react';
-import {api, useLoad, Notice, type Obj} from './shared';
+import {api, useLoad, useOperator112, Notice, type Obj} from './shared';
 import {ticketStars,legacyDifficulty,starLabel} from './ticket-difficulty';
 import './tickets.css';
 
@@ -23,6 +23,7 @@ function incidentSigns(title:string, source:string[]=[]):string[]{
 
 /** `initial` prefills the form (own_service, services, incident_type, mode, difficulty_stars, victims_state, victims_count). */
 export function DraftWizard({onClose,initial}:{onClose:()=>void,initial?:Obj}){
+  const operator112=useOperator112();
   const nav=useNavigate();
   const [confirmClose,setConfirmClose]=useState(false);
   const [suggested,setSuggested]=useState<string[]>([]);
@@ -35,6 +36,7 @@ export function DraftWizard({onClose,initial}:{onClose:()=>void,initial?:Obj}){
   const [availableTraits,setAvailableTraits]=useState<string[]>([]);
   const [draft,setDraft]=useState<Obj|null>(null);
   const [form,setForm]=useState<Obj>({difficulty_stars:3,mode:'dds',incident_type:'',victims_state:'unknown',victims_count:1,animals:false,own_service:'ДДС района',services:['ДДС района'],traits:[],...Object.fromEntries(Object.entries(initial||{}).filter(([,value])=>value!==undefined&&value!==null&&value!==''))});
+  useEffect(()=>{if(!operator112&&form.mode!=='dds')setForm(current=>({...current,mode:'dds'}));},[operator112,form.mode]);
   const {data:types}=useLoad('/classifier?q='+encodeURIComponent(query));
   const {data:catalog}=useLoad('/learning/services');
   const services=(catalog||[]).filter((item:Obj)=>item.active);
@@ -74,7 +76,7 @@ export function DraftWizard({onClose,initial}:{onClose:()=>void,initial?:Obj}){
           <div className="ticket-wizard-field"><span>Какое происшествие?</span>{tags.length>0&&<div className="ticket-wizard-tags">{tags.map(tag=><button type="button" key={tag} className={form.incident_type===tag?'selected':''} onClick={()=>chooseType(tag)}>{tag}</button>)}</div>}<div className="ticket-wizard-search"><input aria-label="Происшествие" placeholder="Или найдите происшествие по названию" value={query} onFocus={()=>setSearchOpen(true)} onChange={event=>{setQuery(event.target.value);setSearchOpen(true);setAvailableTraits([]);setForm(current=>({...current,incident_type:'',traits:[]}));}}/>{searchOpen&&query.trim().length>=2&&<div className="ticket-wizard-results">{types?.slice(0,8).map((item:Obj)=><button type="button" key={item.code} onClick={()=>chooseType(item.title,(item.traits||[]).filter(Boolean))}>{item.title}</button>)}{types?.length===0&&<p>Совпадений нет.</p>}</div>}</div></div>
           {availableTraits.length>0&&<div className="ticket-wizard-field"><span>Дополнительные признаки</span><div className="ticket-wizard-tags">{availableTraits.map(tag=><button type="button" key={tag} className={form.traits.includes(tag)?'selected':''} onClick={()=>field('traits',form.traits.includes(tag)?form.traits.filter((value:string)=>value!==tag):[...form.traits,tag])}>{tag}</button>)}</div></div>}
           <label className="ticket-wizard-field">Сложность будущего билета<select value={form.difficulty_stars} onChange={e=>field('difficulty_stars',Number(e.target.value))}>{[1,2,3,4,5].map(n=><option value={n} key={n}>{starLabel(n)}</option>)}</select><small>{difficultyHints[form.difficulty_stars-1]}</small></label>
-          <label className="ticket-wizard-field">Кого обучаем?<select value={form.mode} onChange={event=>field('mode',event.target.value)}><option value="dds">Диспетчер службы</option><option value="112">Оператор 112</option></select></label>
+          {operator112&&<label className="ticket-wizard-field">Кого обучаем?<select value={form.mode} onChange={event=>field('mode',event.target.value)}><option value="dds">Диспетчер службы</option><option value="112">Оператор 112</option></select></label>}
         </>}
         {step===1&&<><p>Укажите только известные сведения. Остальное ученик уточнит в ходе сценария.</p><div className="ticket-wizard-tags">{[['unknown','Пока неизвестно'],['no','Нет'],['yes','Есть']].map(([value,label])=><button type="button" key={value} className={form.victims_state===value?'selected':''} onClick={()=>field('victims_state',value)}>{label}</button>)}</div>{form.victims_state==='yes'&&<label className="ticket-wizard-field">Сколько человек?<input type="number" min={1} max={10000} value={form.victims_count} onChange={event=>field('victims_count',Number(event.target.value))}/></label>}<label className="ticket-wizard-checkbox"><input type="checkbox" checked={form.animals} onChange={event=>field('animals',event.target.checked)}/>Есть пострадавшие животные</label></>}
         {step===2&&<><p>Адрес и район Москвы подставятся автоматически. Получатели подобраны по признакам происшествия и сведениям о пострадавших.</p><div className="ticket-wizard-field"><span>Получат учебную карточку</span><div className="ticket-wizard-chosen">{recipients.map((name:string)=><button type="button" key={name} disabled={busy||name===form.own_service||suggested.includes(name)} title={name===form.own_service||suggested.includes(name)?'Подобрана по фактам сценария':'Убрать службу'} onClick={()=>field('services',form.services.filter((value:string)=>value!==name))}>{serviceLabels[name]||name}{name!==form.own_service&&!suggested.includes(name)?' ×':''}</button>)}</div><select aria-label="Добавить службу" value="" disabled={busy} onChange={event=>{if(event.target.value)field('services',[...form.services,event.target.value]);}}><option value="">Добавить ещё службу…</option>{services.filter((item:Obj)=>!recipients.includes(item.name)).map((item:Obj)=><option key={item.name} value={item.name}>{serviceLabels[item.name]||item.name}</option>)}</select></div></>}

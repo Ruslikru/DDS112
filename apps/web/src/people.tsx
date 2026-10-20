@@ -1,4 +1,5 @@
 import React, {useState} from 'react';
+import {useSearchParams} from 'react-router-dom';
 import {Pencil, Plus} from 'lucide-react';
 import {api, Field, Heading, Notice, UserContext, useLoad, type Obj} from './shared';
 import './people.css';
@@ -8,6 +9,9 @@ const tabs=[{role:'student',title:'Ученики',add:'Добавить уче�
 export function People(){
   const actor=React.useContext(UserContext);
   const {data:users,error,load}=useLoad('/users');
+  const {data:groups}=useLoad('/groups');
+  const [params,setParams]=useSearchParams();
+  const groupId=Number(params.get('group'))||0;
   const [role,setRole]=useState('student');
   const [creating,setCreating]=useState(false);
   const [editing,setEditing]=useState<Obj|null>(null);
@@ -19,7 +23,7 @@ export function People(){
   const [message,setMessage]=useState('');
   const [err,setErr]=useState('');
   const activeTab=tabs.find(t=>t.role===role)!;
-  const selected=(users||[]).filter((person:Obj)=>person.role===(actor.role==='admin'?role:'student'));
+  const selected=(users||[]).filter((person:Obj)=>person.role===(actor.role==='admin'?role:'student')&&(!groupId||role!=='student'||person.group_id===groupId));
   const run=async (job:()=>Promise<any>,done:string)=>{
     setBusy(true);setErr('');setMessage('');
     try{await job();await load();setMessage(done);return true;}
@@ -31,6 +35,7 @@ export function People(){
       {actor.role==='admin'&&<button className="primary" onClick={()=>{setCreating(!creating);setErr('');}}><Plus size={17}/>{activeTab.add}</button>}
     </Heading>
     {actor.role==='admin'&&<nav className="people-tabs" aria-label="Категории пользователей">{tabs.map(tab=><button type="button" key={tab.role} className={role===tab.role?'active':''} aria-current={role===tab.role?'page':undefined} onClick={()=>{setRole(tab.role);setCreating(false);setMessage('');setErr('');}}>{tab.title}</button>)}</nav>}
+    {(role==='student'||actor.role!=='admin')&&<select aria-label="Показать группу" value={groupId||''} onChange={e=>setParams(e.target.value?{group:e.target.value}:{})}><option value="">Все группы</option>{groups?.map((g:Obj)=><option value={g.id} key={g.id}>{g.name}</option>)}</select>}
     <Notice>{error||err}</Notice>{message&&<p className="people-message" role="status">{message}</p>}
     {creating&&actor.role==='admin'&&<form className="panel form-panel people-create" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;const values=Object.fromEntries(new FormData(form));await run(async()=>{await api('/users','POST',{...values,role});setCreating(false);form.reset();},'Пользователь добавлен.');}}>
       <h2>{activeTab.add}</h2><div className="form-grid"><Field label="Имя и фамилия"><input name="name" minLength={2} maxLength={160} required/></Field><Field label="Логин"><input name="login" minLength={3} maxLength={80} pattern="[a-zA-Z0-9_.-]+" required autoComplete="off"/></Field><Field label="Первый пароль"><input name="password" type="password" minLength={8} maxLength={128} required autoComplete="new-password"/></Field></div><button className="primary" disabled={busy}>Создать</button>

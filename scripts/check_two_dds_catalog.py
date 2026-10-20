@@ -92,5 +92,7 @@ with patch.object(voice.runtime, 'synthesize', sound), TestClient(app) as client
         assert db.get(Assignment, legacy_assignment_id) is not None
     post(client, '/api/login', {'login': 'admin', 'password': 'Training112!'})
     os.environ['TRAINING_CATALOG'] = 'full'
+    assert len(client.get('/api/tickets').json()) == 2
+    post(client, '/api/management/training-modes', {'operator112': True})
     assert len(client.get('/api/tickets').json()) == 3
 print('PASS: fresh database has 2 DDS tickets; both preview; demo assignments; old data preserved and hidden; adaptive selection; full-mode switch')

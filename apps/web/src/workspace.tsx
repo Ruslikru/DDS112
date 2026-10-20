@@ -1,3 +1,4 @@
+import {ManagementConfirm} from './management';
 import {submitAttempt} from './network-queue';
 import {PhoneDock} from './phone-dock';
 import {StudentPanel} from './student-panel';
@@ -62,6 +63,7 @@ import {
 import {ArmDialog,TraitButtons} from './arm-ui';
 import { Assessment } from "./results";
 export function Workspace() {
+ const [confirmAction,setConfirmAction]=useState<'close'|'abort'|null>(null);
   const nav=useNavigate();
   const { id } = useParams(),
     u = React.useContext(UserContext),
@@ -77,14 +79,14 @@ export function Workspace() {
     [tab, setTab] = useState("card"),
     [showEvents, setShowEvents] = useState(false),
     [phoneCollapsed, setPhoneCollapsed] = useState(false),
-    [editingStatus,setEditingStatus]=useState(false),[addingService,setAddingService]=useState(false),[trainingMenu,setTrainingMenu]=useState(false);
+    [editingStatus,setEditingStatus]=useState(false),[addingService,setAddingService]=useState(false),[trainingMenu,setTrainingMenu]=useState(true);
   const {data:catalog}=useLoad('/learning/services');
   const dirtyRef = useRef(false);
   const dialogueRef = useRef<HTMLDivElement>(null);
   useEffect(()=>{const node=dialogueRef.current;if(node)node.scrollTop=node.scrollHeight;},[p?.state?.dialogue?.length]);
   const draftKey=`training112:draft:${u.id}:${id}`;
   const [savedDraft,setSavedDraft]=useState<Obj|null>(null);
-  useEffect(()=>{dirtyRef.current=false;setDirty(false);setContactId('');setContactText('');setTab('card');setService('');setPhoneCollapsed(false);setEditingStatus(false);setSelected([]);try{setSavedDraft(JSON.parse(localStorage.getItem(draftKey)||'null'));}catch{setSavedDraft(null);}},[draftKey]);
+  useEffect(()=>{dirtyRef.current=false;setDirty(false);setContactId('');setContactText('');setTab('card');setTrainingMenu(true);setService('');setPhoneCollapsed(false);setEditingStatus(false);setSelected([]);try{setSavedDraft(JSON.parse(localStorage.getItem(draftKey)||'null'));}catch{setSavedDraft(null);}},[draftKey]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (dirtyRef.current) {
@@ -101,6 +103,22 @@ export function Workspace() {
   useEffect(()=>{if(!p||p.task.mode!=='112'||p.student_id!==u.id)return;let active=true;const t=setTimeout(()=>api('/attempts/'+p.id+'/routing-preview','POST',{incident_type:card.incident_type,traits:card.traits,victims:card.victims,description:card.description,object:card.object,district:card.district}).then(r=>{if(active)setSelected(r.services.filter((s:string)=>!p.state.services[s]));}).catch(()=>{}),180);return()=>{active=false;clearTimeout(t);};},[p?.id,card.incident_type,JSON.stringify(card.traits),card.victims,card.description,card.object,card.district]);
   const owner = p?.student_id === u.id,
     done = p && ["completed", "aborted"].includes(p.status);
+  async function closeResult(){
+    setTab('card');
+    if(!p||u.role!=='student'||!owner||p.status!=='completed'||!p.task.onboarding)return;
+    const grade=p.assessment||{};
+    if(![undefined,'done'].includes(grade.report_job?.status)||['queued','running'].includes(grade.semantic_review?.status))return;
+    setBusy(true);setErr('');
+    try{
+      await api('/tutorials/attempts/'+p.id+'/reviewed','POST');
+      setData({...p,state:{...p.state,tutorial_result_seen:true}});
+      if(p.task.onboarding==='dds-1'){
+        const tutorials=await api('/tutorials');const next=tutorials.find((t:Obj)=>t.key==='dds-2');
+        if(!next)throw Error('Второй урок не найден. Откройте знакомство с программой.');
+        const attempt=await api('/tutorials/'+next.version_id+'/start','POST');nav('/attempts/'+attempt.id);
+      }else nav('/assignments');
+    }catch(e:any){setErr(e.message);}finally{setBusy(false);}
+  }
   async function cmd(type: string, payload: Obj = {}, saveFirst = false) {
     if (!p) return;
     setBusy(true);
@@ -155,15 +173,17 @@ export function Workspace() {
   const address=[card.country,card.city,card.district&&`(${card.district}${card.area?', '+card.area:''})`,card.street,card.house,card.building&&'к. '+card.building,card.entrance&&'под. '+card.entrance].filter(Boolean).join(', ');
   const activeServices=dds?Object.keys(p.state.services):[...new Set([...Object.keys(p.state.services),...selected])];
   const time=(value:string)=>new Date(value).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  const closeCard=()=>{if(!dirty||confirm('В карточке есть несохранённые изменения. Вернуться к списку? Локальный черновик сохранён.'))nav(u.role==='teacher'?'/journal':p.state.flow==='dds_stream'?'/lessons/'+p.state.lesson_id+'/queue':'/registry');};
-  return <div className="student-station"><div className={'arm-work '+(dds?'arm-dds':'arm-112')}>
+  const leaveCard=()=>nav(u.role==='teacher'?'/journal':p.state.flow==='dds_stream'?'/lessons/'+p.state.lesson_id+'/queue':'/registry');
+  const closeCard=()=>{if(dirty)setConfirmAction('close');else leaveCard();};
+  return <div className="student-station">{confirmAction&&<ManagementConfirm title={confirmAction==='abort'?'Прервать попытку?':'Вернуться к списку?'} description={confirmAction==='abort'?'Попытка сохранится без оценки.':'В карточке есть несохранённые изменения. Локальный черновик сохранится на этом ПК.'} confirmLabel={confirmAction==='abort'?'Прервать попытку':'К списку'} onCancel={()=>setConfirmAction(null)} onConfirm={()=>{const action=confirmAction;setConfirmAction(null);if(action==='abort')void cmd('abort');else leaveCard();}}/>}<div className={'arm-work '+(dds?'arm-dds':'arm-112')}>
     <div className="arm-phone-row">
       <div className="arm-connection"><button className={(p.state.call==='ringing'||p.state.incoming_calls?.length)?'arm-ringing':''} title="Учебный телефон" onClick={()=>setPhoneCollapsed(false)}><Phone size={25}/>{p.state.incoming_calls?.length>0&&<sup>{p.state.incoming_calls.length}</sup>}</button><div><span>{p.state.call==='connected'?'соединение установлено':p.state.call==='ringing'?'входящий вызов':p.state.incoming_calls?.length?'входящий вызов':'не подключен'}</span><div><button onClick={()=>setPhoneCollapsed(false)}>история связи</button><button title="SMS не используются в текущих учебных сценариях" disabled>список SMS</button></div></div></div>
       {['phone','contact_phone','site_phone'].map((k,i)=><div className="arm-phone-cell" key={k}><div className="arm-phone-actions"><button title={'Связь: '+['АОН','предоставленный телефон','телефон на место'][i]} onClick={()=>{if(dds){const contact=p.task.contacts?.find((c:Obj)=>c.kind==='caller');if(contact)setContactId(contact.id);}setPhoneCollapsed(false);}}><Phone size={22}/></button><button disabled title="Сообщения по номеру: функция оригинального АРМ недоступна в тренажёре"><MessageSquare size={15}/></button></div><label><span>{['АОН','предоставленный','телефон на место'][i]}</span><input aria-label={labels[k]} value={card[k]||''} placeholder="+7 (   )   -  -" disabled={readOnly} onChange={e=>change(k,e.target.value)}/></label></div>)}
       <div className="arm-incident-meta"><b>Происшествие {p.id}</b><small>Сохр. {new Date(p.started_at).toLocaleString('ru')}</small><small>Опер. {p.state.operator_id||(!dds?p.student_id:'не указан')} · АРМ {p.state.arm_number||'не указан'}</small></div>
       {dds?<div className="arm-view-tabs"><button className={tab==='card'?'active':''} onClick={()=>setTab('card')}>просмотр</button><button className={tab==='journal'?'active':''} onClick={()=>setTab('journal')}>дополнение</button></div>:<div className="arm-clock">{Math.floor(p.duration/60).toString().padStart(2,'0')}:{(p.duration%60).toString().padStart(2,'0')}<small>минут　секунд</small></div>}
     </div>
-    <Notice>{error||err}</Notice>{p.state.hint&&<StudentHint key={p.state.hints} target={'[data-guide="training"]'}><h2>Подсказка</h2><p>{p.state.hint}</p></StudentHint>}
+    <Notice>{error||(!(trainingMenu||owner)?err:"")}</Notice>{p.state.hint&&!p.state.guided&&<StudentHint key={p.state.hints} target={'[data-guide="training"]'}><h2>Подсказка</h2><p>{p.state.hint}</p></StudentHint>}
+    {p.task.workplace?.organization&&<section className="arm-service-scope" aria-label="Ваше рабочее место"><div><small>Ваша организация</small><b>{p.task.workplace.organization}</b></div><div><small>Район</small><span>{p.task.workplace.district}</span></div><div><small>Ваша зона обслуживания</small><span>{p.task.workplace.coverage}</span></div>{p.task.workplace.directory&&<p><b>Справочник домов:</b> {p.task.workplace.directory}</p>}</section>}
     <div className="arm-card-body">
       <div className="arm-left-column">
         <div className="arm-caller-strip">{dds?<><b>{card.name||'Заявитель не указан'}</b><span>{card.caller_status}</span></>:<><input aria-label="Фамилия и имя заявителя" placeholder="Фамилия и имя заявителя" disabled={readOnly} value={card.name||''} onChange={e=>change('name',e.target.value)}/><select aria-label="Статус заявителя" disabled={readOnly} value={card.caller_status||''} onChange={e=>change('caller_status',e.target.value)}><option value="">выберите статус</option>{['очевидец','пострадавший','со слов третьих лиц','представитель организации'].map(s=><option key={s}>{s}</option>)}</select></>}</div>
@@ -190,13 +210,13 @@ export function Workspace() {
     </div>
     {editingStatus&&<ArmDialog title={'Статус реагирования · '+service} className="arm-status-shade" onClose={()=>setEditingStatus(false)}><form className="arm-status-form" onSubmit={async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget));await cmd(data.status==='comment'?'worklog':'status',data);}}><select name="status" aria-label="Новый статус" required><option value="comment">Добавить комментарий · статус не меняется</option>{p.allowed_statuses.map((s:string)=><option key={s}>{s}</option>)}</select><input name="unit" aria-label="Номер наряда" placeholder="Номер наряда"/><input name="comment" aria-label="Комментарий" placeholder="Комментарий / причина отказа"/><button title="Сохранить статус" disabled={busy||!p.allowed_statuses.length}><Check/></button></form><Notice>{err}</Notice>{!p.allowed_statuses.length&&<p>Работа службы завершена.</p>}</ArmDialog>}
     {addingService&&<ArmDialog title="Добавить службу" onClose={()=>setAddingService(false)}><div className="arm-service-options">{[...new Set([...(catalog||[]).filter((s:Obj)=>s.active).map((s:Obj)=>s.name),...p.task.services])].map(s=><button key={s} disabled={!!p.state.services[s]} className={selected.includes(s)||p.state.services[s]?'active':''} onClick={()=>setSelected(selected.includes(s)?selected.filter(x=>x!==s):[...selected,s])}>{s}</button>)}</div><footer><button data-guide="apply-services" onClick={()=>setAddingService(false)}>применить</button></footer></ArmDialog>}
-    {trainingMenu&&<ArmDialog title="Управление обучением" onClose={()=>setTrainingMenu(false)}><p>{p.task.title}</p><p>Роль: <b>{dds?'ДДС · '+p.task.own_service:'Оператор 112'}</b> · {statusNames[p.status]} · {p.duration} с</p><div className="arm-training-actions">{owner&&!done&&<>{p.state.training&&<><button onClick={()=>cmd('hint')}>Подсказка</button>{p.state.flow!=='dds_stream'&&<button onClick={()=>cmd(p.status==='paused'?'resume':'pause')}>{p.status==='paused'?'Продолжить':'Пауза'}</button>}</>}<button data-guide="finish" disabled={busy||p.status==='paused'} onClick={()=>cmd('finish',{},!dds)}>Завершить работу</button><button onClick={()=>{if(confirm('Прервать попытку? Она сохранится без оценки.'))cmd('abort');}}>Прервать попытку</button></>}{p.assessment&&<button onClick={()=>{setTrainingMenu(false);setTab('result');}}>Результат</button>}<button onClick={closeCard}>К списку происшествий</button></div><Notice>{err||p.state.hint}</Notice></ArmDialog>}
-    {tab==='result'&&p.assessment&&<ArmDialog className="assessment-modal" title="Результат обучения" onClose={()=>setTab('card')}><Assessment p={p} onUpdate={setData}/></ArmDialog>}
+    {(trainingMenu||owner)&&<ArmDialog dismissible={!owner} title="Управление обучением" onClose={()=>setTrainingMenu(false)}><p>{p.task.title}</p><p>Роль: <b>{dds?'ДДС · '+p.task.own_service:'Оператор 112'}</b> · {statusNames[p.status]} · {p.duration} с</p><div className="arm-training-actions">{owner&&!done&&<>{p.state.training&&<><button onClick={()=>cmd('hint')}>Подсказка</button>{p.state.flow!=='dds_stream'&&<button onClick={()=>cmd(p.status==='paused'?'resume':'pause')}>{p.status==='paused'?'Продолжить':'Пауза'}</button>}</>}<button data-guide="finish" disabled={busy||p.status==='paused'} onClick={()=>cmd('finish',{},!dds)}>Завершить работу</button><button onClick={()=>setConfirmAction('abort')}>Прервать попытку</button></>}{p.assessment&&<button data-guide="training-result" onClick={()=>setTab('result')}>Результат</button>}<button onClick={closeCard}>К списку происшествий</button></div><Notice>{err||p.state.hint}</Notice></ArmDialog>}
+    {tab==='result'&&p.assessment&&<ArmDialog className="assessment-modal" title="Результат обучения" onClose={()=>void closeResult()}><Assessment p={p} onUpdate={setData} onConfirmed={()=>setTab('card')}/>{u.role==='student'&&owner&&p.task.onboarding&&[undefined,'done'].includes(p.assessment.report_job?.status)&&!['queued','running'].includes(p.assessment.semantic_review?.status)&&<footer><button disabled={busy} onClick={()=>void closeResult()}>{p.task.onboarding==='dds-1'?'Перейти ко второму уроку':'К моим билетам'}</button></footer>}</ArmDialog>}
     {showEvents&&<ArmDialog title="Журнал реагирования" onClose={()=>setShowEvents(false)}><table><thead><tr><th>Служба</th><th>Время</th><th>Статус</th><th>Наряд / комментарий</th></tr></thead><tbody>{Object.entries(p.state.services).flatMap(([s,h]:any)=>h.map((v:Obj,i:number)=><tr key={s+i}><td>{s}</td><td>{time(v.at)}</td><td>{v.status}</td><td>{v.unit} {v.comment}</td></tr>))}</tbody></table>{u.audit_access&&<AttemptEvents id={p.id}/>}</ArmDialog>}
   </div><aside className="student-side"><div className="student-side-scroll"><StudentPanel/>    {savedDraft&&owner&&!done&&!dds&&<div className="arm-draft">Есть локальный черновик. <button onClick={()=>{setCard(savedDraft);dirtyRef.current=true;setDirty(true);setSavedDraft(null);}}>Восстановить</button><button onClick={()=>{localStorage.removeItem(draftKey);setSavedDraft(null);}}>Удалить черновик</button></div>}
     {p.status==='paused'&&<div className="arm-draft">Тренировка приостановлена. <button onClick={()=>cmd('resume')}>Продолжить</button></div>}
     {p.state.stopped_by_teacher&&<div className="arm-draft">Занятие завершено преподавателем.</div>}
-{p.state.preview&&<p className="preview-note">Самостоятельное прохождение преподавателя. Пока озвучка готовится, сообщения доступны текстом.</p>}<div className="arm-training-strip"><button data-guide="training" onClick={()=>setTrainingMenu(true)}>Обучение · {dds?'ДДС: '+p.task.own_service:'оператор 112'}</button><span>{p.task.title} · {statusNames[p.status]}{dirty?' · есть несохранённые изменения':''}</span>{p.state.flow==='dds_stream'&&<Link to={'/lessons/'+p.state.lesson_id+'/queue'}>Список происшествий</Link>}</div><div id="student-side-panels"/>{p.task.onboarding&&owner&&<TutorialCoach key={p.id} p={p} card={card} phoneOpen={!phoneCollapsed} editingStatus={editingStatus} contactId={contactId} contactText={contactText} selected={selected} trainingMenu={trainingMenu}/>}</div><PhoneDock key={p.id} p={p} owner={owner} busy={busy} contactId={contactId} setContactId={setContactId} contactText={contactText} setContactText={setContactText} cmd={cmd} onUpdate={setData} onOpen={()=>setPhoneCollapsed(false)}/></aside>{owner&&!done&&!p.task.onboarding&&!p.state.preview&&<MiniDrill attemptId={p.id}/>}</div>;
+{p.state.preview&&<p className="preview-note">Самостоятельное прохождение преподавателя. Пока озвучка готовится, сообщения доступны текстом.</p>}<div className="arm-training-strip"><button data-guide="training" onClick={()=>setTrainingMenu(true)}>Обучение · {dds?'ДДС: '+p.task.own_service:'оператор 112'}</button><span>{p.task.title} · {statusNames[p.status]}{dirty?' · есть несохранённые изменения':''}</span>{p.state.flow==='dds_stream'&&<Link to={'/lessons/'+p.state.lesson_id+'/queue'}>Список происшествий</Link>}</div><div id="student-side-panels"/>{p.task.onboarding&&p.state.guided&&owner&&<TutorialCoach key={p.id} p={p} card={card} phoneOpen={!phoneCollapsed} editingStatus={editingStatus} contactId={contactId} contactText={contactText} selected={selected} statusError={err} trainingMenu={trainingMenu||owner}/>}</div><PhoneDock key={p.id} p={p} owner={owner} busy={busy} contactId={contactId} setContactId={setContactId} contactText={contactText} setContactText={setContactText} cmd={cmd} onUpdate={setData} onOpen={()=>setPhoneCollapsed(false)}/></aside>{owner&&!p.state.guided&&!done&&!p.state.preview&&<MiniDrill attemptId={p.id}/>}</div>;
 }
 function AttemptEvents({ id }: { id: number }) {
   const { data } = useLoad(`/attempts/${id}/events`, 3000);
