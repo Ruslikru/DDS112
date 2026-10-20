@@ -1,4 +1,4 @@
-param([string]$InnoCompiler = '', [string]$BuildTag = '20261020-r11')
+param([string]$InnoCompiler = '', [string]$BuildTag = '20261020-r12')
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 Push-Location $projectRoot
@@ -29,6 +29,8 @@ try {
     if ($LASTEXITCODE) { throw 'Packaged starter speech failed verification.' }
     & (Join-Path $payload 'local_ai/voice/runtime/python.exe') -I scripts/check_voice_runtime.py
     if ($LASTEXITCODE) { throw 'Voice runtime is not self-contained.' }
+    & $python scripts/check_voice_paths.py --bundle $payload --report "output/voice-paths-$BuildTag.json"
+    if ($LASTEXITCODE) { throw 'Packaged speech generation and recognition failed.' }
     & $InnoCompiler /Qp "/DPayloadDir=$payload" "/DBuildTag=$BuildTag" packaging/installer.iss
     if ($LASTEXITCODE) { throw 'Installer compilation failed' }
     $checksumLines=Get-ChildItem -LiteralPath $output -File | Where-Object { $_.Extension -in '.exe','.bin' } | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$_.Name }

@@ -13,7 +13,7 @@ os.environ['HF_HUB_OFFLINE']='1'
 os.environ['HF_HUB_DISABLE_TELEMETRY']='1'
 sys.stdin.reconfigure(encoding='utf-8')
 sys.stdout.reconfigure(encoding='utf-8')
-root=Path(sys.argv[1])
+root=Path(sys.argv[1]).resolve()
 output=sys.stdout
 sys.stdout=sys.stderr
 import torch
@@ -23,10 +23,29 @@ os.environ['PATH']=str(lib)+os.pathsep+os.environ.get('PATH','')
 dll=os.add_dll_directory(str(lib)) if os.name=='nt' else None
 tts=None;tts_key=None;stt=None;stt_key=None;piper_cache={}
 
+def load_gigaam(device):
+    sys.path.insert(0,str(root/'gigaam'))
+    import modeling_gigaam
+    from sentencepiece import SentencePieceProcessor
+    class LocalTokenizer(SentencePieceProcessor):
+        def load(self,model_path):
+            # SentencePiece's narrow Windows file API cannot open Cyrillic paths.
+            # Python opens the file; the native decoder receives the model bytes.
+            return self.LoadFromSerializedProto(Path(model_path).read_bytes())
+    modeling_gigaam.SentencePieceProcessor=LocalTokenizer
+    return modeling_gigaam.GigaAMModel.from_pretrained(str(root/'gigaam'),local_files_only=True).to(device).eval()
+
 def piper_voice(name,device='cpu',threads=2):
     from piper import PiperVoice
     from piper.config import PiperConfig
+    from piper.phonemize_espeak import ESPEAK_DATA_DIR
     import onnxruntime as ort
+    espeak_dir=ESPEAK_DATA_DIR
+    if os.name=='nt':
+        # eSpeak opens files through ANSI APIs. A Unicode working directory plus
+        # an ASCII relative data path avoids copying assets or requiring 8.3 names.
+        os.chdir(ESPEAK_DATA_DIR.parent)
+        espeak_dir=Path(ESPEAK_DATA_DIR.name)
     key=(name,device,threads)
     if key not in piper_cache:
         # Only execution parameters change. The trained ONNX files remain read-only.
@@ -34,7 +53,7 @@ def piper_voice(name,device='cpu',threads=2):
         options=ort.SessionOptions();options.intra_op_num_threads=threads;options.inter_op_num_threads=1
         for old in list(piper_cache):
             if old[2]!=threads:piper_cache.pop(old)
-        piper_cache[key]=PiperVoice(config=PiperConfig.from_dict(json.loads(Path(str(path)+'.json').read_text('utf-8'))),
+        piper_cache[key]=PiperVoice(espeak_data_dir=espeak_dir,config=PiperConfig.from_dict(json.loads(Path(str(path)+'.json').read_text('utf-8'))),
             session=ort.InferenceSession(str(path),sess_options=options,providers=['CPUExecutionProvider']))
     return piper_cache[key]
 
@@ -55,9 +74,7 @@ def run(req):
     if req['op']=='warm':
         model=req.get('model','gigaam')
         if (model,device)!=stt_key:
-            sys.path.insert(0,str(root/'gigaam'))
-            from modeling_gigaam import GigaAMModel
-            stt=GigaAMModel.from_pretrained(str(root/'gigaam'),local_files_only=True).to(device).eval()
+            stt=load_gigaam(device)
             stt_key=(model,device)
         name=req.get('voice','denis')
         for candidate in ('denis','irina','ruslan'):
@@ -77,14 +94,12 @@ def run(req):
         key=(req['model'],device)
         if key!=stt_key:
             stt=None
-            sys.path.insert(0,str(root/'gigaam'))
-            from modeling_gigaam import GigaAMModel
-            stt=GigaAMModel.from_pretrained(str(root/'gigaam'),local_files_only=True).to(device).eval()
+            stt=load_gigaam(device)
             stt_key=key
         import av
         resampler=av.AudioResampler(format='flt',layout='mono',rate=16000)
         parts=[]
-        with av.open(req['input']) as container:
+        with open(req['input'],'rb') as recording,av.open(recording) as container:
             for frame in container.decode(audio=0):
                 parts.extend(piece.to_ndarray().reshape(-1).copy() for piece in resampler.resample(frame))
         parts.extend(piece.to_ndarray().reshape(-1).copy() for piece in resampler.resample(None))

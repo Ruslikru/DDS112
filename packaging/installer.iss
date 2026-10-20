@@ -1,9 +1,9 @@
 #define AppVersion "0.8.26"
 #ifndef PayloadDir
-#define PayloadDir "..\release\Dispetcher112-fix-bilets-20261020-r11"
+#define PayloadDir "..\release\Dispetcher112-fix-bilets-20261020-r12"
 #endif
 #ifndef BuildTag
-#define BuildTag "20261020-r11"
+#define BuildTag "20261020-r12"
 #endif
 [Setup]
 AppId={{A6F6F021-37DD-48BB-B651-76B37DD31A12}{param:VerificationInstance|}
@@ -20,7 +20,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir=..\release\Dispetcher112-{#AppVersion}-{#BuildTag}-installer
 OutputBaseFilename=Dispetcher112-Setup-{#AppVersion}-win-x64
-Compression=zip/1
+Compression=none
 SolidCompression=no
 DiskSpanning=yes
 DiskSliceSize=2000000000
