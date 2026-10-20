@@ -9,6 +9,48 @@ from apps.api.app.conversation_review import apply_cached, signature
 from apps.api.app.result_report import evidence
 
 
+def test_model_context_keeps_fact_availability_without_repeated_transcript():
+    from apps.api.app.semantic_review import model_context
+    first={'text':'Подъезд справа.','who':'Заявитель','at':at(1),'ai':{'seconds':40}}
+    later={'text':'Работы завершены.','who':'Бригада','at':at(20)}
+    context={'mode':'dds','card':{'house':'21'},'turns':[
+        {'learner_text':'Заезжайте справа.','received_before_reply':[first],'available_service_records':[]},
+        {'learner_text':'Записал завершение.','received_before_reply':[first,later],'available_service_records':[]} ]}
+    compact=model_context(context)
+    assert context['turns'][0]['received_before_reply'][0]['ai']=={'seconds':40}
+    assert len(compact['received_facts'])==2
+    assert compact['received_facts'][0]['before_turn']==0
+    assert compact['received_facts'][1]['before_turn']==1
+    assert 'ai' not in compact['received_facts'][0] and 'at' not in compact['received_facts'][0]
+    assert compact['turns'][0]['learner_text']=='Заезжайте справа.'
+
+
+def test_report_uses_confirmed_grades_and_does_not_invent_missing_records():
+    from apps.api.app.result_report import summarize
+    a=assess(attempt())
+    result=summarize(a)
+    assert result['source']=='criteria' and 'не зачтена' in result['summary']
+    assert 'Запись о прибытии' in result['recommendation']
+    assert 'model' not in result and 'seconds' not in result
+    pending={'criteria':[{'id':'x','kind':'manual','label':'Разговор','expected':'','actual':'Да',
+                         'passed':None,'weight':10,'critical':False}]}
+    assert 'решение преподавателя' in summarize(pending)['summary']
+
+
+def test_background_review_waits_for_end_of_exercise_not_each_phone_reply():
+    from apps.api.app.conversation_review import ready_for_review
+    p=attempt()
+    p.state['messages']=[{'actor_role':'learner','text':'Понял.'},{'actor_role':'brigade','text':'До связи.','call_end':True}]
+    p.state['services']['Служба 101']=[{'status':'Начало реагирования'}]
+    assert not ready_for_review(p)
+    p.state['services']['Служба 101'].append({'status':'Работы завершены'})
+    assert ready_for_review(p)
+    p.snapshot['mode']='112';p.state['call']='connected'
+    assert not ready_for_review(p)
+    p.state['call']='ended'
+    assert ready_for_review(p)
+
+
 def at(second):
     return f'2026-10-20T10:00:{second:02d}+03:00'
 

@@ -34,18 +34,19 @@ def test_background_report_and_reviewed_guided_work(monkeypatch):
         def complete(system,prompt,*args,**kwargs):
             seen.append(prompt)
             return {'summary':'Сведения переданы.','recommendation':'Продолжить обучение.'},{'model':'test'}
-        monkeypatch.setattr(result_report.ai,'complete',complete)
+        monkeypatch.setattr(semantic_review.ai,'complete',complete)
         result_report.generate(p['id'])
         p=c.get('/api/attempts/'+str(p['id'])).json()
         assert p['assessment']['report_job']['status']=='done'
-        assert 'Диспетчер' in seen[0] and 'Декабристов' in seen[0]
+        assert not seen
+        assert p['assessment']['ai_review']['source']=='criteria'
         login(c,'teacher');p=post(c,f"/attempts/{p['id']}/review",{'criteria':{'phone_conversation':True},'reason':'Проверено преподавателем.'}).json()
         rows=c.get('/api/teacher/students').json();row=next(x for x in rows if x['id']==p['student_id'])
         assert row['checked']>=1 and row['checked']>row['confirmed']
         item=next(x for x in row['history'] if x['id']==p['id'])
         assert item['checked'] and item['assisted'] and not item['confirmed']
-        # A failed report is explicit; it never creates fabricated recommendations.
+        # Reporting established grades does not depend on another model request.
         def fail(*a,**k):raise ValueError('test inference unavailable')
-        monkeypatch.setattr(result_report.ai,'complete',fail)
+        monkeypatch.setattr(semantic_review.ai,'complete',fail)
         result_report.generate(p['id'])
-        assert c.get('/api/attempts/'+str(p['id'])).json()['assessment']['report_job']['status']=='error'
+        assert c.get('/api/attempts/'+str(p['id'])).json()['assessment']['report_job']['status']=='done'

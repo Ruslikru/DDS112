@@ -67,6 +67,32 @@ def compact_context(card, state, mode):
     return nonempty({'mode':mode,'card':card,'messages':state.get('messages',[]),
                      'dialogue':state.get('dialogue',[])})
 
+
+def model_context(context):
+    """Keep each received fact once, with its first available learner turn."""
+    technical={'ai','audio','call_audio','at','event_id','operator_id','comment_only'}
+    def clean(value):
+        if isinstance(value,dict):
+            return {k:clean(v) for k,v in value.items() if k not in technical and v not in (None,'',[],{})}
+        if isinstance(value,list):return [clean(v) for v in value]
+        return value
+    result=clean(context)
+    if 'turns' not in context:return result
+    facts=[];seen=set();turns=[]
+    for i,turn in enumerate(context['turns']):
+        turns.append({'learner_text':turn['learner_text']})
+        for channel in ('received_before_reply','available_service_records'):
+            for fact in turn.get(channel,[]):
+                item=clean(fact)
+                key=(channel,json.dumps(item,ensure_ascii=False,sort_keys=True))
+                if key in seen:continue
+                seen.add(key)
+                facts.append({'before_turn':i,'source':channel,**item})
+    result.pop('availability_rule',None)
+    result.update(turns=turns,received_facts=facts,
+        chronology='before_turn — номер реплики ученика с нуля; этот факт доступен начиная с указанной реплики.')
+    return result
+
 def review_attempt(attempt_id):
     with SessionLocal() as db:
         p=db.get(Attempt,attempt_id)
@@ -87,7 +113,7 @@ def review_attempt(attempt_id):
         for c in criteria:
             from .conversation_review import apply_cached
             if apply_cached(c,p.state):continue
-            payload=json.dumps({'criterion':c['label'],'expected':c['expected'],'teacher_approved_examples':approved[c['id']],'teacher_rejected_examples':rejected[c['id']],'learner_text':c['actual'],'context':c.get('evidence_context',context)},ensure_ascii=False,separators=(',',':'))
+            payload=json.dumps({'criterion':c['label'],'expected':c['expected'],'teacher_approved_examples':approved[c['id']],'teacher_rejected_examples':rejected[c['id']],'learner_text':c['actual'],'context':model_context(c.get('evidence_context',context))},ensure_ascii=False,separators=(',',':'))
             if len(payload)>14000:raise ValueError('Слишком большой объём текста для локальной проверки; нужна проверка преподавателя.')
             value,meta=ai.complete(SYSTEM,payload,SCHEMA,tokens=240,priority=10)
             apply_evaluation(c,grounded_evaluation(value,c['actual'],meta))

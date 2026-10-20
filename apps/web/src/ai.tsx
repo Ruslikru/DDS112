@@ -72,6 +72,6 @@ export function AIReview({p,onUpdate}:{p:Obj,onUpdate?:(p:Obj)=>void}){
   const review=result?.assessment?.ai_review||p.assessment?.ai_review;
   return <section className="ai-review"><h3>Разбор нейросети</h3><p>Рекомендация для преподавателя. Итоговый балл не меняется автоматически.</p>
     <button disabled={busy||p.assessment?.report_job?.status==='running'} onClick={async()=>{setBusy(true);setError('');try{const next=await api(`/ai/attempts/${p.id}/review`,'POST');setResult(next);onUpdate?.(next);}catch(x:any){setError(x.message);}finally{setBusy(false);}}}>{busy?'Анализ результата…':review?'Обновить разбор':'Запустить анализ'}</button>
-    <Notice>{error}</Notice>{review&&<><p>{review.summary}</p><p>{review.recommendation}</p><small>{review.model} · {review.seconds} сек.</small></>}
+    <Notice>{error}</Notice>{review&&<><p>{review.summary}</p><p>{review.recommendation}</p></>}
   </section>;
 }
