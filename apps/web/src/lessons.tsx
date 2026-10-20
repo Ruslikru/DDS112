@@ -1,20 +1,23 @@
 import {ManagementConfirm} from './management';
 import {ReportDownload} from './report-download';
 import React, {useContext, useState} from 'react';
-import {Link, useNavigate} from 'react-router-dom';
+import {Link, useNavigate, useSearchParams} from 'react-router-dom';
 import {api, UserContext, useLoad, Heading, Notice, Badge, Field, type Obj, statusNames} from './shared';
+import {TrainingNav,SessionManager,AttendanceJournal} from './training-sessions';
 export function Lessons(){
+ const [params]=useSearchParams();
  const u=useContext(UserContext), {data,error,load}=useLoad('/lessons',3000), nav=useNavigate();
  const [ending,setEnding]=useState<number|null>(null);
  const [show,setShow]=useState(false), [err,setErr]=useState(''), [busy,setBusy]=useState(false);
  async function action(id:number,verb:string){setBusy(true);setErr('');try{const r=await api(`/lessons/${id}/${verb}`,'POST');if(verb==='next'){if(r.queue)nav('/lessons/'+r.lesson_id+'/queue');else if(r.finished)setErr('Все карточки выполнены. Ожидайте завершения занятия преподавателем.');else nav('/attempts/'+r.id);}load();}catch(e:any){setErr(e.message);}finally{setBusy(false);}}
- return <div className="page lessons-page"><Heading eyebrow="УПРАВЛЕНИЕ ОБУЧЕНИЕМ" title="Занятия">{u.role!=='student'&&<button className="primary" onClick={()=>u.role==='teacher'?nav('/classroom/modes'):setShow(!show)}>Подготовить занятие</button>}</Heading><Notice>{error||err}</Notice>
+ return <div className="page lessons-page">{u.role!=='student'&&<TrainingNav tab={params.get('tab')==='attendance'?'attendance':'current'}/>}<Heading eyebrow="УПРАВЛЕНИЕ ОБУЧЕНИЕМ" title="Занятия">{u.role!=='student'&&<button className="primary" onClick={()=>u.role==='teacher'?nav('/classroom/modes'):setShow(!show)}>Подготовить занятие</button>}</Heading><Notice>{error||err}</Notice>
+ {u.role!=='student'&&params.get('tab')==='attendance'?<AttendanceJournal/>:<>{u.role!=='student'&&<SessionManager onChange={load}/>}
  {show&&<LessonForm done={()=>{setShow(false);load();}}/>}
  {!data?.length&&<div className="panel form-panel">Занятий пока нет. Отдельные билеты доступны в разделе «Назначения».</div>}
- {data?.map((l:Obj)=><section key={l.id} className="panel form-panel lesson-panel"><div className="section-title"><div><Badge tone={l.status==='active'?'green':''}>{{prepared:'Подготовлено',active:'Идёт занятие',ended:'Завершено'}[l.status as string]}</Badge><h2>{l.title}</h2><p>{l.training?'Тренировка':'Экзамен'} · {l.categories.join(', ')||'Все выбранные категории'}</p></div><div className="actions">
- {u.role==='student'?l.status==='active'&&<button disabled={busy} className="primary" onClick={()=>action(l.id,'next')}>Продолжить занятие</button>:<>{l.status==='prepared'&&<button disabled={busy} className="primary" onClick={()=>action(l.id,'start')}>Начать занятие</button>}{l.status==='active'&&<button disabled={busy} onClick={()=>setEnding(l.id)}>Завершить для всех</button>}<ReportDownload url={'/api/reports.csv?lesson_id='+l.id} name="training-report.csv">Отчёт CSV</ReportDownload></>}
+ {data?.map((l:Obj)=><section key={l.id} className="panel form-panel lesson-panel"><div className="section-title"><div><Badge tone={l.status==='active'?'green':''}>{{prepared:'Подготовлено',active:'Идёт занятие',ended:'Завершено'}[l.status as string]}</Badge><h2>{l.title}</h2><p>{l.training?'Тренировка':'Экзамен'} · {l.categories.join(', ')||'Все выбранные категории'}{l.duration_minutes?` · ${l.duration_minutes} мин.`:''}</p>{l.delivery_mode==='sprint'&&<small>Общий таймер начинается при запуске преподавателем. При позднем входе доступно оставшееся время.</small>}</div><div className="actions">
+ {u.role==='student'?l.status==='active'&&<button disabled={busy} className="primary" onClick={()=>action(l.id,'next')}>Продолжить занятие</button>:<>{l.status==='prepared'&&l.session_id&&l.session_status!=='active'?<span>Начните сессию выше</span>:l.status==='prepared'&&<button disabled={busy} className="primary" onClick={()=>action(l.id,'start')}>Начать занятие</button>}{l.status==='active'&&<button disabled={busy} onClick={()=>setEnding(l.id)}>Завершить для всех</button>}<ReportDownload url={'/api/reports.csv?lesson_id='+l.id} name="training-report.csv">Отчёт CSV</ReportDownload></>}
  </div></div><table><thead><tr><th>Ученик</th><th>Выполнено</th><th>Карточки и наблюдение</th></tr></thead><tbody>{l.members.map((m:Obj)=><tr key={m.id}><td>{m.name}</td><td>{['adaptive','sprint'].includes(l.delivery_mode)?<>Готово: {m.completed}<small>В работе: {m.attempts.filter((p:Obj)=>!['completed','aborted'].includes(p.status)).length}</small></>:<>{m.completed} / {m.total}<progress max={m.total} value={m.completed}/></>}</td><td>{m.attempts.length?m.attempts.map((p:Obj)=><div className="lesson-attempt-row" key={p.id}><Link className="button" to={'/attempts/'+p.id}>{p.title}</Link> · {statusNames[p.status]}{p.score!==null&&` · ${p.score}%`}</div>):'Ожидает начала'}</td></tr>)}</tbody></table></section>)}
- {ending!==null&&<ManagementConfirm title="Завершить занятие?" description="Текущие карточки будут сохранены и оценены в их нынешнем состоянии." confirmLabel="Завершить занятие" onCancel={()=>setEnding(null)} onConfirm={()=>{action(ending,'stop');setEnding(null);}}/>}</div>;
+ </>}{ending!==null&&<ManagementConfirm title="Завершить занятие?" description="Текущие карточки будут сохранены и оценены в их нынешнем состоянии." confirmLabel="Завершить занятие" onCancel={()=>setEnding(null)} onConfirm={()=>{action(ending,'stop');setEnding(null);}}/>}</div>;
 }
 function LessonForm({done}:{done:()=>void}){
  const {data:users}=useLoad('/users'),{data:tickets}=useLoad('/tickets');

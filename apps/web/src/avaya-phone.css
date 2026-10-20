@@ -94,3 +94,9 @@
 .phone-dock .phone-dock-popover>header button{display:flex;align-items:center;justify-content:center;border:0;padding:3px;background:transparent}
 .phone-dock .phone-transcript{max-height:34vh;overflow:auto;padding:4px 7px}
 .phone-dock .phone-dock-popover>textarea{width:calc(100% - 16px);margin:8px}
+
+/* Keep the centre opaque when this phone is read-only: the ring must not show through it. */
+.phone-dock .avaya-nav-ring{isolation:isolate}
+.phone-dock .avaya-nav-ring>button:not(.avaya-ok){z-index:0}
+.phone-dock .avaya-simulator .avaya-ok{z-index:2}
+.phone-dock .avaya-simulator .avaya-ok:disabled{opacity:1;color:#64675b;background:radial-gradient(at 35% 30%,#c5c3b4,#9b9d8b);box-shadow:0 1px 3px #0008,inset 0 1px 1px #ffffff40}

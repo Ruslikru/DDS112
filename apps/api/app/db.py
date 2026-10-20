@@ -68,6 +68,7 @@ class TicketVersion(Base):
 class Assignment(Base):
     __tablename__ = 'assignments'
     id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey('training_sessions.id'), nullable=True, index=True)
     lesson_id: Mapped[int | None] = mapped_column(ForeignKey('lessons.id'), nullable=True, index=True)
     version_id: Mapped[int] = mapped_column(ForeignKey('ticket_versions.id'))
     student_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
@@ -140,6 +141,7 @@ class Classifier(Base):
 class Lesson(Base):
     __tablename__ = 'lessons'
     id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey('training_sessions.id'), nullable=True, index=True)
     teacher_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
     title: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default='prepared')

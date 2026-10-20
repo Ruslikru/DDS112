@@ -1,0 +1,23 @@
+.teacher-reviews-page>.toolbar{padding:14px 16px;gap:16px;box-sizing:border-box;flex-wrap:wrap}
+.teacher-reviews-page>.toolbar>select{flex:1;min-width:220px}
+.teacher-reviews-page .review-list-empty{margin:0;padding:20px 16px;line-height:1.5}
+.teacher-reviews-page td:last-child>.button,.teacher-reviews-page td:last-child>button{margin:3px 6px 3px 0}
+.teacher-review-mark{margin-top:7px}
+.teacher-reviewed-badge{display:inline-flex;gap:5px;align-items:center;padding:5px 8px;border:1px solid #b7d8cb;background:#e5f2eb;color:#216149;font-size:11px;font-weight:600;line-height:1.35}
+.teacher-reviewed-badge svg{flex:none}
+.teacher-review-mark.with-details{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 18px}
+.teacher-review-mark>small{color:#5b7180;font-size:12px}
+.review-awaiting{display:block;margin-top:6px;font-size:12px;color:#6b7881}
+.teacher-controls>.teacher-search{margin:0;min-height:38px}
+.classroom-shell.is-presenting{--classroom-bar-height:0px}
+.classroom-shell>.teacher-live-bar{position:relative;inset:auto;z-index:50;box-sizing:border-box;margin:0;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 18px;background:#30383c;color:#fff;box-shadow:none;border-bottom:1px solid #6a7b84}
+.classroom-shell>.teacher-live-bar button{min-height:34px;padding:7px 12px}
+.classroom-shell>.teacher-live-bar>span[role=alert]{flex-basis:100%}
+.classroom-shell.is-presenting>.app{min-height:calc(100dvh - var(--classroom-bar-height))}
+.classroom-shell.is-presenting>.app.arm-app{height:calc(100dvh - var(--classroom-bar-height))}
+@media(max-width:850px){
+  .classroom-shell.is-presenting>.app.arm-app{height:auto}
+  .classroom-shell.is-presenting .student-station,.classroom-shell.is-presenting .student-station>.arm-work,.classroom-shell.is-presenting .arm-journal{min-height:calc(100dvh - var(--classroom-bar-height))}
+  .classroom-shell.is-presenting .student-station>.student-side{height:calc(100dvh - var(--classroom-bar-height))}
+}
+@media print{.classroom-shell>.teacher-live-bar{display:none}.classroom-shell.is-presenting>.app.arm-app{height:auto;min-height:0}}

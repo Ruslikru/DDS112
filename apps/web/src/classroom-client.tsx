@@ -1,6 +1,7 @@
 import {X} from 'lucide-react';
+import './teacher-ui-polish.css';
 import {ManagementConfirm} from './management';
-import React,{createContext,useContext,useEffect,useRef,useState} from 'react';
+import React,{createContext,useContext,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import html2canvas from 'html2canvas';
 import {api,Obj,UserContext,Notice} from './shared';
 
@@ -10,6 +11,15 @@ export function ClassroomClient({children}:React.PropsWithChildren){
  const user=useContext(UserContext),[links,setLinks]=useState<Obj[]>([]),[sharing,setSharing]=useState(()=>user.role==='student'||sessionStorage.getItem('training112:sharing:'+user.id)==='true'),[microphone,setMicrophone]=useState(false),[micPrompt,setMicPrompt]=useState(false),[error,setError]=useState(''),[registered,setRegistered]=useState(()=>!!localStorage.getItem('training112:station-token')&&(localStorage.getItem('training112:demo-role')!=='client'||localStorage.getItem('training112:station-configured')==='true'));
  useEffect(()=>{sessionStorage.setItem('training112:sharing:'+user.id,String(sharing));},[sharing,user.id]);
  useEffect(()=>{const update=()=>setRegistered(!!localStorage.getItem('training112:station-token')&&(localStorage.getItem('training112:demo-role')!=='client'||localStorage.getItem('training112:station-configured')==='true'));window.addEventListener('station-ready',update);return()=>window.removeEventListener('station-ready',update);},[]);
+ const presenting=user.role!=='student'&&(links.length>0||sharing||microphone);
+ const liveBar=useRef<HTMLDivElement>(null),[barHeight,setBarHeight]=useState(0);
+ useLayoutEffect(()=>{
+  if(!presenting||!liveBar.current){setBarHeight(0);return;}
+  const element=liveBar.current;
+  const measure=()=>setBarHeight(Math.ceil(element.getBoundingClientRect().height));
+  measure();const observer=new ResizeObserver(measure);observer.observe(element);
+  return()=>observer.disconnect();
+ },[presenting]);
  const current=useRef({links,sharing,microphone});current.current={links,sharing,microphone};
  const peers=useRef(new Map<string,RTCPeerConnection>()),audios=useRef(new Map<string,HTMLAudioElement>()),stream=useRef<MediaStream|null>(null),pointer=useRef<HTMLDivElement>(null),ice=useRef(new Map<string,RTCIceCandidateInit[]>());
  const signal=(id:string,kind:string,payload:Obj)=>api(`/classroom/links/${id}/signal`,'POST',{kind,payload});
@@ -20,7 +30,7 @@ export function ClassroomClient({children}:React.PropsWithChildren){
  useEffect(()=>{let stop=false,busy=false;
   async function tick(){if(stop||busy||!registered)return;busy=true;
    try{let frame='';
-    if(current.current.sharing){const canvas=await html2canvas(document.body,{scale:Math.min(1,1920/window.innerWidth),logging:false,ignoreElements:e=>e.hasAttribute('data-no-capture'),windowWidth:window.innerWidth,windowHeight:window.innerHeight,width:window.innerWidth,height:window.innerHeight,x:window.scrollX,y:window.scrollY,scrollX:window.scrollX,scrollY:window.scrollY});frame=canvas.toDataURL('image/jpeg',.65);}
+    if(current.current.sharing){const canvas=await html2canvas(document.body,{scale:Math.min(1,1920/window.innerWidth),logging:false,ignoreElements:e=>e.hasAttribute('data-no-capture')&&!e.classList.contains('teacher-live-bar'),onclone:document=>{document.querySelectorAll<HTMLElement>('.teacher-live-bar').forEach(bar=>{bar.style.visibility='hidden';});},windowWidth:window.innerWidth,windowHeight:window.innerHeight,width:window.innerWidth,height:window.innerHeight,x:window.scrollX,y:window.scrollY,scrollX:window.scrollX,scrollY:window.scrollY});frame=canvas.toDataURL('image/jpeg',.65);}
     const incoming=await api('/classroom/presence','POST',{page:location.pathname,sharing:current.current.sharing,frame});if(!stop){setLinks(incoming);setError('');}
    }catch(e:any){if(!stop){setError(e.message);setLinks([]);}}finally{busy=false;}
   }tick();const timer=setInterval(tick,1800);return()=>{stop=true;clearInterval(timer);};
@@ -58,8 +68,9 @@ export function ClassroomClient({children}:React.PropsWithChildren){
  useEffect(()=>{let last=0;const move=(e:MouseEvent)=>{if(Date.now()-last<120)return;last=Date.now();for(const link of current.current.links)if(link.teacher_id===user.id&&link.mode==='demo')signal(link.id,'pointer',{x:e.clientX/innerWidth,y:e.clientY/innerHeight}).catch(()=>{});};document.addEventListener('mousemove',move);return()=>document.removeEventListener('mousemove',move);},[user.id]);
  useEffect(()=>{if(!links.length&&pointer.current)pointer.current.style.display='none';},[links.length]);
  const demo=links.find(l=>l.student_id===user.id&&l.mode==='demo');
- return <ClassroomContext.Provider value={{links,sharing,setSharing,microphone,setMicrophone:(v)=>v?setMicPrompt(true):setMicrophone(false)}}>{children}
-  {user.role!=='student'&&(links.length>0||sharing||microphone)&&<div className="teacher-live-bar" data-no-capture><b>{sharing?'Трансляция экрана':microphone?'Микрофон включён':'Подключение к ученику'}</b><span>Получателей: {links.length}</span><button onClick={()=>microphone?setMicrophone(false):setMicPrompt(true)}>{microphone?'Выключить микрофон':'Включить микрофон'}</button><button onClick={async()=>{try{for(const l of links)await api('/classroom/links/'+l.id,'DELETE');setSharing(false);setMicrophone(false);setLinks([]);}catch(e:any){setError(e.message);}}}>Завершить показ · ученики повторяют</button>{error&&<span role="alert">{error}</span>}</div>}
+ return <ClassroomContext.Provider value={{links,sharing,setSharing,microphone,setMicrophone:(v)=>v?setMicPrompt(true):setMicrophone(false)}}><div className={'classroom-shell'+(presenting?' is-presenting':'')} style={{'--classroom-bar-height':barHeight+'px'} as React.CSSProperties}>
+  {user.role!=='student'&&(links.length>0||sharing||microphone)&&<div ref={liveBar} className="teacher-live-bar" data-no-capture aria-label="Управление трансляцией"><b>{sharing?'Трансляция экрана':microphone?'Микрофон включён':'Подключение к ученику'}</b><span>Получателей: {links.length}</span><button onClick={()=>microphone?setMicrophone(false):setMicPrompt(true)}>{microphone?'Выключить микрофон':'Включить микрофон'}</button><button onClick={async()=>{try{for(const l of links)await api('/classroom/links/'+l.id,'DELETE');setSharing(false);setMicrophone(false);setLinks([]);}catch(e:any){setError(e.message);}}}>Завершить показ · ученики повторяют</button>{error&&<span role="alert">{error}</span>}</div>}
+  {children}</div>
   {user.role==='student'&&links.some(l=>l.student_id===user.id)&&<div className="classroom-connection" data-no-capture><b>Преподаватель подключён</b><button onClick={()=>audios.current.forEach(a=>a.play())}>Включить звук преподавателя</button><button onClick={()=>links.filter(l=>l.student_id===user.id).forEach(l=>api('/classroom/links/'+l.id,'DELETE'))}>Завершить подключение</button>{error&&<span role="status">{error}</span>}</div>}
   {micPrompt&&<ManagementConfirm title="Включить микрофон?" description="Ученики, подключённые к показу, будут слышать вас. Вы сможете выключить микрофон на панели трансляции." confirmLabel="Включить микрофон" onCancel={()=>setMicPrompt(false)} onConfirm={async()=>{const bridge=(window as any).pywebview?.api;if(bridge?.allow_microphone)await bridge.allow_microphone();setMicPrompt(false);setMicrophone(true);}}/>}
   {demo&&<div className="teacher-broadcast management-overlay" data-no-capture><section className="remote-dialog"><header><b>{demo.teacher} показывает работу</b> <button onClick={()=>api('/classroom/links/'+demo.id,'DELETE')} aria-label="Закрыть показ"><X size={20}/></button></header><div className="broadcast-screen">{demo.frame?<img src={demo.frame} alt="Экран преподавателя"/>:<p>Ожидаем изображение…</p>}</div></section></div>}

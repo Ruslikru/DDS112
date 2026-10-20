@@ -24,6 +24,8 @@ def adaptive_delivery(db,lesson,stamp):
         return
     if mode not in ('adaptive','sprint','cooperative'):return
     for a in db.scalars(select(Assignment).where(Assignment.lesson_id==lesson.id).with_for_update()):
+        from .training_sessions import delivery_allowed
+        if not delivery_allowed(db,lesson,a.student_id,stamp):continue
         if mode=='cooperative' and lesson.config.get('roles',{}).get(str(a.student_id),'112')!='112':continue
         info=summary(db,a.student_id)
         if not info['intro_complete']:continue

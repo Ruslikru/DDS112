@@ -17,6 +17,7 @@ router=APIRouter(prefix='/api')
 
 class LessonIn(BaseModel):
     title: str = Field(min_length=3,max_length=200)
+    session_id: int | None = Field(default=None,gt=0)
     students: list[int] = Field(min_length=1,max_length=100)
     versions: list[int] = Field(default_factory=list,max_length=100)
     categories: list[str] = Field(default_factory=list,max_length=100)
@@ -39,6 +40,7 @@ def lesson_access(db,u,id,lock=False):
 @router.get('/lessons')
 def lessons(u=Depends(current),db=Depends(getdb)):
     from .training_modes import operator_112_enabled
+    from .training_session_models import TrainingSession
     allow_112=operator_112_enabled(db)
     output=[]
     for l in db.scalars(select(Lesson).order_by(Lesson.id.desc())):
@@ -53,7 +55,8 @@ def lessons(u=Depends(current),db=Depends(getdb)):
             members.append({'id':sid,'name':db.get(User,sid).name,'total':max(len(attempts),sum(len(db.get(TicketVersion,a.version_id).data['tasks']) for a in assignments)),
                 'completed':len({(p.assignment_id,p.task_index) for p in attempts if p.status=='completed'}),
                 'attempts':[{'id':p.id,'title':p.snapshot['title'],'status':p.status,'score':p.assessment.get('score') if p.assessment else None} for p in attempts]})
-        output.append({'id':l.id,'title':l.title,'status':l.status,'started_at':l.started_at,'ended_at':l.ended_at,'members':members,
+        meeting=db.get(TrainingSession,l.session_id) if l.session_id else None
+        output.append({'id':l.id,'title':l.title,'status':l.status,'session_id':l.session_id,'session_status':meeting.status if meeting else None,'duration_minutes':l.config.get('duration_minutes',30),'started_at':l.started_at,'ended_at':l.ended_at,'members':members,
                        'categories':l.config.get('categories',[]),'training':l.config['training'],
                        'delivery_mode':l.config.get('delivery_mode','sequential'),'arrival_interval_seconds':l.config.get('arrival_interval_seconds',60)})
     return output
@@ -61,6 +64,9 @@ def lessons(u=Depends(current),db=Depends(getdb)):
 @router.post('/lessons')
 def create_lesson(data:LessonIn,u=Depends(current),db=Depends(getdb)):
     staff(u)
+    if data.session_id:
+        from .training_sessions import validate_recipients
+        validate_recipients(db,u,data.session_id,data.students)
     from .training_modes import operator_112_enabled
     allow_112=operator_112_enabled(db)
     if not allow_112 and data.delivery_mode=='cooperative':fail('Режим 112 отключён администратором')
@@ -92,7 +98,7 @@ def create_lesson(data:LessonIn,u=Depends(current),db=Depends(getdb)):
         if not any(t['mode']=='112' for t in tasks):fail('Для совместного занятия нужен билет 112')
         data.roles=roles
     if data.delivery_mode=='dds_stream' and any(t['mode']!='dds' for t in tasks): fail('Для потока ДДС выберите только задания ДДС')
-    l=Lesson(teacher_id=u.id,title=data.title,config=data.model_dump()); db.add(l); db.flush()
+    l=Lesson(teacher_id=u.id,title=data.title,session_id=data.session_id,config=data.model_dump()); db.add(l); db.flush()
     # A private, immutable version per learner fixes the randomized order for resuming.
     for sid in dict.fromkeys(data.students):
         ordered=copy.deepcopy(tasks)
@@ -101,13 +107,17 @@ def create_lesson(data:LessonIn,u=Depends(current),db=Depends(getdb)):
         if data.random_order: random.SystemRandom().shuffle(ordered)
         t=Ticket(title=data.title,created_by=u.id,archived=True); db.add(t); db.flush()
         v=TicketVersion(ticket_id=t.id,number=1,published=True,data={'title':data.title,'description':'Снимок занятия','difficulty':'Средний','tasks':ordered}); db.add(v); db.flush()
-        db.add(Assignment(lesson_id=l.id,version_id=v.id,student_id=sid,teacher_id=u.id,title=data.title,start_mode='teacher',released=False,training=data.training))
+        db.add(Assignment(lesson_id=l.id,session_id=l.session_id,version_id=v.id,student_id=sid,teacher_id=u.id,title=data.title,start_mode='teacher',released=False,training=data.training))
     audit(db,u,'lesson_created',l.id,{'students':data.students,'versions':data.versions}); db.commit()
     return {'id':l.id}
 
 @router.post('/lessons/{id}/start')
 def start_lesson(id:int,u=Depends(current),db=Depends(getdb)):
     staff(u); l=lesson_access(db,u,id,True)
+    if l.session_id:
+        from .training_session_models import TrainingSession
+        session=db.get(TrainingSession,l.session_id)
+        if not session or session.status!='active':fail('Сначала начните учебную сессию')
     for assignment in db.scalars(select(Assignment).where(Assignment.lesson_id==id)):
         if not catalog_available(db.get(TicketVersion,assignment.version_id).data):fail('В тестовом каталоге доступны только два билета ДДС')
     if l.status=='ended': fail('Завершённое занятие нельзя запустить повторно')
@@ -121,6 +131,13 @@ def start_lesson(id:int,u=Depends(current),db=Depends(getdb)):
 @router.post('/lessons/{id}/stop')
 def stop_lesson(id:int,u=Depends(current),db=Depends(getdb)):
     staff(u); l=lesson_access(db,u,id,True)
+    finish_lesson(db,l,u)
+    db.commit()
+    return {'ok':True}
+
+
+def finish_lesson(db,l,u):
+    id=l.id
     if l.status!='ended':
         deliver_lesson(db,l)
         l.status='ended'; l.ended_at=now()
@@ -128,8 +145,7 @@ def stop_lesson(id:int,u=Depends(current),db=Depends(getdb)):
         for p in db.scalars(select(Attempt).where(Attempt.assignment_id.in_(ids),Attempt.status.notin_(['completed','aborted'])).with_for_update()):
             p.status='completed'; p.submitted_at=now(); p.state={**p.state,'stopped_by_teacher':True}; p.revision+=1; p.assessment=assess(p)
             db.add(AttemptEvent(attempt_id=p.id,actor_id=u.id,kind='teacher_stop',data={'lesson_id':id}))
-        audit(db,u,'lesson_stopped',id); db.commit()
-    return {'ok':True}
+        audit(db,u,'lesson_stopped',id)
 
 @router.post('/lessons/{id}/next')
 def next_task(id:int,u=Depends(current),db=Depends(getdb)):

@@ -53,6 +53,8 @@ def student_profile(db, user):
     checked=[a.assessment for a in attempts if a.assessment and not a.assessment.get('pending') and not a.assessment.get('ai_preliminary')]
     result['checked']=len(checked) if not result.get('demo') else result['confirmed']
     result['checked_score']=round(statistics.mean(a['score'] for a in checked if a.get('score') is not None)) if any(a.get('score') is not None for a in checked) else result.get('score')
+    group = db.get(Group, user.group_id) if user.group_id else None
+    result['group_name'] = group.name if group else None
     return result
 
 @router.get('/students')
@@ -69,6 +71,38 @@ def students(u=Depends(m.current),db=Depends(m.getdb)):
 
 class Members(BaseModel):
     students:list[int]=Field(max_length=100)
+
+class GroupName(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+
+class GroupEdit(GroupName, Members):
+    pass
+
+def clean_group_name(value):
+    name = value.strip()
+    if not name:m.fail('Укажите название группы')
+    return name
+
+@router.post('/groups')
+def create_group(data:GroupName,u=Depends(m.current),db=Depends(m.getdb)):
+    m.staff(u)
+    name=clean_group_name(data.name)
+    if db.scalar(select(Group.id).where(Group.teacher_id==u.id,Group.name==name)):
+        m.fail('Группа с таким названием уже есть')
+    group=Group(name=name,teacher_id=u.id);db.add(group);db.flush()
+    m.audit(db,u,'group_created',group.id,{'name':name});db.commit()
+    return {'id':group.id,'name':group.name,'teacher_id':group.teacher_id}
+
+@router.put('/groups/{id}')
+def edit_group(id:int,data:GroupEdit,u=Depends(m.current),db=Depends(m.getdb)):
+    m.staff(u);group=db.get(Group,id)
+    if not group or (u.role!='admin' and group.teacher_id!=u.id):m.fail('Группа недоступна',403)
+    name=clean_group_name(data.name)
+    if db.scalar(select(Group.id).where(Group.teacher_id==group.teacher_id,Group.name==name,Group.id!=id)):
+        m.fail('Группа с таким названием уже есть')
+    previous=group.name;group.name=name
+    m.audit(db,u,'group_renamed',id,{'previous':previous,'name':name})
+    return members(id,Members(students=data.students),u,db)
 
 @router.put('/groups/{id}/members')
 def members(id:int,data:Members,u=Depends(m.current),db=Depends(m.getdb)):

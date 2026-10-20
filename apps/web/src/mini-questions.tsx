@@ -32,6 +32,13 @@ export function MiniQuestions(){
       {edit.kind==='choice'&&<label>Варианты, каждый с новой строки<textarea value={edit.options.join('\n')} onChange={event=>setEdit({...edit,options:event.target.value.split('\n')})}/></label>}
       <div className="mini-question-buttons"><button className="primary" disabled={busy}>{edit.id?'Сохранить изменения':'Сохранить вопрос'}</button>{edit.id&&<button type="button" onClick={()=>setEdit(blank)}>Отмена</button>}</div>
     </form>
-    <div className="mini-question-list">{questions?.map((question:Obj)=><div className="catalog-row" key={question.id}><span>{question.prompt}{question.audio_status&&<small>{question.audio_status==='ready'?'Звук готов':question.audio_status==='failed'?'Ошибка озвучки: '+question.audio_error:'Звук генерируется…'}</small>}{question.audio_id&&<audio controls src={'/api/media/'+question.audio_id}/>} {!question.active&&' · скрыт'}</span><div><button type="button" onClick={()=>{setEdit(question);window.scrollTo({top:0,behavior:'smooth'});}}>Изменить</button><button type="button" disabled={busy} onClick={()=>toggle(question)}>{question.active?'Удалить из обучения':'Вернуть'}</button></div></div>)}</div>
+    <div className="mini-question-list"><h2 className="mini-question-list-title">Список вопросов <span>{questions?.length||0}</span></h2>{questions?.map((question:Obj)=><article className="mini-question-card" key={question.id} aria-label={question.prompt}>
+      <div className="mini-question-content"><div className="mini-question-meta"><span>{({text:'Написать текст',choice:'Выбрать вариант',hotkey:'Нажать клавиши'} as Record<string,string>)[question.kind]||question.kind}</span><span>Уровень {question.level}</span>{!question.active&&<span className="mini-question-hidden">Скрыт из обучения</span>}</div>
+        <h3>{question.prompt}</h3>
+        {question.audio_status&&<small className="mini-question-audio-status">{question.audio_status==='ready'?'Запись готова':question.audio_status==='failed'?'Ошибка озвучки: '+question.audio_error:'Запись готовится…'}</small>}
+        {question.audio_id&&<audio controls preload="metadata" aria-label={'Запись: '+question.prompt} src={'/api/media/'+question.audio_id}/>}
+      </div>
+      <div className="mini-question-actions"><button type="button" onClick={()=>{setEdit(question);window.scrollTo({top:0,behavior:'smooth'});}}>Изменить</button><button type="button" disabled={busy} onClick={()=>toggle(question)}>{question.active?'Удалить из обучения':'Вернуть'}</button></div>
+    </article>)}{questions?.length===0&&<p>Минивопросов пока нет. Добавьте первый вопрос с помощью формы выше.</p>}</div>
   </section></div>;
 }

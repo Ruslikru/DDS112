@@ -63,6 +63,8 @@ def deliver_lesson(db, lesson, timestamp=None):
     base=datetime.fromisoformat(lesson.started_at).timestamp()
     interval=lesson.config.get('arrival_interval_seconds',60)
     for a in db.scalars(select(Assignment).where(Assignment.lesson_id==lesson.id).order_by(Assignment.id).with_for_update()):
+        from .training_sessions import delivery_allowed
+        if not delivery_allowed(db,lesson,a.student_id,stamp):continue
         existing=set(db.scalars(select(Attempt.task_index).where(Attempt.assignment_id==a.id)))
         tasks=db.get(TicketVersion,a.version_id).data['tasks']
         for index,task in enumerate(tasks):

@@ -50,6 +50,10 @@ def heartbeat(request:Request,db=Depends(m.getdb)):
     session=db.get(LoginSession,hashlib.sha256(session_token.encode()).hexdigest()) if session_token else None
     w.user_id=session.user_id if session and session.expires>time.time() else None
     w.last_seen=time.time()
+    db.flush()
+    if w.user_id and (w.approved or os.getenv('DEMO_CLASSROOM')=='1' and w.number.isdigit()):
+        from .training_sessions import record_presence
+        record_presence(db,db.get(User,w.user_id),w.last_seen)
     db.commit()
     return {'ok':True}
 
@@ -132,6 +136,9 @@ def presence(data:Presence,request:Request,u=Depends(m.current),db=Depends(m.get
     w=station(request,db)
     w.user_id=u.id;w.last_seen=time.time()
     if data.frame and not data.frame.startswith('data:image/jpeg;base64,'):m.fail('Ожидается JPEG')
+    db.flush()
+    from .training_sessions import record_presence
+    record_presence(db,u,w.last_seen)
     with lock:live[u.id]={'page':data.page,'sharing':data.sharing,'frame':data.frame if data.sharing else '', 'at':time.time()}
     if not data.sharing:
         for link in db.scalars(select(ClassroomLink).where(ClassroomLink.student_id==u.id,ClassroomLink.mode=='help',ClassroomLink.active==True)):link.active=False

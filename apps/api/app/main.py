@@ -406,11 +406,14 @@ def assignments(u=Depends(current),db:Session=Depends(getdb)):
         v=db.get(TicketVersion,a.version_id); student=db.get(User,a.student_id)
         if not catalog_available(v.data) or (not allow_112 and any(task.get('mode')!='dds' for task in v.data.get('tasks',[]))):continue
         attempts=db.scalars(select(Attempt).where(Attempt.assignment_id==a.id).order_by(Attempt.id.desc())).all()
-        out.append({'id':a.id,'lesson_id':a.lesson_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'onboarding':t.get('onboarding'),'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment,'text_only':bool((p.state or {}).get('text_only'))} for p in attempts]})
+        out.append({'id':a.id,'lesson_id':a.lesson_id,'session_id':a.session_id,'title':a.title,'student_id':a.student_id,'student':student.name,'released':a.released,'training':a.training,'start_mode':a.start_mode,'version':v.number,'tasks':[{'title':t['title'],'mode':t['mode'],'onboarding':t.get('onboarding'),'voice':readiness({'tasks':[t]},db)} for t in v.data['tasks']],'attempts':[{'id':p.id,'status':p.status,'task_index':p.task_index,'assessment':p.assessment,'text_only':bool((p.state or {}).get('text_only'))} for p in attempts]})
     return out
 @app.post('/api/assignments')
 def assign(data:AssignmentIn,u=Depends(current),db:Session=Depends(getdb)):
     staff(u); v=db.get(TicketVersion,data.version_id)
+    if data.session_id:
+        from .training_sessions import validate_recipients
+        validate_recipients(db,u,data.session_id,data.students)
     if not v or not v.published or db.get(Ticket,v.ticket_id).archived: fail('Выберите опубликованный билет')
     from .training_modes import operator_112_enabled
     if not operator_112_enabled(db) and any(task.get('mode')!='dds' for task in v.data.get('tasks',[])):fail('Режим 112 отключён администратором')
@@ -419,8 +422,8 @@ def assign(data:AssignmentIn,u=Depends(current),db:Session=Depends(getdb)):
     ensure_ready(v.data,db,text_ok=True)  # not voiced yet: the students' attempts start as text
     for id in set(data.students):
         s=db.get(User,id)
-        if not s or s.role!='student' or not visible(db,u,id): fail('Ученик недоступен',403)
-    for id in set(data.students): db.add(Assignment(version_id=v.id,student_id=id,teacher_id=u.id,title=v.data['title'],start_mode=data.start_mode,released=data.start_mode=='self',training=data.training))
+        if not s or s.role!='student' or not s.active or s.deleted_at or not visible(db,u,id): fail('Ученик недоступен',403)
+    for id in set(data.students): db.add(Assignment(session_id=data.session_id,version_id=v.id,student_id=id,teacher_id=u.id,title=v.data['title'],start_mode=data.start_mode,released=data.start_mode=='self',training=data.training))
     audit(db,u,'assignments_created',v.id,{'students':data.students}); db.commit(); return {'ok':True}
 @app.post('/api/assignments/{id}/release')
 def release(id:int,u=Depends(current),db:Session=Depends(getdb)):
@@ -718,6 +721,8 @@ def media(id:str,u=Depends(current),db:Session=Depends(getdb)):
     return FileResponse(DATA/'media'/id,media_type=m.mime)
 from .extensions import router as extensions_router
 app.include_router(extensions_router)
+from .training_sessions import router as training_sessions_router
+app.include_router(training_sessions_router)
 from .ai_routes import router as ai_router
 app.include_router(ai_router)
 from .diagnostic_routes import router as diagnostic_router

@@ -1,0 +1,8 @@
+.student-group-name{display:block;margin:8px 0;color:#597184;font-size:12px;line-height:1.5}
+.teacher-group>.teacher-controls{margin:16px 0;align-items:flex-end}
+.teacher-group .teacher-controls>label{display:flex;flex-direction:column;gap:6px;min-width:200px}
+.teacher-group .teacher-controls input,.teacher-group .teacher-controls select{margin:0;max-width:100%}
+.student-inline-group{display:flex;align-items:flex-end;gap:10px;padding:14px;margin:12px 0;background:#e3eaed;border:1px solid #bfced7}
+.student-inline-group>label{flex:1;min-width:0;margin:0}
+.student-inline-group>button{flex-shrink:0;margin:0 0 4px}
+@media(max-width:700px){.student-inline-group{align-items:stretch;flex-direction:column}.teacher-group .teacher-controls>label{min-width:0;width:100%}}

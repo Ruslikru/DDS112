@@ -301,9 +301,9 @@ export function App() {
       />
     );
   if (user.must_change_password) return <RequiredPasswordChange onDone={setUser}/>;
-  const links = user.role === "admin" ? [["/","Рабочие места",LayoutDashboard],["/system","Настройки",Settings],["/users","Пользователи",Users],["/tickets","Билеты",FileText],["/learning","Минивопросы",FileText],["/services","Службы",Phone],["/updates","Обновление системы",Settings]] : user.role==="teacher" ? [["/journal","Журнал",ClipboardList],["/reviews","Проверка работ",ClipboardList],["/","Рабочие места",LayoutDashboard],["/classroom/modes","Режимы",ClipboardList],["/users","Студенты",Users],["/analytics","Аналитика",BarChart3],["/tickets","Билеты",FileText],["/learning","Минивопросы",FileText]] : [
+  const links = user.role === "admin" ? [["/","Рабочие места",LayoutDashboard],["/system","Настройки",Settings],["/users","Пользователи",Users],["/tickets","Билеты",FileText],["/learning","Минивопросы",FileText],["/services","Службы",Phone],["/updates","Обновление системы",Settings]] : user.role==="teacher" ? [["/journal","Журнал",ClipboardList],["/reviews","Проверка работ",ClipboardList],["/","Рабочие места",LayoutDashboard],["/classroom/modes","Обучение",ClipboardList],["/users","Студенты",Users],["/analytics","Аналитика",BarChart3],["/tickets","Билеты",FileText],["/learning","Минивопросы",FileText]] : [
     ["/", user.role === "student" ? "Обзор" : user.role === "admin" ? "Рабочие места" : "Учебный класс", LayoutDashboard],
-    ["/classroom/modes", "Режимы обучения", ClipboardList],
+    ["/classroom/modes", "Обучение", ClipboardList],
     ["/learning", "Учебные материалы и справочники", FileText],
     [
       "/assignments",

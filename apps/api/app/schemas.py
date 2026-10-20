@@ -105,6 +105,7 @@ class UserIn(BaseModel):
 
 class AssignmentIn(BaseModel):
     version_id: int
+    session_id: int | None = Field(default=None,gt=0)
     students: list[int] = Field(min_length=1, max_length=100)
     start_mode: Literal['self','teacher'] = 'self'
     training: bool = True

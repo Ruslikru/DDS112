@@ -6,3 +6,7 @@
 .assignment-tab-count{min-width:20px;padding:1px 5px;background:#dce5e9;color:#49616e;text-align:center;font-size:11px;border-radius:10px}
 .assignment-tabs .active .assignment-tab-count{background:#1681ad;color:#fff}
 @media(max-width:1100px){.assignment-tabs a{padding:10px;flex:1 1 42%;justify-content:space-between}}
+
+.assignments-page>.toolbar{padding:12px 16px;box-sizing:border-box;flex-wrap:wrap}
+.assignments-page>.toolbar>.search{flex:1;min-width:min(250px,100%);max-width:520px}
+.assignments-page>.toolbar>span{margin-left:auto;white-space:nowrap}

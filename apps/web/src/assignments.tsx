@@ -85,7 +85,7 @@ export function Assignments() {
     }
   };
   return (
-    <div className="page">
+    <div className="page assignments-page">
       <Heading
         eyebrow="УЧЕБНЫЙ ПРОЦЕСС"
         title={u.role === "student" ? "Мои билеты" : "Назначения"}
