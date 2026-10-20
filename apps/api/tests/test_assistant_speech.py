@@ -56,5 +56,8 @@ def test_spoken_numbers_become_digits(spoken,cleaned):
 
 def test_whisper_prompt_lists_services_and_digits():
     from test_flows import SessionLocal
-    with SessionLocal() as db:prompt=speech_prompt(db)
+    from sqlalchemy import select
+    from apps.api.app.db import User
+    with TestClient(app):pass
+    with SessionLocal() as db:prompt=speech_prompt(db,db.scalar(select(User).where(User.login=='admin')))
     assert 'Служба 101' in prompt and 'на 3 звезды' in prompt and 'билете 12' in prompt

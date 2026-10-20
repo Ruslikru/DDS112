@@ -37,7 +37,8 @@ def station(request,db,required=True):
     token=request.headers.get('x-workstation','')
     w=db.scalar(select(Workstation).where(Workstation.secret_hash==hashlib.sha256(token.encode()).hexdigest())) if token else None
     demo=os.getenv('DEMO_CLASSROOM')=='1'
-    if required and (not w or w.blocked or (demo and w.id!=os.getenv('DEMO_SERVER_STATION_ID') and not w.number.isdigit()) or (not w.approved and not demo)):m.fail('Рабочее место ожидает назначения номера администратором',403)
+    if required and (not w or w.blocked or (demo and w.id!=os.getenv('DEMO_SERVER_STATION_ID') and not w.number.isdigit()) or (not w.approved and not demo)):
+        m.fail('Рабочее место ожидает назначения номера администратором' if demo or not w else 'Рабочее место ожидает допуска администратором в разделе «Рабочие места»',403)
     return w
 
 

@@ -86,3 +86,4 @@
 .app.staff-app:not(.arm-app) main .management-confirm-dialog h2{margin:0;padding:14px 20px;background:#303639;color:#fff;font-size:18px}
 .management-confirm-actions .primary{background:#1884b1;border-color:#1884b1;color:#fff}
 .device-command-status{margin:0 0 12px;color:#526773;font-size:12px;line-height:1.4}
+.device-pending{color:#8a4b00;background:#fdecd2}.device-admission{margin:12px 0;padding:12px;background:#fff6e8;border:1px solid #f0c98a}.device-admission p{margin:0 0 10px;font-size:13px;color:#5d3b0a}
