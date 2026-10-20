@@ -1,4 +1,4 @@
-param([string]$InnoCompiler = '', [string]$BuildTag = '20261020-r12')
+﻿param([string]$InnoCompiler = '', [string]$BuildTag = '20261020-r13')
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 Push-Location $projectRoot

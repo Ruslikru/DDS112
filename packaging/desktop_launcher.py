@@ -18,7 +18,7 @@ import time
 import urllib.request
 
 APP_ID = 'Dispetcher112.Desktop'
-VERSION = '0.8.20'
+VERSION = '0.8.27'
 RESOURCE_ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(RESOURCE_ROOT))
 

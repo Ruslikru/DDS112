@@ -5,13 +5,30 @@ from sqlalchemy import select
 from .db import User,Group
 
 def seed(db):
-    if db.scalar(select(User.id).limit(1)):return
+    if db.scalar(select(User.id).limit(1)):
+        ensure_starter_students(db)
+        return
     password=PasswordHasher().hash(os.getenv('DEMO_PASSWORD','Training112!'))
     admin=User(login='admin',name='Администратор',role='admin',password_hash=password,audit_access=True)
     teacher=User(login='teacher',name='Елена Волкова',role='teacher',password_hash=password)
     db.add_all([admin,teacher]);db.flush()
     group=Group(name='Учебная группа № 1',teacher_id=teacher.id);db.add(group);db.flush()
-    db.add_all([User(login='student',name='Алексей Морозов',role='student',password_hash=password,group_id=group.id),User(login='student2',name='Мария Соколова',role='student',password_hash=password,group_id=group.id)])
+    names=['Алексей Морозов','Мария Соколова','Артём Игоревич Кузнецов','Анна Павловна Белова','Илья Максимович Лебедев']
+    db.add_all([User(login='student' if n==1 else f'student{n}',name=name,role='student',password_hash=password,group_id=group.id) for n,name in enumerate(names,1)])
+    db.commit()
+
+def ensure_starter_students(db):
+    """Complete older starter classrooms without changing their users or passwords."""
+    first=db.scalar(select(User).where(User.login=='student',User.role=='student'))
+    second=db.scalar(select(User).where(User.login=='student2',User.role=='student'))
+    if not first or not second or not first.group_id or first.group_id!=second.group_id:return
+    names={3:'Артём Игоревич Кузнецов',4:'Анна Павловна Белова',5:'Илья Максимович Лебедев'}
+    existing=set(db.scalars(select(User.login)))
+    missing=[n for n in names if f'student{n}' not in existing]
+    if not missing:return
+    password=PasswordHasher().hash(os.getenv('DEMO_PASSWORD','12345678'))
+    for n in missing:
+        db.add(User(login=f'student{n}',name=names[n],role='student',password_hash=password,group_id=first.group_id))
     db.commit()
 
 def seed_reference_content(db):

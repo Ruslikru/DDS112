@@ -1,9 +1,9 @@
-#define AppVersion "0.8.26"
+#define AppVersion "0.8.27"
 #ifndef PayloadDir
-#define PayloadDir "..\release\Dispetcher112-fix-bilets-20261020-r12"
+#define PayloadDir "..\release\Dispetcher112-fix-bilets-20261020-r13"
 #endif
 #ifndef BuildTag
-#define BuildTag "20261020-r12"
+#define BuildTag "20261020-r13"
 #endif
 [Setup]
 AppId={{A6F6F021-37DD-48BB-B651-76B37DD31A12}{param:VerificationInstance|}
