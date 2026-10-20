@@ -21,8 +21,10 @@ def seed_demo_learning(db):
         if not user:continue
         profile=db.get(TrainingProfile,user.id)
         if not profile:profile=TrainingProfile(user_id=user.id,data={});db.add(profile)
+        if n<=2 and not profile.data.get('demo_novice_v2'):
+            profile.data={**profile.data,'demo_novice_v2':True,'demo_level':0,'intro_complete':False}
         if profile.data.get('demo_learning_v1'):continue
-        profile.data={**profile.data,'demo_learning_v1':True,'demo_level':n-1 if n<5 else 5,'demo_stars':n,'intro_complete':False if n==1 else True}
+        profile.data={**profile.data,'demo_learning_v1':True,'demo_level':0 if n<=2 else n-1 if n<5 else 5,'demo_stars':n,'intro_complete':n>2}
         group=db.get(Group,user.group_id) if user.group_id else None
         teacher_id=group.teacher_id if group and group.teacher_id else owner.id
         continue  # Starting library consists only of the two guided DDS tickets.

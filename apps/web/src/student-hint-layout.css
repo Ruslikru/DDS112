@@ -18,3 +18,5 @@
 .tutorial-call-script strong{display:block;margin-bottom:5px;font-size:12px}
 
 .dictation-player{margin:14px 0}.dictation-player button{display:inline-flex;align-items:center;gap:8px}.dictation-player audio{display:none}
+
+.mini-drill-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:9px;border-bottom:1px solid #30383c26}.mini-drill-heading strong{font-size:14px;line-height:1.4;letter-spacing:0}.mini-drill-heading span{padding:3px 8px;background:#ffffff66;border:1px solid #30383c26;border-radius:12px;font-size:11px;line-height:1.3;white-space:nowrap}.mini-drill article .mini-drill-intro,.analysis-mini-drill .mini-drill-intro{font-size:13px!important;line-height:1.5;margin:9px 0 22px;color:#495344;max-width:60ch}

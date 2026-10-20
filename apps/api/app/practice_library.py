@@ -1,7 +1,7 @@
 """Independent practice cases. Guided introductions remain in their own catalog."""
-import os
+import os,copy
 from sqlalchemy import select
-from .db import User,Ticket,TicketVersion,Assignment,Group
+from .db import User,Ticket,TicketVersion,Assignment,Group,Attempt
 from .schemas import TicketData
 from .test_catalog import TITLES
 
@@ -9,7 +9,8 @@ from .test_catalog import TITLES
 def cases():
     def criterion(id,kind,expected,label,weight=10,critical=False):
         return dict(id=id,kind=kind,expected=expected,label=label,weight=weight,critical=critical)
-    base=dict(mode='dds',limit_seconds=600,own_service='ДДС района',services=['ДДС района'],questions=[],
+    workplace=dict(organization='УК «Район-Сервис» · учебная организация',district='Москва, район Хорошёво-Мнёвники',coverage='ул. Берзарина, д. 21, корп. 1; ул. Маршала Тухачевского, д. 41, корп. 1.',directory='ул. Маршала Тухачевского, д. 43, корп. 2 — УК «Северный квартал», диспетчерская 1002.')
+    base=dict(workplace=workplace,mode='dds',limit_seconds=600,own_service='ДДС района',services=['ДДС района'],questions=[],
               category='Самостоятельная практика',source='Подготовленный учебный сценарий взаимодействия служб.',
               method_note='Оцените решение, полноту передачи сведений и проверяемость записей о ходе реагирования.')
     card=dict(name='Анна Викторовна Громова',caller_status='житель',country='Россия',region='Москва',city='Москва',
@@ -56,6 +57,14 @@ def seed(db):
         if not version:
             ticket=Ticket(title=data['title'],created_by=owner.id);db.add(ticket);db.flush()
             version=TicketVersion(ticket_id=ticket.id,number=1,published=True,data=prepare(data,db,owner.id));db.add(version);db.flush()
+        elif any(t.get('workplace')!=data['tasks'][0]['workplace'] for t in version.data['tasks'] if t.get('id')==key):
+            updated=copy.deepcopy(version.data)
+            for task in updated['tasks']:
+                if task.get('id')==key:task['workplace']=data['tasks'][0]['workplace']
+            version.data=updated
+        for attempt in db.scalars(select(Attempt).where(Attempt.status.notin_(['completed','aborted']))):
+            if attempt.snapshot.get('id')==key and attempt.snapshot.get('workplace')!=data['tasks'][0]['workplace']:
+                attempt.snapshot={**attempt.snapshot,'workplace':data['tasks'][0]['workplace']}
         selected.append(version)
     if os.getenv('DEMO_CLASSROOM')=='1':
         for student in db.scalars(select(User).where(User.role=='student',User.active==True,User.deleted_at==None)):

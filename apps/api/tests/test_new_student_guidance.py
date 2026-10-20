@@ -63,3 +63,43 @@ def test_invalid_recording_has_human_readable_error(classroom,monkeypatch):
     result=post(classroom,'/voice/transcribe',{'audio':'AAAA'})
     assert result.status_code==400
     assert 'Удерживайте' in result.json()['detail'] and 'private' not in result.text
+
+
+def test_first_two_demo_accounts_start_as_novices(classroom):
+    from apps.api.app.demo_learning import seed_demo_learning
+    from apps.api.app.learning import onboarding_needed
+    with SessionLocal() as db:
+        for n in range(1,4):
+            user=db.scalar(select(User).where(User.login==f'student{n}'))
+            if not user:
+                user=User(login=f'student{n}',name=f'Student {n}',role='student',password_hash='unused')
+                db.add(user);db.flush()
+            profile=db.get(TrainingProfile,user.id)
+            if not profile:profile=TrainingProfile(user_id=user.id,data={});db.add(profile)
+            profile.data={'demo_learning_v1':True,'demo_level':n-1,'intro_complete':n>1}
+        db.commit()
+        seed_demo_learning(db)
+        for n in range(1,4):
+            user=db.scalar(select(User).where(User.login==f'student{n}'))
+            assert onboarding_needed(db,user.id)==(n<=2)
+
+
+def test_practice_workplace_is_visible_to_student(classroom):
+    from apps.api.app import practice_library
+    from apps.api.app.main import attempt_view
+    from apps.api.app.dds_flow import create_attempt
+    name,sid=learner(3)
+    with SessionLocal() as db:
+        practice_library.seed(db)
+        version=next(v for v in db.scalars(select(TicketVersion)) if v.data['tasks'][0].get('id')=='practice-referral-v1')
+        owner=db.scalar(select(User).where(User.login=='admin'))
+        assignment=Assignment(version_id=version.id,student_id=sid,teacher_id=owner.id,title='Practice',training=True)
+        db.add(assignment);db.flush()
+        attempt=create_attempt(db,assignment,version.data['tasks'][0],0);db.commit()
+        view=attempt_view(attempt,db.get(User,sid))
+        workplace=view['task']['workplace']
+        assert 'Район-Сервис' in workplace['organization']
+        assert 'Хорошёво-Мнёвники' in workplace['district']
+        assert 'д. 41' in workplace['coverage']
+        assert 'д. 43' in workplace['directory'] and 'Северный квартал' in workplace['directory']
+        assert 'criteria' not in view['task']
