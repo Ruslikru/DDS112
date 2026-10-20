@@ -108,6 +108,7 @@ def update_line(attempt_id:int,data:LineState,u=Depends(current),db=Depends(getd
     with _lock:
         old=_lines.get(attempt_id,{})
         if data.active:
+            if old.get('session')==data.session and old.get('active') is False:m.fail('Звонок уже завершён',409)
             if old.get('active') and old.get('session')!=data.session and old.get('until',0)>time.monotonic():m.fail('На этом рабочем месте уже идёт звонок',409)
             _lines[attempt_id]={'session':data.session,'active':True,'until':time.monotonic()+60}
         elif old.get('session')==data.session:

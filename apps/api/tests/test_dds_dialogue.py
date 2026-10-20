@@ -112,3 +112,19 @@ def test_thread_settings_validation_and_roles():
         for bad in (0,17,True,2.5):assert post(c,'/voice/dialogue-settings',{'stt_threads':bad}).status_code==400
         login(c,'student')
         assert post(c,'/voice/dialogue-settings',{'dialogue_threads':8}).status_code==403
+
+
+def test_cancelled_heartbeat_cannot_revive_call():
+    from types import SimpleNamespace
+    db=SimpleNamespace(get=lambda model,id:SimpleNamespace(student_id=20))
+    user=SimpleNamespace(id=20,role='student');sid='heartbeat-cancelled'
+    call_audio.update_line(999002,call_audio.LineState(session=sid,active=True),user,db)
+    call_audio.update_line(999002,call_audio.LineState(session=sid,active=False),user,db)
+    with pytest.raises(Exception):call_audio.update_line(999002,call_audio.LineState(session=sid,active=True),user,db)
+    assert not call_audio.session_active(999002,sid)
+
+
+def test_female_goodbye_keeps_voice_gender():
+    contact={'id':'woman','name':'Ирина','voice_gender':'female','response':'Приняли.'}
+    out=reply('До свидания',{},contact,{},[],lambda *a,**k:pytest.fail('Goodbye must not load LLM'))
+    assert out['call_end'] and out['answer']=='Поняла, до связи.'

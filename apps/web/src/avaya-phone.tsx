@@ -28,7 +28,7 @@ export function AvayaPhone({p,active,busy,textOnly,onSelect,onUpdate,cmd,onOpen,
  function updateSlot(i:number,value:Partial<Slot>){setSlots(previous=>previous.map((s,n)=>n===i?{...s,...value}:s));}
  function log(c:Obj,kind:Entry['kind']){setLogs(previous=>[{id:uuid(),name:c.name||c.who||'Абонент',phone:String(c.phone||''),kind,at:new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})},...previous].slice(0,50));}
  async function startLine(i:number){
-  if(!started.current.size)await api('/call-audio/attempts/'+p.id+'/line','POST',{session:lease.current,active:true});
+  if(!started.current.size){lease.current=uuid();await api('/call-audio/attempts/'+p.id+'/line','POST',{session:lease.current,active:true});}
   started.current.add(i);onCallStart();engines[i].setVolume(callVolume/10);
  }
  function endLine(i:number){
