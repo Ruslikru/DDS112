@@ -114,6 +114,7 @@ def contact_question(id:int,data:ContactQuestionIn,u=Depends(m.current),db:Sessi
 
 
 def dialogue_complete(*args,**kwargs):
+    kwargs.setdefault('priority',-10)
     try:return get_dialogue_engine().complete(*args,**kwargs)
     except AIUnavailable as error:m.fail(str(error),503)
 

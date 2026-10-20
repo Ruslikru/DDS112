@@ -71,13 +71,13 @@ def test_multiturn_dispatch_goodbye_and_speech_authorization(monkeypatch,tmp_pat
             state['messages'].append({'who':'Старший','text':'Стоим в пробке, объезд перекрыт.',
                                       'contact_id':p['task']['contacts'][0]['id'],'direction':'incoming'})
             row.state=state;db.commit()
-        for text in ('Включите сирену','А через двор?','да'):
+        for text in ('Включите сирену','А через двор?'):
             r=send(c,p,text);assert r.status_code==200,r.text;p=r.json()
-            assert not p['state']['messages'][-1]['call_end']
-        assert 'пробке' in calls[0]['current_report'] and len(calls[-1]['history'])<=2
+            assert p['state']['messages'][-1]['call_end'] is (text=='А через двор?')
+        assert 'пробке' in calls[0]['current_report'] and len(calls[0]['history'])<=2
         r=send(c,p,'Позвоните как приедете');assert r.status_code==200,r.text
         p=r.json();assert p['state']['messages'][-1]['call_end']
-        assert len(calls)==3
+        assert len(calls)==1
         # Raw client commands cannot inject an answer, intent, audio, or call outcome.
         forged=post(c,f'/attempts/{p["id"]}/command',{'type':'contact','revision':p['revision'],
             'command_id':str(uuid.uuid4()),'payload':{'id':p['task']['contacts'][0]['id'],'text':'Вопрос','question_id':'unknown','answer':'Прибыли'}})

@@ -28,6 +28,24 @@ def acknowledge_report(text, report):
     return None
 
 
+def short_incoming_reply(text, report, turns):
+    """Approach clarification is one answer; other reports allow at most two operator turns."""
+    words=text.casefold().replace('ё','е');report=report.casefold().replace('ё','е')
+    if re.search(r'не (?:вешай|отключай|клади)|подожд|оставайтесь на линии',words):return None
+    access=bool(re.search(r'подъезд|подъехать|подьезд|проехать|проезд|заезд|подход|как добрать',report))
+    if access:
+        if re.search(r'местн|людей|жител|прохож|спрос|карт[уыае]|навигатор',words):
+            return 'Ладно, понял. Уточним дорогу на месте. До связи.'
+        if re.search(r'не знаю|неизвест|нет (?:данных|сведений|информации)|данных нет|сведений нет|информации нет|не могу (?:сказать|подсказать|уточнить)',words):
+            return 'Понял, тогда сами найдём подъезд. До связи.'
+        if re.search(r'справ|слева|правой|левой|сторон|подъезд|подьезд|двор|арку|ворот|въезд|заезд|объезд|обьезд|проезж|поверн|поворач|обогн|второ|перв|свобод|открыт|закрыт|перекрыт|пешком|сзади|спереди',words):
+            return 'Понял, подъезд уточнили. Дальше сориентируемся на месте. До связи.'
+        if turns>=2:return 'Понял, уточним подъезд на месте. До связи.'
+        return ''
+    if turns>=2:return 'Понял вас. Продолжаем по обстановке, об изменениях доложим. До связи.'
+    return None
+
+
 def accepted_response(text):
     if re.search(r'не можем|не прин|не выед|уточните|повторите|непонят|не понял|нет возможности',text,re.I):return False
     return bool(re.search(r'приня|получ|зарегистр|выезж|выех|направ|отправ|приступ|подтвержда',text,re.I))
@@ -38,15 +56,26 @@ def reply(text, task, contact, state, options, complete):
     started=time.perf_counter()
     history=[m for m in state.get('messages',[]) if m.get('contact_id')==contact['id']][-4:]
     contacted=bool(state.get('contact_counts',{}).get(contact['id']))
-    incoming=any(m.get('contact_id')==contact['id'] and m.get('direction')=='incoming' for m in state.get('messages',[]))
+    all_messages=[m for m in state.get('messages',[]) if m.get('contact_id')==contact['id']]
+    incoming_index=next((i for i in range(len(all_messages)-1,-1,-1) if all_messages[i].get('direction')=='incoming'),None)
+    current=all_messages[incoming_index+1:] if incoming_index is not None else []
+    incoming=incoming_index is not None and not any(m.get('call_end') for m in current)
     def result(intent,answer,end=False,meta=None):
         return {'question_id':intent,'answer':answer,'call_end':end,
                 'ai':{**(meta or {}),'seconds':round(time.perf_counter()-started,3),'source':'model' if meta else 'rule'}}
     bye=closing(text)
     if bye:return result('unknown',bye.replace('Понял','Поняла') if contact.get('voice_gender')=='female' else bye,True)
     report=next((m.get('text','') for m in reversed(state.get('messages',[])) if m.get('contact_id')==contact['id'] and m.get('direction')=='incoming'),'')
-    acknowledged=acknowledge_report(text,report) if report else None
+    acknowledged=acknowledge_report(text,report) if report and incoming else None
     if acknowledged:return result('unknown',acknowledged.replace('Понял','Поняла') if contact.get('voice_gender')=='female' else acknowledged,True)
+    if incoming and (contact.get('kind')=='brigade' or contact['id']=='brigade'):
+        turns=1+sum(m.get('who','').startswith('Диспетчер') for m in current)
+        short=short_incoming_reply(text,report,turns)
+        if short is not None:
+            end=bool(short)
+            answer=short or 'У нас уточнение по подъезду. Есть сведения, с какой стороны удобнее заехать?'
+            if contact.get('voice_gender')=='female':answer=answer.replace('Понял','Поняла').replace('понял','поняла')
+            return result('unknown',answer,end)
     if not contacted and not incoming and not re.search(r'\bне\b',text,re.I) and re.search(r'примите.{0,25}(?:заявк|вызов)|передаю.{0,25}(?:заявк|вызов)|(?:выезжайте|езжайте|направьте|отправьте|вышлите)',text,re.I):
         accepted=accepted_response(contact['response'])
         return result('dispatch' if accepted else 'unknown',contact['response'],accepted)
@@ -76,8 +105,8 @@ def reply(text, task, contact, state, options, complete):
     value,meta=complete(
         f'Ты {role}, отвечаешь диспетчеру по-русски. До 12 слов, от первого лица. '
         'Текущий доклад неизменен: не придумывай прибытие или завершение. '
-        'На предложения объясняй препятствие. Не меняй роль. При передаче новой заявки action=dispatch, иначе answer. JSON.',
-        json.dumps(prompt,ensure_ascii=False),schema,tokens=64,temperature=.2)
+        'Не повторяй вопрос и препятствие после ответа диспетчера. Стремись завершить короткий деловой разговор. Не меняй роль. При передаче новой заявки action=dispatch, иначе answer. JSON.',
+        json.dumps(prompt,ensure_ascii=False),schema,tokens=48,temperature=.2)
     intent='dispatch' if value.get('action')=='dispatch' and not contacted and not incoming else value.get('id','unknown')
     if intent=='dispatch' and (contacted or incoming):intent='unknown'
     if intent in catalog:
