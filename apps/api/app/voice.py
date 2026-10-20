@@ -196,6 +196,13 @@ def ensure_ready(data,db,text_ok=False):
         m.fail(f"{label} Готово {status['generated']} из {status['total']} записей.",409)
     return status
 
+def store_live_audio(db,path,owner):
+    """Reuse immutable media storage and the application's existing authorization."""
+    raw=path.read_bytes();key=hashlib.sha256(raw).hexdigest();dest=DATA/'media'/key
+    if not dest.exists():shutil.copyfile(path,dest)
+    if not db.get(Media,key):db.add(Media(id=key,filename=key+'.wav',mime='audio/wav',size=len(raw),owner_id=owner))
+    return key
+
 def next_job(db):
     """Lines a teacher is waiting for, then the most recently requested ticket, then the background backlog."""
     with urgent_lock:waiting=list(urgent)
@@ -234,6 +241,25 @@ def queue(u=Depends(m.current),db=Depends(m.getdb)):
 @router.get('/settings')
 def settings(u=Depends(m.current)):
     m.staff(u);return runtime.status()
+
+@router.get('/dialogue-settings')
+def dialogue_settings(u=Depends(m.current)):
+    m.staff(u)
+    cfg=runtime.settings()['live']
+    return {'editable':u.role=='admin',**{k:cfg[k] for k in ('dialogue_threads','stt_threads','tts_threads')}}
+
+@router.get('/call-status')
+def call_status(u=Depends(m.current)):
+    from .startup_models import status
+    return status()
+
+@router.post('/dialogue-settings')
+def save_dialogue_settings(data:dict,u=Depends(m.current)):
+    m.admin(u)
+    if set(data)-{'dialogue_threads','stt_threads','tts_threads'}:m.fail('Неизвестная настройка потоков')
+    try:runtime.save({'live':data})
+    except ValueError as error:m.fail(str(error))
+    return dialogue_settings(u)
 
 @router.post('/settings')
 def save_settings(data:dict,u=Depends(m.current)):

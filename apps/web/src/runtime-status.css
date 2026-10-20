@@ -1,0 +1,7 @@
+.runtime-status-strip{position:fixed;bottom:0;left:0;right:0;height:24px;z-index:180;display:flex;align-items:center;justify-content:flex-end;gap:16px;box-sizing:border-box;padding:0 12px;border-top:1px solid #adbcc4;background:#e8edef;color:#4c626f;font:10px/1.2 Arial,sans-serif;font-variant-numeric:tabular-nums;overflow-x:auto;white-space:nowrap}
+.runtime-status-strip>span{display:inline-flex;align-items:center;gap:4px;flex:none}.runtime-status-strip b{font-weight:500}.runtime-machine{margin-right:auto;color:#5e7380}.runtime-status-strip .runtime-dot{width:7px;height:7px;border-radius:50%;background:#c1473f;flex:none}.runtime-status-strip .runtime-dot.ready{background:#25945c}.runtime-status-strip .runtime-dot.warming{background:#238bd2}.runtime-status-strip .runtime-dot.cold,.runtime-status-strip .runtime-dot.error{background:#c1473f}.runtime-cpu{border-left:1px solid #b8c5cb;padding-left:12px}
+.runtime-stats-setting{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:400;padding:10px 0}.runtime-stats-setting input{width:auto;min-height:0;flex:none;margin:0;accent-color:#1784ae}
+html[data-runtime-stats=on] .arm-app.app{height:calc(100dvh - 24px)}
+html[data-runtime-stats=on] .classroom-connection{bottom:24px}
+html[data-runtime-stats=on] .app:not(.arm-app){padding-bottom:70px}
+@media(max-width:700px){.runtime-status-strip{gap:9px;justify-content:flex-start}.runtime-machine{display:none!important}}

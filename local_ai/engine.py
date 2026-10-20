@@ -166,12 +166,14 @@ class LocalEngine:
         # Fail fast instead of holding an unbounded queue on the minimum CPU.
         if not self.lock.acquire(blocking=False): raise AIUnavailable('Нейросеть занята другим запросом. Повторите через несколько секунд.')
         started = time.monotonic()
+        warm=self.process is not None and self.process.poll() is None
         try:
             self.on_event('ai_request_started',max_tokens=tokens)
             self.start()
             ready = time.monotonic()
             body = {'messages': [{'role':'system','content':system}, {'role':'user','content':prompt}],
                     'max_tokens':tokens, 'temperature':temperature,
+                    'cache_prompt':True,
                     'chat_template_kwargs':{'enable_thinking':False},
                     'response_format':{'type':'json_schema','json_schema':{'name':'response','strict':True,'schema':schema}}}
             req = urllib.request.Request(self.url + '/v1/chat/completions', json.dumps(body, ensure_ascii=False).encode('utf-8'),
@@ -186,6 +188,7 @@ class LocalEngine:
                     'inference_seconds':round(time.monotonic()-ready,3)}
             self.on_event('ai_request_finished',**timing,usage=result.get('usage',{}))
             return value, {'model':Path(self.config()['model']).stem,'mode':self.config()['mode'],
+                           'warm':warm,'threads':self.config()['threads'],
                            **({'adapter':ASSISTANT_ADAPTER,'training_steps':1000} if self.config()['model']==ASSISTANT_MODEL else {}),
                            **timing,'usage':result.get('usage',{})}
         except AIUnavailable as error:
@@ -197,6 +200,25 @@ class LocalEngine:
             self.error='Не удалось получить корректный ответ локальной модели.'
             raise AIUnavailable(self.error) from error
         finally: self.lock.release()
+
+
+class DialogueEngine(LocalEngine):
+    """Independent CPU conversation worker; never changes training or teacher settings."""
+    def __init__(self,main,settings):
+        super().__init__(main.root,main.data/'dds-dialogue')
+        self.main=main;self.settings=settings;self.active_threads=None
+
+    def config(self):
+        c=self.main.config()
+        c.update(model=CARD_MODEL,mode='cpu',execution='server',context=2048,
+                 threads=self.active_threads or self.settings().get('dialogue_threads',4))
+        return c
+
+    def start(self):
+        threads=self.settings().get('dialogue_threads',4)
+        if self.active_threads!=threads:
+            self.stop();self.active_threads=threads
+        super().start()
 
 
 class AssistantEngine(LocalEngine):

@@ -3,9 +3,9 @@ import {useEffect,useRef,useState} from 'react';
 type StopRecording=(cancel?:boolean)=>void;
 
 /** Запись существует только пока удерживается кнопка или Ctrl+Space. */
-export function useHeldRecording(start:()=>Promise<StopRecording|undefined>,enabled:boolean){
+export function useHeldRecording(start:()=>Promise<StopRecording|undefined>,enabled:boolean,shortcutEnabled=true){
  const [held,setHeld]=useState(false);
- const current=useRef({start,enabled});current.current={start,enabled};
+ const current=useRef({start,enabled,shortcutEnabled});current.current={start,enabled,shortcutEnabled};
  const pressed=useRef(false),starting=useRef(false),cancelled=useRef(false),stop=useRef<StopRecording|undefined>(undefined),alive=useRef(true);
  const release=useRef((cancel=false)=>{});
  release.current=(cancel=false)=>{
@@ -31,7 +31,7 @@ export function useHeldRecording(start:()=>Promise<StopRecording|undefined>,enab
  useEffect(()=>{
   alive.current=true;
   const up=()=>release.current(),blur=()=>release.current(true);
-  const down=(event:KeyboardEvent)=>{if(event.ctrlKey&&event.code==='Space'&&!event.repeat&&current.current.enabled&&!document.querySelector('.assistant-mic')){event.preventDefault();void pressRef.current();}};
+  const down=(event:KeyboardEvent)=>{if(event.ctrlKey&&event.code==='Space'&&!event.repeat&&current.current.enabled&&current.current.shortcutEnabled&&!document.querySelector('.assistant-mic')){event.preventDefault();void pressRef.current();}};
   const keyUp=(event:KeyboardEvent)=>{if(event.code==='Space'||event.key==='Control'){if(pressed.current)event.preventDefault();release.current();}};
   window.addEventListener('pointerup',up);window.addEventListener('pointercancel',blur);window.addEventListener('blur',blur);
   document.addEventListener('keydown',down);document.addEventListener('keyup',keyUp);

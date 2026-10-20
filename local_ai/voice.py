@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 from .model_catalog import ASSISTANT_MODEL
 
-DEFAULT={'pre':{'llm':ASSISTANT_MODEL,'llm_device':'cpu','tts':'piper','tts_device':'cpu'},'live':{'llm':ASSISTANT_MODEL,'llm_device':'cpu','tts':'piper','tts_device':'cpu','stt':'gigaam','stt_device':'cpu','fillers':True,'delay':1.5,'chat_enabled':False}}
+DEFAULT={'pre':{'llm':ASSISTANT_MODEL,'llm_device':'cpu','tts':'piper','tts_device':'cpu'},'live':{'llm':ASSISTANT_MODEL,'llm_device':'cpu','tts':'piper','tts_device':'cpu','stt':'gigaam','stt_device':'cpu','fillers':True,'delay':1.5,'chat_enabled':False,'dialogue_threads':4,'stt_threads':2,'tts_threads':2}}
 PIPER_MODELS=('piper','piper-denis','piper-irina','piper-ruslan')
 
 class VoiceRuntime:
@@ -41,6 +41,7 @@ class VoiceRuntime:
                 elif key=='stt':valid=val=='gigaam'
                 elif key=='delay':valid=isinstance(val,(float,int)) and .3<=val<=10
                 elif key in ('fillers','chat_enabled'):valid=isinstance(val,bool)
+                elif key.endswith('_threads'):valid=type(val) is int and 1<=val<=16
                 if not valid:raise ValueError('Некорректная настройка звука: '+key)
                 result[group][key]=val
         file=self.data/'voice-settings.json';tmp=file.with_suffix('.tmp')
@@ -48,6 +49,8 @@ class VoiceRuntime:
         return result
     def call(self,request):
         with self.lock:
+            cfg=self.settings()['live']
+            request={**request,'stt_threads':cfg['stt_threads'],'tts_threads':cfg['tts_threads']}
             if not self.process or self.process.poll() is not None:
                 updated=self.bundle/'runtime-0.8.24b'/'python.exe'
                 python=updated if updated.exists() else self.bundle/'runtime'/'python.exe'
@@ -99,12 +102,12 @@ class VoiceRuntime:
         key=hashlib.sha256(json.dumps([text,gender,cfg['tts'],cfg['tts_device'],'v3'],ensure_ascii=False).encode()).hexdigest()
         target=cache/(key+'.wav');meta=cache/(key+'.json')
         with self.lock:
-            if target.exists() and meta.exists():return target,json.loads(meta.read_text('utf-8'))
+            if target.exists() and meta.exists():return target,{**json.loads(meta.read_text('utf-8')),'cached':True,'seconds':0}
             if 'status' not in self.last:self.call({'op':'status'})
             temp=cache/(key+'.part.wav')
             value=self.call({'op':'synthesize','text':text[:5000],'gender':gender,'model':cfg['tts'],'device':cfg['tts_device'],'output':str(temp)})
             temp.replace(target);meta.write_text(json.dumps(value),encoding='utf-8')
-            return target,value
+            return target,{**value,'cached':False}
     def transcribe(self,content,prompt=None,model=None,beam=None):
         """Recognize microphone audio with the bundled GigaAM v3 model."""
         if model not in (None,'gigaam'):raise ValueError('Распознавание доступно только через GigaAM v3')

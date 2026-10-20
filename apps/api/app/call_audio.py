@@ -91,6 +91,11 @@ def line_busy(attempt_id):
         value=_lines.get(attempt_id,{})
         return value.get('until',0)>time.monotonic()
 
+def session_active(attempt_id,session):
+    with _lock:
+        value=_lines.get(attempt_id,{})
+        return value.get('active',False) and value.get('session')==session and value.get('until',0)>time.monotonic()
+
 class LineState(BaseModel):
     session:str=Field(min_length=8,max_length=100)
     active:bool

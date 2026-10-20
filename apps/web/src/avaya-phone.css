@@ -1,0 +1,96 @@
+/* The supplied Avaya reference, rebuilt locally: no CDN, fonts or remote assets. */
+.avaya-simulator{color:#252e33;font:11px Arial,sans-serif;min-width:0;max-height:70vh;overflow:auto;scrollbar-width:thin;scrollbar-gutter:stable} .phone-dock .avaya-simulator button{display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;margin:0;padding:0;line-height:1.1;border:1px solid #111418;border-radius:4px;background:linear-gradient(#35383e,#202226);color:#b8b9ad;box-shadow:0 2px 3px #0009,inset 0 1px 1px #ffffff25;cursor:pointer;font:inherit;transition:filter .12s,transform .12s} .phone-dock .avaya-simulator button:hover:enabled{filter:brightness(1.22);background:linear-gradient(#41454c,#292d32);color:#edf1ec} .phone-dock .avaya-simulator button:active:enabled{transform:translateY(1px);box-shadow:inset 0 2px 3px #0008} .phone-dock .avaya-simulator button:focus-visible{outline:2px solid #44b8ec;outline-offset:2px} .phone-dock .avaya-simulator button:disabled{cursor:default;opacity:.48} .phone-dock .avaya-body{display:grid;grid-template-columns:51px minmax(0,1fr);gap:7px;padding:12px 10px 14px 7px;border-radius:24px 24px 22px 22px;background:radial-gradient(at 58% 22%,#35373a,#222427 65%,#17191b);border:1px solid #34373a;box-shadow:0 6px 10px #0004,inset 0 1px 2px #ffffff30,inset 0 -5px 10px #0009;user-select:none} .phone-dock .avaya-console{min-width:0} .phone-dock .avaya-brand{height:21px;text-align:center;color:#d54645;font-size:17px;font-weight:bold;letter-spacing:-.8px;line-height:18px} .phone-dock .avaya-brand small{float:right;color:#b1b3af;font:8px Arial;max-width:83px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:0;line-height:18px} .phone-dock .avaya-display-row{display:grid;grid-template-columns:15px minmax(0,1fr);gap:5px;align-items:center} .phone-dock .avaya-line-keys{display:grid;gap:15px} .phone-dock .avaya-line-keys button{width:15px;height:10px;border-radius:7px} .phone-dock .avaya-simulator i.lit, .phone-dock .avaya-simulator i.red, .phone-dock .avaya-simulator i.held, .phone-dock .avaya-simulator i.ringing{background:#4ed86d;box-shadow:0 0 4px #47f477} .phone-dock .avaya-simulator i.red{background:#fa534a;box-shadow:0 0 4px #f84747} .phone-dock .avaya-simulator i.held{background:#ffba4b;animation:avaya-hold 1s steps(2) infinite} .phone-dock .avaya-simulator i.ringing{background:linear-gradient(90deg,#ff6549,#68f647);animation:avaya-hold .45s steps(2) infinite} .phone-dock .avaya-line-keys i{display:block;width:9px;height:3px;border-radius:4px;background:#5d6157} .phone-dock .avaya-lcd{height:119px;min-width:0;background:radial-gradient(at 50% 35%,#d7ebff,#b8d4ed);color:#344761;border:4px solid #101416;border-radius:4px;box-shadow:0 0 4px #9dd6ff55,inset 0 2px 4px #213c6f66;overflow:hidden;font:10px 'Arial Narrow',Tahoma,sans-serif;position:relative} .phone-dock .avaya-lcd:after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(#173a6306 1px,transparent 1px) 0 0/2px 2px} .phone-dock .avaya-lcd-top{display:flex;justify-content:space-between;gap:2px;padding:2px 3px;font-size:9px} .phone-dock .avaya-lcd-title{background:#536984;color:#e5f2ff;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px} .phone-dock .avaya-lcd-content{height:67px;padding:1px 3px;overflow:hidden} .phone-dock .avaya-lcd-line{display:flex;align-items:center;gap:3px;height:16px;border-bottom:1px solid #809bb3;font-size:9px;overflow:hidden} .phone-dock .avaya-lcd-line span{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis} .phone-dock .avaya-lcd-line small{font-size:8px} .phone-dock .avaya-lcd .selected{background:#6f89a84a} .phone-dock .avaya-lcd-status{font-size:9px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;padding-top:2px} .phone-dock .avaya-lcd-entry{height:21px;font-size:10px;line-height:10px;padding:1px 2px} .phone-dock .avaya-lcd-entry span, .phone-dock .avaya-lcd-entry small{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis} .phone-dock .avaya-lcd-entry small{font-size:9px} .phone-dock .avaya-empty{padding:20px 0;text-align:center} .phone-dock .avaya-number{font-size:19px;overflow-wrap:anywhere;min-height:47px} .phone-dock .avaya-volume-status{padding:15px 3px} .phone-dock .avaya-volume-status meter{display:block;width:100%} .phone-dock .avaya-soft-labels{display:grid;grid-template-columns:repeat(4,1fr);background:#526783;color:#e3effa;font-size:8px;text-align:center;height:13px;align-items:center} .phone-dock .avaya-soft-labels span+span{border-left:1px solid #b2cee6} .phone-dock .avaya-softkeys{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:6px 2px 0 21px} .phone-dock .avaya-simulator .avaya-softkeys button{height:12px;border-radius:3px;background:linear-gradient(#c4bfa8,#9d987e);box-shadow:0 2px 3px #000b,inset 0 1px #f0e8c4} .phone-dock .avaya-navigation{display:flex;align-items:center;justify-content:space-around;margin:7px 0 3px;padding-left:16px} .phone-dock .avaya-simulator .avaya-utility{height:28px;width:28px;border-radius:50%;border:3px solid #121518} .phone-dock .avaya-nav-ring{width:60px;height:60px;position:relative;display:grid;grid-template:20px 20px 20px/20px 20px 20px;border-radius:50%;background:#171a1c;overflow:hidden;box-shadow:0 2px 3px #0009} .phone-dock .avaya-nav-ring button{background:linear-gradient(#bdb9a5,#999681);border:0;border-radius:0;color:#303229} .phone-dock .avaya-nav-ring svg{width:12px;height:12px} .phone-dock .avaya-nav-up{grid-area:1/2} .phone-dock .avaya-nav-left{grid-area:2/1} .phone-dock .avaya-nav-right{grid-area:2/3} .phone-dock .avaya-nav-down{grid-area:3/2} .phone-dock .avaya-simulator .avaya-ok{position:absolute;left:17px;top:17px;width:26px;height:26px;border:2px solid #33362e;border-radius:50%;font-weight:bold;background:radial-gradient(at 35% 30%,#cfccb6,#9d9982);z-index:1} .phone-dock .avaya-function-row{display:flex;gap:4px;justify-content:center;margin:0 0 7px 18px} .phone-dock .avaya-function-row button, .phone-dock .avaya-a{width:31px;height:22px} .phone-dock .avaya-a{display:flex;justify-content:center;align-items:center;background:#26292b;border:1px solid #151719;border-radius:3px;color:#93947e;font-size:15px;box-shadow:inset 0 1px #ffffff20} .phone-dock .avaya-dial-area{display:grid;grid-template-columns:26px minmax(0,1fr) 27px;gap:5px;margin-left:9px} .phone-dock .avaya-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:5px 7px;max-width:130px;margin:auto} .phone-dock .avaya-simulator .avaya-keypad button{width:28px;height:28px;display:flex;flex-direction:column;border-radius:50%;background:linear-gradient(#c9c5af,#a9a58d);color:#33362c;box-shadow:0 2px 3px #000b,inset 0 1px #f6f0d1} .phone-dock .avaya-keypad small{font-size:6px;height:7px;line-height:7px;letter-spacing:.3px} .phone-dock .avaya-keypad b{font:15px/15px Arial} .phone-dock .avaya-side-keys{display:flex;flex-direction:column;gap:6px;padding-top:32px} .phone-dock .avaya-side-keys:last-child{padding-top:0} .phone-dock .avaya-side-keys>button{width:27px;height:27px;position:relative} .phone-dock .avaya-side-keys i{position:absolute;bottom:2px;right:2px;width:4px;height:3px;border-radius:3px} .phone-dock .avaya-volume{display:flex;flex-direction:column;height:52px;border:1px solid #151719;border-radius:4px;overflow:hidden} .phone-dock .avaya-simulator .avaya-volume button{flex:1;border:0;border-radius:0;font-size:17px} .phone-dock .avaya-call-strip{display:flex;gap:7px;align-items:center;margin:8px 0 0} .phone-dock .avaya-call-strip>span{flex:1;font-size:10px;line-height:14px} .phone-dock .avaya-simulator .avaya-call-strip>button{width:30px;height:30px;border-radius:50%;color:white;background:#505d63} .phone-dock .avaya-simulator .avaya-call-strip>button:last-child{background:#197b9c} .phone-dock .avaya-simulator .avaya-call-strip>button[aria-pressed=true]{background:#b53b32} .phone-dock .avaya-simulator .avaya-call-strip svg{width:17px;height:17px} .phone-dock .avaya-contact-shortcuts{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px} .phone-dock .avaya-simulator .avaya-contact-shortcuts button{padding:5px 7px;border:1px solid #bfccd2;background:#f8fafb;color:#26536c;box-shadow:none;flex:1;white-space:normal;font-size:10px} .phone-dock .avaya-simulator .avaya-incoming{width:100%;padding:8px;margin-top:5px;color:white;background:#197b69;border-color:#136252} .phone-dock .avaya-error{font-size:11px;background:#fff0dc;color:#8a3a15;padding:7px;border-left:2px solid #e99b40;margin:6px 0 0} .phone-dock .avaya-heard{font-size:11px;max-height:55px;overflow:auto;margin:5px 0 0} .phone-dock .avaya-help{display:block;font-size:10px;margin-top:5px}
+@keyframes avaya-hold{50%{opacity:.15}}
+@media(prefers-reduced-motion:reduce){ .phone-dock .avaya-simulator *{animation:none!important;transition:none!important}}
+@media(max-width:850px){ .phone-dock .avaya-body{grid-template-columns:40px minmax(0,1fr);padding:9px 5px;gap:3px} .phone-dock .avaya-brand small{display:none} .phone-dock .avaya-dial-area{margin-left:0;gap:3px} .phone-dock .avaya-keypad{gap:5px 3px} .phone-dock .avaya-simulator .avaya-keypad button{width:26px;height:26px} .phone-dock .avaya-lcd{font-size:9px} .phone-dock .avaya-lcd-top{font-size:8px}}
+
+.phone-dock .avaya-simulator button{gap:0}.phone-dock .avaya-simulator svg{flex:none;color:inherit}.phone-dock .avaya-simulator .voice-mic{width:30px!important;min-width:30px!important;height:30px;padding:5px!important}
+
+/* Compact console: the handset is intentionally omitted. */
+.phone-dock .avaya-body{display:block;padding:15px 14px 13px;border-radius:22px;background:radial-gradient(at 58% 22%,#2c2f33,#222528 65%,#191c1e)}
+.phone-dock .avaya-brand{height:27px;font-size:18px;font-weight:500;letter-spacing:3px;line-height:23px}
+.phone-dock .avaya-brand small{letter-spacing:0;font-size:8px}
+.phone-dock .avaya-display-row{grid-template-columns:15px minmax(0,1fr) 15px;gap:6px}
+.phone-dock .avaya-line-keys{gap:12px;padding-top:8px}
+.phone-dock .avaya-line-keys button{width:15px;height:9px;border-radius:2px;background:linear-gradient(#353b40,#191c20);box-shadow:0 1px 3px #000,inset 0 1px #ffffff16;border:1px solid #141719}
+.phone-dock .avaya-line-keys i{width:9px;height:3px;border-radius:1px}
+.phone-dock .avaya-lcd{height:146px;border:4px solid #15191d;border-radius:1px}
+.phone-dock .avaya-lcd-content{height:93px;padding:1px 3px}
+.phone-dock .avaya-lcd-line{height:22px;font-size:10px}
+.phone-dock .avaya-lcd-entry{height:28px;font-size:11px;line-height:12px}
+.phone-dock .avaya-lcd-status{padding-top:6px;font-size:10px}
+.phone-dock .avaya-soft-labels{height:14px;font-size:9px}
+.phone-dock .avaya-softkeys{padding:7px 1px 0;gap:5px}
+.phone-dock .avaya-simulator .avaya-softkeys button{height:11px;border-radius:1px;background:linear-gradient(#cac8b8,#919382)}
+.phone-dock .avaya-navigation{padding:0;margin:12px 0 10px;justify-content:space-around}
+.phone-dock .avaya-simulator .avaya-utility{height:31px;width:31px;border:1px solid #101315;background:linear-gradient(#343a40,#22272d);box-shadow:0 2px 3px #000a,inset 0 1px #ffffff0f}
+.phone-dock .avaya-simulator .avaya-utility:disabled{opacity:.8}
+.phone-dock .avaya-nav-ring{display:block;width:76px;height:76px;border:3px solid #111516;background:#111516;border-radius:50%;box-shadow:0 2px 3px #0009}
+.phone-dock .avaya-nav-ring>button:not(.avaya-ok){position:absolute;inset:0;width:100%;height:100%;border:0;background:linear-gradient(#c8c6b6,#a4a592);border-radius:0;transform:none}
+.phone-dock .avaya-nav-up{clip-path:polygon(1% 0,99% 0,50% 48%)}
+.phone-dock .avaya-nav-right{clip-path:polygon(100% 1%,100% 99%,52% 50%)}
+.phone-dock .avaya-nav-down{clip-path:polygon(1% 100%,99% 100%,50% 52%)}
+.phone-dock .avaya-nav-left{clip-path:polygon(0 1%,0 99%,48% 50%)}
+.phone-dock .avaya-nav-ring svg{position:absolute;width:12px;height:12px;stroke-width:3}
+.phone-dock .avaya-nav-up svg{top:5px;left:29px}
+.phone-dock .avaya-nav-down svg{bottom:5px;left:29px}
+.phone-dock .avaya-nav-left svg{left:5px;top:29px}
+.phone-dock .avaya-nav-right svg{right:5px;top:29px}
+.phone-dock .avaya-simulator .avaya-ok{width:29px;height:29px;left:20.5px;top:20.5px;border:1px solid #252a29;background:radial-gradient(at 35% 30%,#d3d1c1,#a5a695);font-size:12px;font-weight:500}
+.phone-dock .avaya-function-row{margin:0 auto 10px;gap:9px}
+.phone-dock .avaya-function-row button,.phone-dock .avaya-a{height:21px;width:38px;border-radius:2px}
+.phone-dock .avaya-function-row button{position:relative;gap:2px}
+.phone-dock .avaya-function-row button[aria-label="Журнал вызовов"] svg{color:#f13f70;transform:rotate(-18deg)}
+.phone-dock .avaya-history-lines{font-size:11px;color:#b0b2ad;margin-left:3px}
+.phone-dock .avaya-function-row i{height:7px;width:3px;background:#565b5e;margin-left:3px}
+.phone-dock .avaya-dial-area{grid-template-columns:35px minmax(0,1fr) 35px;gap:7px;margin:0 4px}
+.phone-dock .avaya-keypad{max-width:none;gap:7px 17px}
+.phone-dock .avaya-simulator .avaya-keypad button{width:32px;height:25px;border-radius:48%;background:linear-gradient(#cecdbe,#a9ac9b)}
+.phone-dock .avaya-keypad b{font-size:13px;line-height:13px}
+.phone-dock .avaya-keypad small{height:7px;line-height:7px;font-size:5px}
+.phone-dock .avaya-side-keys{padding-top:64px;gap:8px}
+.phone-dock .avaya-side-keys:last-child{padding-top:26px;gap:10px}
+.phone-dock .avaya-side-keys>button{height:25px;width:35px;border-radius:2px;justify-content:flex-start;padding-left:6px}
+.phone-dock .avaya-side-keys>button[aria-pressed=true]{color:#f47b25}
+.phone-dock .avaya-side-keys i{height:9px;width:3px;bottom:7px;right:5px;border-radius:0}
+.phone-dock .avaya-volume{height:58px;border-radius:1px}
+.phone-dock .avaya-simulator .avaya-volume button{font-size:16px}
+.phone-dock .avaya-volume button+button{border-top:1px solid #454b50}
+@media(max-width:850px){.phone-dock .avaya-body{padding:12px 8px}.phone-dock .avaya-keypad{gap:7px 8px}.phone-dock .avaya-dial-area{gap:5px;margin:0}}
+
+.phone-dock .avaya-simulator .avaya-nav-ring button:hover:enabled,.phone-dock .avaya-simulator .avaya-keypad button:hover:enabled{background:linear-gradient(#d5d3c4,#b3b5a3);color:#30352f}
+.phone-dock .avaya-simulator .avaya-softkeys button:disabled{opacity:1}
+.phone-dock .avaya-nav-ring>button:not(.avaya-ok) svg{display:none}
+.phone-dock .avaya-nav-ring>button:not(.avaya-ok):after{content:'';position:absolute;width:0;height:0;border:3px solid transparent}
+.phone-dock .avaya-nav-up:after{left:32px;top:6px;border-bottom-color:#333b38!important}
+.phone-dock .avaya-nav-down:after{left:32px;bottom:6px;border-top-color:#333b38!important}
+.phone-dock .avaya-nav-left:after{top:32px;left:6px;border-right-color:#333b38!important}
+.phone-dock .avaya-nav-right:after{top:32px;right:6px;border-left-color:#333b38!important}
+
+@media(max-height:820px){
+ .phone-dock .avaya-body{padding-top:12px;padding-bottom:12px}
+ .phone-dock .avaya-brand{height:24px}
+ .phone-dock .avaya-lcd{height:124px}
+ .phone-dock .avaya-lcd-content{height:71px}
+ .phone-dock .avaya-lcd-line{height:16px}
+ .phone-dock .avaya-lcd-entry{height:22px;font-size:10px;line-height:10px}
+ .phone-dock .avaya-lcd-status{padding-top:3px;font-size:9px}
+ .phone-dock .avaya-navigation{margin:8px 0}
+ .phone-dock .avaya-nav-ring{width:64px;height:64px}
+ .phone-dock .avaya-simulator .avaya-ok{left:14.5px;top:14.5px}
+ .phone-dock .avaya-nav-up:after,.phone-dock .avaya-nav-down:after{left:26px}
+ .phone-dock .avaya-nav-left:after,.phone-dock .avaya-nav-right:after{top:26px}
+ .phone-dock .avaya-function-row{margin-bottom:8px}
+ .phone-dock .avaya-keypad{row-gap:5px}
+ .phone-dock .avaya-simulator .avaya-keypad button{height:24px}
+ .phone-dock .avaya-side-keys{padding-top:56px}
+ .phone-dock .avaya-side-keys:last-child{padding-top:22px}
+}
+
+.phone-dock .avaya-channel[data-recording=true]{color:#ff5e4d;box-shadow:0 0 0 2px #d5483e88,inset 0 1px #fff2}
+.phone-dock .avaya-channel{touch-action:none;user-select:none}
+.phone-dock .phone-dock-popover{z-index:30;padding:0;overflow:hidden;max-height:55vh;box-shadow:0 -6px 20px #0003}
+.phone-dock .phone-dock-popover>header{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border-bottom:1px solid #c2cdd2;background:#f5f7f8;font-size:12px}
+.phone-dock .phone-dock-popover>header button{display:flex;align-items:center;justify-content:center;border:0;padding:3px;background:transparent}
+.phone-dock .phone-transcript{max-height:34vh;overflow:auto;padding:4px 7px}
+.phone-dock .phone-dock-popover>textarea{width:calc(100% - 16px);margin:8px}

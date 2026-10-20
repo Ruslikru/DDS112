@@ -1,3 +1,4 @@
+import {RuntimeStatus} from './runtime-status';
 import {AssignmentNotifications} from './assignment-notifications';
 import {NetworkStatus} from './network-queue';
 import {VoiceQueue} from './voice';
@@ -323,7 +324,7 @@ export function App() {
     ...(user.role === "admin" ? [["/system", "Система", Settings]] : []),
   ];
   return (
-    <UserContext.Provider value={user}><NetworkStatus key={user.id} user={user.id}/>{user.role==='student'&&<AssignmentNotifications key={user.id}/>}<ClassroomClient>{user.role!=='student'&&<VoiceQueue/>}{user.role!=='student'&&<><AssistantButton/><TeacherAssistant/></>}{!location.pathname.startsWith('/attempts/')&&<IntroGate/>}{user.role==='admin'&&<ServerNameSetup/>}{user.role==='admin'&&<DemoStationSetup user={user}/>}<DemoTeacherWelcome user={user}/>
+    <UserContext.Provider value={user}><RuntimeStatus/><NetworkStatus key={user.id} user={user.id}/>{user.role==='student'&&<AssignmentNotifications key={user.id}/>}<ClassroomClient>{user.role!=='student'&&<VoiceQueue/>}{user.role!=='student'&&<><AssistantButton/><TeacherAssistant/></>}{!location.pathname.startsWith('/attempts/')&&<IntroGate/>}{user.role==='admin'&&<ServerNameSetup/>}{user.role==='admin'&&<DemoStationSetup user={user}/>}<DemoTeacherWelcome user={user}/>
       <div
         className={
           "app " + (user.role!=="student"?"staff-app ":"") +

@@ -4,6 +4,12 @@ import {api,Obj} from './shared';
 // One engine per handset. Backgrounds never restart between speech turns.
 export class CallAudioEngine {
  private context?:AudioContext;
+ private master?:GainNode;
+ private volume=.7;
+ private held=false;
+ private players=new Set<HTMLMediaElement>();
+ private heldPlayers=new Set<HTMLMediaElement>();
+ private deferred=new Map<HTMLMediaElement,{promise:Promise<void>,resume:()=>void,cancel:()=>void}>();
  private bus?:GainNode;
  private output?:DynamicsCompressorNode;
  private buffers=new Map<string,AudioBuffer>();
@@ -22,10 +28,10 @@ export class CallAudioEngine {
   if(this.closed)throw Error('Разговор завершён');
   if(!this.context){
    this.context=new AudioContext();this.output=this.context.createDynamicsCompressor();
-   this.output.threshold.value=-3;this.output.ratio.value=16;this.output.connect(this.context.destination);
+   this.output.threshold.value=-3;this.output.ratio.value=16;this.master=this.context.createGain();this.master.gain.value=this.volume;this.output.connect(this.master);this.master.connect(this.context.destination);
    this.bus=this.context.createGain();this.bus.connect(this.output);
   }
-  await this.context.resume();
+  if(!this.held)await this.context.resume();
  }
  private async buffer(id:string){
   if(this.buffers.has(id))return this.buffers.get(id)!;
@@ -66,20 +72,43 @@ export class CallAudioEngine {
   for(const id of scene.ambient_events||[]){const next=()=>this.later(()=>{if(epoch===this.epoch){void this.play(id,false,false,.3);next();}},18000+Math.random()*12000);next();}
  }
  duck(active:boolean){if(this.context&&this.bus)this.bus.gain.setTargetAtTime(active?.55:1,this.context.currentTime,active?.08:.12);}
+ async digit(value:string){
+  await this.unlock();if(!this.context||!this.master)return;
+  const index='123456789*0#'.indexOf(value);if(index<0)return;
+  const gain=this.context.createGain();gain.gain.value=.06;gain.connect(this.master);
+  const pair=[this.context.createOscillator(),this.context.createOscillator()];
+  pair.forEach((osc,i)=>{osc.frequency.value=i?[1209,1336,1477][index%3]:[697,770,852,941][Math.floor(index/3)];osc.connect(gain);osc.start();osc.stop(this.context!.currentTime+.09);osc.onended=()=>{osc.disconnect();if(i===1)gain.disconnect();};});
+ }
+ setVolume(value:number){this.volume=Math.max(0,Math.min(1,value));if(this.master)this.master.gain.value=this.volume;}
+ setHeld(value:boolean){
+  if(this.closed)return;this.held=value;
+  if(value){for(const player of this.players)if(!player.paused&&!player.ended){this.heldPlayers.add(player);player.pause();}void this.context?.suspend().catch(()=>{});}
+  else{void this.context?.resume().catch(()=>{});for(const player of this.heldPlayers){const pending=this.deferred.get(player);if(pending){this.deferred.delete(player);pending.resume();}else void player.play().catch(()=>{});}this.heldPlayers.clear();}
+ }
  attach(player:HTMLMediaElement){
-  if(this.primary.has(player))return;this.primary.add(player);
+  if(this.primary.has(player))return;this.primary.add(player);this.players.add(player);
+  const play=player.play.bind(player);
+  player.play=()=>{if(!this.held)return play();const existing=this.deferred.get(player);if(existing)return existing.promise;
+   this.heldPlayers.add(player);let resume!:()=>void,cancel!:()=>void;
+   const promise=new Promise<void>((resolve,reject)=>{resume=()=>{void play().then(resolve,reject);};cancel=()=>reject(new DOMException('Call ended','AbortError'));});
+   this.deferred.set(player,{promise,resume,cancel});return promise;
+  };
+  player.addEventListener('play',()=>{if(this.held){this.heldPlayers.add(player);player.pause();}});
+  for(const event of ['ended','error'])player.addEventListener(event,()=>{this.players.delete(player);this.heldPlayers.delete(player);});
   if(this.context&&this.output){const source=this.context.createMediaElementSource(player);source.connect(this.output);}
   player.addEventListener('playing',()=>this.duck(true));
   for(const event of ['ended','pause','error'])player.addEventListener(event,()=>this.duck(false));
  }
- waitForReply(gender='male'){
+ waitForReply(gender='male',voice='piper-denis'){
   // The provided library is male; female callers retain their own voice.
-  if(gender!=='male'||this.waiting)return;this.waiting=true;const epoch=this.epoch;
+  if(gender!=='male'||voice==='piper-ruslan'||this.waiting)return;this.waiting=true;const epoch=this.epoch;
   const next=async()=>{
    if(!this.waiting||epoch!==this.epoch)return;
    let recent:string[]=[];try{recent=JSON.parse(sessionStorage.getItem('call-fillers')||'[]');}catch{}
-   const choices=Object.keys(this.assets||{}).filter(id=>id.startsWith('filler_')&&!recent.includes(id));
-   const id=choices[Math.floor(Math.random()*choices.length)];if(!id)return;
+   const choices=Object.keys(this.assets||{}).filter(id=>id.startsWith('filler_')&&Number(this.assets?.[id]?.seconds)<=2.4).sort((a,b)=>Number(a.slice(7))-Number(b.slice(7)));
+   let index=Math.floor(Math.random()*choices.length);
+   for(let n=0;n<choices.length&&recent.includes(choices[index]);n++)index=(index+1)%choices.length;
+   const id=choices[index];if(!id||recent.includes(id))return;
    this.filler=(async()=>{await this.buffer(id);if(!this.waiting||epoch!==this.epoch)return;sessionStorage.setItem('call-fillers',JSON.stringify([...recent,id].slice(-3)));this.duck(true);await this.play(id,false,false,.8);this.duck(false);})().catch(()=>{});
    await this.filler;if(this.waiting&&epoch===this.epoch)this.later(()=>void next(),6000);
   };
@@ -94,6 +123,6 @@ export class CallAudioEngine {
    await this.play(event.id,false,false,.7,Number(event.duration??1));
   }
  }
- hangup(){this.stop();void this.signal('hangup');}
- dispose(){this.stop();this.closed=true;void this.context?.close();this.buffers.clear();}
+ hangup(){if(this.closed)return;for(const pending of this.deferred.values())pending.cancel();this.deferred.clear();this.heldPlayers.clear();this.setHeld(false);this.stop();void this.signal('hangup');}
+ dispose(){for(const pending of this.deferred.values())pending.cancel();this.deferred.clear();this.heldPlayers.clear();this.players.clear();this.stop();this.closed=true;void this.context?.close();this.buffers.clear();}
 }
