@@ -19,3 +19,13 @@
 .student-console nav .arm-original-icon{width:21px;height:21px;flex:none;filter:drop-shadow(0 1px 0 #0003)}
 .student-console .arm-original-icon{vertical-align:middle;flex:none}
 .student-console nav>a:focus-visible,.student-console .arm-identity button:focus-visible{outline:2px solid #b7deef;outline-offset:-3px}
+
+/* Keep the operational console at journal size on every student page. */
+.arm-journal-top:has(>.student-console){grid-template-columns:minmax(200px,1fr) 550px 116px}
+.arm-training-header:not(.admin-header){width:550px;max-width:calc(100% - calc(432px - (100vw - 100%)));margin-left:auto;margin-right:calc(432px - (100vw - 100%))}
+@media(max-width:1200px){
+ .arm-journal-top:has(>.student-console){grid-template-columns:minmax(200px,1fr) 540px 95px}
+ .arm-training-header:not(.admin-header){width:540px;max-width:calc(100% - calc(411px - (100vw - 100%)));margin-right:calc(411px - (100vw - 100%))}
+}
+@media(max-width:900px){.arm-training-header:not(.admin-header){max-width:calc(100% - calc(361px - (100vw - 100%)));margin-right:calc(361px - (100vw - 100%))}}
+@media(max-width:850px){.arm-training-header:not(.admin-header){width:min(540px,100%);max-width:100%;margin-right:0}}

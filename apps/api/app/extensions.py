@@ -85,7 +85,7 @@ def create_lesson(data:LessonIn,u=Depends(current),db=Depends(getdb)):
         if not v or not v.published or db.get(Ticket,v.ticket_id).archived: fail('Билет должен быть опубликован')
         if not allow_112 and any(task.get('mode')!='dds' for task in v.data.get('tasks',[])):fail('Режим 112 отключён администратором')
         if not catalog_available(v.data):fail('В тестовом каталоге доступны только два билета ДДС')
-        ensure_ready(v.data,db,text_ok=True)  # not voiced yet: the attempts start as text
+        ensure_ready(v.data,db)
         tasks += [{**copy.deepcopy(t),'difficulty_level':(v.data.get('difficulty_stars') or {'Базовый':1,'Средний':3,'Сложный':5}.get(v.data.get('difficulty'),1))} for t in v.data['tasks'] if not data.categories or t['category'] in data.categories]
     if data.delivery_mode in ('adaptive','sprint') and len(tasks)>100:tasks=random.SystemRandom().sample(tasks,100)
     if not tasks or len(tasks)>100: fail('Выберите от 1 до 100 заданий')

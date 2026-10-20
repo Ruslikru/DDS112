@@ -1,8 +1,10 @@
 import time
 import uuid
+import copy
+import pytest
 from sqlalchemy import select, func
 from test_flows import app, TestClient, login, post, SessionLocal, HEAD
-from apps.api.app.db import User, Group, Lesson, Assignment, Attempt, TicketVersion
+from apps.api.app.db import User, Group, Lesson, Assignment, Attempt, Ticket, TicketVersion
 from apps.api.app.classroom_models import Workstation
 from apps.api.app.training_session_models import SessionMember, StudentPresence, TrainingSession
 from apps.api.app import training_sessions as ts, classroom_flow
@@ -32,6 +34,58 @@ def approved_station(c):
     with SessionLocal() as db:db.get(Workstation,row['id']).approved=True;db.commit()
     c.headers['X-Workstation']=row['token']
     return row
+
+
+@pytest.mark.parametrize('mode',['adaptive','sprint','sequential'])
+def test_prepare_lesson_with_ready_speech_keeps_offline_students_waiting(mode):
+    from apps.api.app import voice
+    with TestClient(app) as c:
+        _,users=people();sid=users[0][0];login(c,'teacher')
+        meeting=session(c,[sid])
+        with SessionLocal() as db:
+            version=next(v for v in db.scalars(select(TicketVersion).join(Ticket).where(
+                TicketVersion.published==True,Ticket.archived==False))
+                if v.data['tasks'] and all(t['mode']=='dds' for t in v.data['tasks']) and voice.readiness(v.data,db)['ready'])
+            vid=version.id
+        prepared=post(c,'/lessons',{'title':'Готовое задание '+mode,'students':[sid],
+            'session_id':meeting['id'],'delivery_mode':mode,'versions':[vid]})
+        assert prepared.status_code==200,prepared.text
+        lid=prepared.json()['id']
+        with SessionLocal() as db:
+            lesson=db.get(Lesson,lid)
+            assert lesson.status=='prepared' and lesson.started_at is None
+            assignment=db.scalar(select(Assignment).where(Assignment.lesson_id==lid))
+            assert assignment.student_id==sid and not assignment.released
+            assert voice.readiness(db.get(TicketVersion,assignment.version_id).data,db)['ready']
+            assert not db.scalar(select(Attempt.id).where(Attempt.assignment_id==assignment.id))
+
+
+def test_prepare_lesson_without_speech_returns_conflict_without_creating_assignments():
+    from apps.api.app import voice
+    with TestClient(app) as c:
+        _,users=people();sid=users[0][0];login(c,'teacher')
+        with SessionLocal() as db:
+            original=next(v for v in db.scalars(select(TicketVersion).join(Ticket).where(
+                TicketVersion.published==True,Ticket.archived==False))
+                if v.data['tasks'] and all(t['mode']=='dds' for t in v.data['tasks']) and voice.keys(v.data))
+            data=copy.deepcopy(original.data)
+            key=next(iter(voice.keys(data)))
+            for task in data['tasks']:
+                for event in voice.speech_items(task):
+                    if event.get('voice_key')==key:event.pop('voice_key')
+            owner=db.scalar(select(User).where(User.login=='teacher'))
+            ticket=Ticket(title='Билет без записи',created_by=owner.id);db.add(ticket);db.flush()
+            version=TicketVersion(ticket_id=ticket.id,number=1,published=True,data=data);db.add(version);db.commit()
+            vid=version.id
+            assert not voice.readiness(data,db)['ready']
+            before_lessons=db.scalar(select(func.count()).select_from(Lesson))
+            before_assignments=db.scalar(select(func.count()).select_from(Assignment))
+        refused=post(c,'/lessons',{'title':'Задание без записи','students':[sid],'versions':[vid]})
+        assert refused.status_code==409,refused.text
+        assert 'Звук для билета' in refused.json()['detail']
+        with SessionLocal() as db:
+            assert db.scalar(select(func.count()).select_from(Lesson))==before_lessons
+            assert db.scalar(select(func.count()).select_from(Assignment))==before_assignments
 
 
 def test_offline_preparation_waits_for_real_presence_and_sprint_uses_common_clock(monkeypatch):

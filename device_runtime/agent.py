@@ -239,6 +239,9 @@ class Agent:
                     for key,operation in (('stt','transcribe'),('tts','synthesize')):
                         warm=alive and bool(self.voice.last.get('warm') or self.voice.last.get(operation))
                         models[key]={'state':'ready' if warm else 'cold','threads':ai[key+'_threads'],'mode':ai.get('stt_device','cpu') if key=='stt' else 'cpu','model':'GigaAM' if key=='stt' else 'Piper'}
+                    if self.worker:
+                        models['cards']['state']=self.worker.model_state('cards')
+                        for key in ('stt','tts'):models[key]['state']=self.worker.model_state('speech')
                     metrics['local_models']=models
                 metrics.update(version=self.version,ai=ai,network_ms=latency,desktop_error=error,
                     desktop_scope='window' if self.config.get('demo') else 'desktop',database='Доступна' if self.config['mode']=='server' and (self.data/'dispetcher.db').exists() else None)
