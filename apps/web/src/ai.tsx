@@ -3,23 +3,32 @@ import React, {useState} from 'react';
 import {api, type Obj, useLoad, useOperator112, Notice, uuid} from './shared';
 import {useNavigate} from 'react-router-dom';
 
-export function AISettings(){
+/** Where the server sends class AI requests: its own model or the admitted PCs selected here. Admin-only API. */
+export function AIExecution(){
   const {data,error,setData}=useLoad('/ai/status',4000),[err,setErr]=useState(''),[busy,setBusy]=useState(false);
-  const {data:workers,load:reloadWorkers}=useLoad('/ai/workers',4000);
+  const {data:workers,error:workersError,load:reloadWorkers}=useLoad('/ai/workers',4000);
   async function execution(value:string, ids:string[]){setBusy(true);setErr('');try{setData(await api('/ai/execution','POST',{execution:value,worker_ids:ids}));await reloadWorkers();}catch(x:any){setErr(x.message);}finally{setBusy(false);}}
   const enabled=(workers||[]).filter((w:Obj)=>w.enabled&&w.approved).map((w:Obj)=>w.id);
+  return <>
+    <label>Где выполнять запросы класса <select aria-label="Где выполнять запросы класса" disabled={!data||!workers||busy} value={data?.execution||'server'} onChange={e=>execution(e.target.value,enabled)}><option value="server">На учебном сервере</option><option value="workstations">На выбранных ПК класса</option></select></label>
+    {data?.execution==='workstations'&&<div className="ai-execution-workers"><p>Отметьте доверенные ПК с запущенным приложением. Они считают разборы, тексты и эталоны проверки своей локальной моделью (ЦП или ГПУ — по настройке ПК ниже; режим «Сервер» отключает вычисления на ПК). Если свободных ПК нет или вычисление не удалось, запрос выполнит сервер.</p>
+      {workers?.map((w:Obj)=><label className="check-line" key={w.id}><input type="checkbox" disabled={busy||!w.approved} checked={w.enabled&&w.approved} onChange={e=>execution('workstations',e.target.checked?[...enabled,w.id]:enabled.filter((id:string)=>id!==w.id))}/> ПК {w.number} · {!w.approved?'ожидает допуска':w.busy?'вычисляет':w.online&&w.available?'готов к вычислениям':'локальная модель не подключена'}</label>)}
+      {!workers?.length&&<p>Сначала подключите и допустите рабочие места.</p>}</div>}
+    <Notice>{error||workersError||err}</Notice>
+  </>;
+}
+
+export function AISettings(){
+  const {data,error,setData}=useLoad('/ai/status',4000),[err,setErr]=useState(''),[busy,setBusy]=useState(false);
   return <><VoiceSettings/><section className="panel form-panel"><h2>Локальная текстовая нейросеть</h2><p><strong>География сценариев: Москва.</strong> Районы, округа и улицы выбираются из московского справочника. Обстоятельства и заявители создаются для учебного сценария.</p><Notice>{error||err}</Notice>
     <p>{data?.model||'Проверка модели…'} · {data?.available?'Установлена':'Файлы модели не найдены'} · {data?.busy?'Обрабатывает запрос':data?.running?'Готова':'Запустится при первом запросе'}</p>
     <label>Модель по умолчанию <select disabled={!data||busy} value={data?.model_id||''} onChange={async e=>{setBusy(true);setErr('');try{setData(await api('/ai/model','POST',{model:e.target.value}));}catch(x:any){setErr(x.message);}finally{setBusy(false);}}}>
       {(data?.models||[]).map((item:Obj)=><option key={item.id} value={item.id} disabled={!item.available}>{item.label}{item.available?'':' · файл не найден'}</option>)}
     </select></label>
     <p>0.6B отвечает быстрее; 4B лучше держит детали сценария. Выбор действует для новых запросов и сохраняется после перезапуска.</p>
-    <label>Где выполнять запросы <select disabled={!data||!workers||busy} value={data?.execution||'server'} onChange={e=>execution(e.target.value,enabled)}><option value="server">На учебном сервере</option><option value="workstations">На выбранных ПК класса</option></select></label>
     <label>Вычисления на сервере <select disabled={!data||busy} value={data?.mode||'cpu'} onChange={async e=>{setBusy(true);setErr('');try{setData(await api('/ai/mode','POST',{mode:e.target.value}));}catch(x:any){setErr(x.message);}finally{setBusy(false);}}}>
       <option value="cpu">CPU — процессор</option><option value="gpu" disabled={!data?.gpu_available}>GPU — видеокарта Vulkan</option></select></label>
-    {data?.execution==='workstations'&&<div><p>Отметьте доверенные ПК с запущенным приложением. Они обрабатывают запросы класса на CPU, включая тексты и эталоны проверки. Если свободных ПК нет или вычисление не удалось, запрос выполнит сервер.</p>
-      {workers?.map((w:Obj)=><label key={w.id}><input type="checkbox" disabled={busy||!w.approved} checked={w.enabled&&w.approved} onChange={e=>execution('workstations',e.target.checked?[...enabled,w.id]:enabled.filter((id:string)=>id!==w.id))}/> ПК {w.number} · {!w.approved?'ожидает допуска':w.busy?'вычисляет':w.online&&w.available?'готов к вычислениям':'локальная модель не подключена'}</label>)}
-      {!workers?.length&&<p>Сначала подключите и допустите рабочие места.</p>}</div>}
+    <AIExecution/>
     <p>Телефоны используют вычисления класса. Для GPU нужен драйвер с поддержкой Vulkan. Обе модели работают без интернета; итоговую оценку подтверждает преподаватель.</p>
   </section></>;
 }
