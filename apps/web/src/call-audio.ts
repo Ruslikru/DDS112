@@ -72,14 +72,16 @@ export class CallAudioEngine {
   player.addEventListener('playing',()=>this.duck(true));
   for(const event of ['ended','pause','error'])player.addEventListener(event,()=>this.duck(false));
  }
- waitForReply(gender='male'){
+ waitForReply(gender='male',voice='piper-denis'){
   // The provided library is male; female callers retain their own voice.
-  if(gender!=='male'||this.waiting)return;this.waiting=true;const epoch=this.epoch;
+  if(gender!=='male'||voice==='piper-ruslan'||this.waiting)return;this.waiting=true;const epoch=this.epoch;
   const next=async()=>{
    if(!this.waiting||epoch!==this.epoch)return;
    let recent:string[]=[];try{recent=JSON.parse(sessionStorage.getItem('call-fillers')||'[]');}catch{}
-   const choices=Object.keys(this.assets||{}).filter(id=>id.startsWith('filler_')&&!recent.includes(id));
-   const id=choices[Math.floor(Math.random()*choices.length)];if(!id)return;
+   const choices=Object.keys(this.assets||{}).filter(id=>id.startsWith('filler_')&&Number(this.assets?.[id]?.seconds)<=2.4).sort((a,b)=>Number(a.slice(7))-Number(b.slice(7)));
+   let index=Math.floor(Math.random()*choices.length);
+   for(let n=0;n<choices.length&&recent.includes(choices[index]);n++)index=(index+1)%choices.length;
+   const id=choices[index];if(!id||recent.includes(id))return;
    this.filler=(async()=>{await this.buffer(id);if(!this.waiting||epoch!==this.epoch)return;sessionStorage.setItem('call-fillers',JSON.stringify([...recent,id].slice(-3)));this.duck(true);await this.play(id,false,false,.8);this.duck(false);})().catch(()=>{});
    await this.filler;if(this.waiting&&epoch===this.epoch)this.later(()=>void next(),6000);
   };

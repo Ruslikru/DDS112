@@ -176,6 +176,10 @@ async def lifespan(app):
     if semantic_job: semantic_job.cancel()
     from local_ai.engine import engine as local_engine, assistant_engine
     local_engine.stop();assistant_engine.stop()
+    from .ai_routes import _dialogue_engine
+    from .voice import runtime
+    if _dialogue_engine:_dialogue_engine.stop()
+    runtime.stop()
     diagnostic_event('server_stopped')
 app=FastAPI(title='112 Учебный контур',lifespan=lifespan)
 @app.middleware('http')
@@ -503,7 +507,7 @@ def apply_command(id,c,u,db,_trusted_ai=False):
         if not contact or not contact.get('phone'): fail('Контакт или телефон недоступен')
         if contact['kind']=='service' and contact.get('service') and contact['service'] not in state['services']: fail('Эта служба не получала карточку')
         text=str(payload.get('text','')).strip()
-        if not 3<=len(text)<=4000: fail('Введите сообщение для передачи (3–4000 символов)')
+        if not (1 if _trusted_ai else 3)<=len(text)<=4000: fail('Введите сообщение для передачи (до 4000 символов)')
         counts=state.setdefault('contact_counts',{}); count=counts.get(contact['id'],0)
         updates=contact.get('updates',[])
         scheduled=[e for e in task.get('service_events',[]) if e.get('trigger_contact')==contact['id']]
@@ -518,6 +522,8 @@ def apply_command(id,c,u,db,_trusted_ai=False):
             question=next((q for q in contact_questions(task,contact,progress) if q['id']==payload['question_id']),None)
             answer=question['answer'] if question else 'Уточните, пожалуйста, вопрос по этому происшествию.'
             dispatch=payload['question_id']=='dispatch'
+            if 'answer' in payload:
+                answer=str(payload['answer'])[:1500]
         else:
             answer=contact['response'] if count==0 else progress or contact['response']
             dispatch=count==0
@@ -530,8 +536,12 @@ def apply_command(id,c,u,db,_trusted_ai=False):
             state.setdefault('contacts',[]).append(contact['id'])
         from .voice import response_audio
         audio=None if state.get('text_only') else response_audio(contact,answer,db)
+        if _trusted_ai and not state.get('text_only'):audio=payload.get('live_audio') or audio
         state['messages'] += [{'who':'Диспетчер → '+contact['name'],'text':text,'at':now()},
-                              {'who':contact['name'],'text':answer,'at':now(),'audio':audio,'direction':'outgoing_answer'}]
+                              {'who':contact['name'],'text':answer,'at':now(),'audio':audio,'direction':'outgoing_answer',
+                               'contact_id':contact['id'],'dispatch':dispatch,'call_end':bool(payload.get('call_end')) if _trusted_ai else dispatch,
+                               'ai':payload.get('ai',{}) if _trusted_ai else {}}]
+        state['messages'][-2]['contact_id']=contact['id']
     elif kind=='draft':
         if task['mode']=='dds': fail('Полученная карточка доступна для чтения')
         if state['call']=='ringing': fail('Сначала примите звонок')

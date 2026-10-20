@@ -91,6 +91,11 @@ def line_busy(attempt_id):
         value=_lines.get(attempt_id,{})
         return value.get('until',0)>time.monotonic()
 
+def session_active(attempt_id,session):
+    with _lock:
+        value=_lines.get(attempt_id,{})
+        return value.get('active',False) and value.get('session')==session and value.get('until',0)>time.monotonic()
+
 class LineState(BaseModel):
     session:str=Field(min_length=8,max_length=100)
     active:bool
@@ -103,6 +108,7 @@ def update_line(attempt_id:int,data:LineState,u=Depends(current),db=Depends(getd
     with _lock:
         old=_lines.get(attempt_id,{})
         if data.active:
+            if old.get('session')==data.session and old.get('active') is False:m.fail('Звонок уже завершён',409)
             if old.get('active') and old.get('session')!=data.session and old.get('until',0)>time.monotonic():m.fail('На этом рабочем месте уже идёт звонок',409)
             _lines[attempt_id]={'session':data.session,'active':True,'until':time.monotonic()+60}
         elif old.get('session')==data.session:

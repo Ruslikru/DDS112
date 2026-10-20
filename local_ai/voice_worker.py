@@ -23,11 +23,19 @@ os.environ['PATH']=str(lib)+os.pathsep+os.environ.get('PATH','')
 dll=os.add_dll_directory(str(lib)) if os.name=='nt' else None
 tts=None;tts_key=None;stt=None;stt_key=None;piper_cache={}
 
-def piper_voice(name,device='cpu'):
+def piper_voice(name,device='cpu',threads=2):
     from piper import PiperVoice
-    key=(name,device)
+    from piper.config import PiperConfig
+    import onnxruntime as ort
+    key=(name,device,threads)
     if key not in piper_cache:
-        piper_cache[key]=PiperVoice.load(str(root.parent/'piper'/'FINAL_MODELS_29800'/(name+'_29800.onnx')),use_cuda=device=='cuda')
+        # Only execution parameters change. The trained ONNX files remain read-only.
+        path=root.parent/'piper'/'FINAL_MODELS_29800'/(name+'_29800.onnx')
+        options=ort.SessionOptions();options.intra_op_num_threads=threads;options.inter_op_num_threads=1
+        for old in list(piper_cache):
+            if old[2]!=threads:piper_cache.pop(old)
+        piper_cache[key]=PiperVoice(config=PiperConfig.from_dict(json.loads(Path(str(path)+'.json').read_text('utf-8'))),
+            session=ort.InferenceSession(str(path),sess_options=options,providers=['CPUExecutionProvider']))
     return piper_cache[key]
 
 def run(req):
@@ -38,6 +46,10 @@ def run(req):
     if device=='gpu' and not torch.cuda.is_available():raise ValueError('CUDA GPU недоступен. Выберите CPU.')
     device='cuda' if device=='gpu' else 'cpu'
     start=time.perf_counter()
+    threads=max(1,min(16,int(req.get('stt_threads',2))))
+    if torch.get_num_threads()!=threads:torch.set_num_threads(threads)
+    tts_threads=max(1,min(16,int(req.get('tts_threads',2))))
+    warm=stt_key is not None if req['op'] in ('warm','transcribe') else ('piper',req.get('model','piper').removeprefix('piper-'),tts_threads)==tts_key
     if req['op'] in ('warm','transcribe') and req.get('model','gigaam')!='gigaam':
         raise ValueError('Распознавание доступно только через GigaAM v3')
     if req['op']=='warm':
@@ -49,11 +61,16 @@ def run(req):
             stt_key=(model,device)
         name=req.get('voice','denis')
         for candidate in ('denis','irina','ruslan'):
-            piper_voice(candidate)
-        if ('piper',name)!=tts_key:
-            tts=piper_voice(name)
-            tts_key=('piper',name)
-        return {'seconds':round(time.perf_counter()-start,2),'stt':model,'tts':name}
+            voice=piper_voice(candidate,threads=tts_threads)
+            import io
+            with wav_module.open(io.BytesIO(),'wb') as wav_file:voice.synthesize_wav('На связи.',wav_file)
+        # Exercise the acoustic path too, rather than marking loaded weights as warmed.
+        with torch.inference_mode():
+            stt.model.forward(torch.zeros((1,16000),device=device),torch.tensor([16000],device=device))
+        if ('piper',name,tts_threads)!=tts_key:
+            tts=piper_voice(name,threads=tts_threads)
+            tts_key=('piper',name,tts_threads)
+        return {'seconds':round(time.perf_counter()-start,2),'stt':model,'tts':name,'stt_threads':threads,'tts_threads':tts_threads}
     if req['op']=='transcribe':
         key=(req['model'],device)
         if key!=stt_key:
@@ -76,20 +93,21 @@ def run(req):
         with torch.inference_mode():
             encoded,encoded_len=stt.model.forward(wav,length)
             text=stt.model.decoding.decode(stt.model.head,encoded,encoded_len)[0].strip()
-        if not text:raise ValueError('Речь не распознана. Повторите запись.')
-        return {'text':text,'seconds':round(time.perf_counter()-start,2),'model':req['model']}
+        if not re.search(r'[а-яёa-z0-9]',text,re.I):raise ValueError('Речь не распознана. Повторите запись.')
+        return {'text':text,'seconds':round(time.perf_counter()-start,2),'model':req['model'],'warm':warm,'threads':threads}
     if req['model'].startswith('piper'):
         name=req['model'].removeprefix('piper-') if req['model']!='piper' else ('irina' if req.get('gender')=='female' else 'denis')
         if name not in ('denis','irina','ruslan'):raise ValueError('Неизвестный голос Piper')
-        key=('piper',name)
+        key=('piper',name,tts_threads)
+        warm=(name,device,tts_threads) in piper_cache
         if key!=tts_key:
-            tts=piper_voice(name,device)
+            tts=piper_voice(name,device,tts_threads)
             tts_key=key
         with wav_module.open(req['output'],'wb') as wav_file:
             tts.synthesize_wav(req['text'],wav_file)
         with wav_module.open(req['output'],'rb') as wav_file:
             duration=wav_file.getnframes()/wav_file.getframerate()
-        return {'seconds':round(time.perf_counter()-start,2),'duration':round(duration,2),'voice':name}
+        return {'seconds':round(time.perf_counter()-start,2),'duration':round(duration,2),'voice':name,'warm':warm,'threads':tts_threads}
     raise ValueError('Озвучка доступна только голосами Piper')
 
 for line in sys.stdin:

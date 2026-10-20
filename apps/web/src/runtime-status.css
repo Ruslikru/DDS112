@@ -1,0 +1,5 @@
+.call-runtime-status{display:flex;align-items:center;flex-wrap:wrap;gap:3px 9px;margin:3px 0;color:#75808b;font-size:10px;font-weight:400;line-height:1.4;font-variant-numeric:tabular-nums}
+.call-runtime-status>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.call-runtime-summary{color:#65717d}
+.runtime-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#a1a7ae;flex:none}
+.runtime-dot.ready{background:#43846a}.runtime-dot.warming{background:#b18b42}.runtime-dot.error{background:#b65b50}
