@@ -31,7 +31,9 @@ function Text({text}:{text:string}){
 }
 /** Spoken answers to an open confirmation card are handled on the client, without the server. JS \b ignores Cyrillic, hence the lookahead. */
 /** A short answer to an open card is «yes»; «Отправь билет 2 Кузнецову» is a new command even though it starts with «отправь». */
-const VOICE_YES=/^(?:да[,\s]+)?(создай|создать|отправь|отправить|опубликуй|да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|отправляй|отправь|отправить|назначай|выдавай|сохрани|сохранить|ок|окей|хорошо)(?:[,\s]+(?:пожалуйста|да|его|её|это))?[\s.,!?]*$/i;
+const VOICE_YES=/^(?:да[,\s]+)?(создай|создать|отправь|отправить|опубликуй|да|ага|выполняй|выполни|выполнить|подтверждаю|подтверди|давай|отправляй|отправь|отправить|назначай|выдавай|сохрани|сохраняй|сохранить|ок|окей|хорошо|отлично|оставляй|оставь|ладно)(?:[,\s]+(?:пожалуйста|да|его|её|это))?[\s.,!?]*$/i;
+/** Opening the current generated draft also confirms saving it to the editor. */
+const OPEN_DRAFT=/^(?:открой|открыть|покажи|показать)(?:\s+(?:его|её|ее|это|этот|черновик|билет|редактор|мне|пожалуйста|в|редакторе))*(?:[,;\s]+(?:я\s+)?(?:посмотрю|посмотрим|проверю))?[\s.,!?]*$/i;
 const VOICE_NO=/^(нет|отмена|отмени|отменить|не надо|не нужно|стоп|не выполняй)(?=[\s.,!?]|$)/i;
 const HINTS=['Что умеешь?','Журнал','Проверить работы','Кто сейчас в классе?','Новый билет'];
 const DIALOG_INTENTS=['create_ticket','edit_ticket','open_ticket','ticket_status','save_ticket','create_group','open_group','create_question','edit_question','create_student','assign_ticket','publish_ticket'];
@@ -167,12 +169,11 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   const dialog=resetDialog?null:latest.current.dialog;
   const phrase=command.trim();
   if(!phrase&&!slots)return null;
-  const pending=latest.current.messages.at(-1)?.confirm;
+  const last=latest.current.messages.at(-1);
+  const pending=last?.confirm||(last?.retry&&'confirm' in last.retry?last.retry.confirm:undefined);
   if(/^(?:да[, ]+)?подтвер(?:ди|дить|ждаю)(?:\s+оценку)?[.!]?$/i.test(phrase)&&document.querySelector('[data-review-open]')){window.dispatchEvent(new CustomEvent('training112:review-command',{detail:{command:/^да/i.test(phrase)?'confirm':'request'}}));return null;}
   if(pending&&VOICE_YES.test(phrase)&&!slots){run(pending,phrase);return null;}
-  if(dialog?.intent==='save_ticket'&&pending?.intent==='save_ticket'&&(/^(?:сохрани|сохранить)$/i.test(phrase)||/(?:открой|открыть|покажи|сохрани).*редактор/i.test(phrase))){
-   run(pending,'Сохранить и открыть');return null;
-  }
+  if(pending?.intent==='save_ticket'&&!slots&&OPEN_DRAFT.test(phrase)){run(pending,'Сохранить и открыть');return null;}
   if(dialog&&!slots)settle(dialog.missing?'отвечено':'уточнено');
   push({who:'user',text:shown||phrase});setText('');setCursor(-1);setBusy('ask');
   if(!slots&&phrase&&!dialog?.missing)setHistory(list=>remember(list,phrase));
@@ -197,9 +198,10 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   setListening('');setHeard(phrase);
   if(/^(?:да[, ]+)?подтвер(?:ди|дить|ждаю)(?:\s+оценку)?[.!]?$/i.test(phrase)&&document.querySelector('[data-review-open]')){await send(phrase);return;}
   const {messages:log,dialog:form}=latest.current;
-  const card=log[log.length-1]?.confirm;
+  const last=log.at(-1);
+  const card=last?.confirm||(last?.retry&&'confirm' in last.retry?last.retry.confirm:undefined);
   if(card&&form){
-   if(VOICE_YES.test(phrase)||card.intent==='save_ticket'&&/(?:открой|покажи).*редактор/i.test(phrase)){run(card,card.intent==='save_ticket'?'Сохранить и открыть':'Выполнить');return;}
+   if(VOICE_YES.test(phrase)||card.intent==='save_ticket'&&OPEN_DRAFT.test(phrase)){run(card,card.intent==='save_ticket'?'Сохранить и открыть':'Выполнить');return;}
    if(VOICE_NO.test(phrase)){cancel();return;}
   }
   if(phrase.length<3){setHeard('');push({who:'assistant',text:'Речь не распознана, повторите.',error:true});return;}
@@ -252,8 +254,8 @@ function AssistantDialog({onClose,store}:{onClose:()=>void,store:Store}){
   if(confirm.intent==='create_ticket')creation.current=confirm;
   try{
    const r:Obj=await api('/assistant/execute','POST',{intent:confirm.intent,slots:confirm.slots,confirm_token:confirm.token});
-   if(r.slots?.version_id)sessionStorage.setItem('assistant:last-version',String(r.slots.version_id));
-   if(r.action?.to?.match(/^\/tickets\/\d+$/))sessionStorage.setItem('assistant:last-version',r.action.to.split('/').at(-1));
+   const savedVersion=r.version_id||r.slots?.version_id||r.action?.to?.match(/^\/tickets\/(\d+)(?:[?#]|$)/)?.[1];
+   if(savedVersion)sessionStorage.setItem('assistant:last-version',String(savedVersion));
    const next=r.confirm_required?{intent:r.intent,slots:r.slots,token:r.confirm_token}:undefined;
    push({who:'assistant',text:r.preview||'Выполнено.',confirm:next,links:r.links?.length?r.links:undefined});
    if(next)setDialog({intent:r.intent,slots:r.slots});

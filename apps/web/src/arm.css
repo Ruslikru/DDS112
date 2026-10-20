@@ -254,3 +254,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(max-width:800px){.arm-service-scope{grid-template-columns:1fr 1fr;gap:5px 12px}.arm-service-scope>div:last-of-type{grid-column:1/-1}}
 
 .arm-app button.arm-create-card:disabled{background:#8b969b;color:#e5e9eb!important;border:12px solid #8b969b;outline-color:#e5e9eb66;opacity:1;cursor:not-allowed;box-shadow:none}
+
+.admin-console nav>a,.admin-console nav>button,.admin-console nav .arm-logout-guide-anchor>button{box-sizing:border-box;min-height:50px;gap:3px;padding:4px 5px}.admin-console nav>a>svg,.admin-console nav>button>svg,.admin-console nav .arm-logout-guide-anchor>button>svg{flex:none}.admin-console nav>a>span,.admin-console nav>button>span,.admin-console nav .arm-logout-guide-anchor>button>span{display:flex;align-items:center;justify-content:center;min-height:22px;max-width:100%;line-height:11px;text-align:center}.admin-console nav .arm-logout-guide-anchor{flex:1}

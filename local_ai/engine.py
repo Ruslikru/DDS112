@@ -30,6 +30,9 @@ class LocalEngine:
         self.url = None
         self.key = secrets.token_urlsafe(32)
         self.lock = threading.Lock()
+        self.queue = threading.Condition()
+        self.waiters = []
+        self.request_sequence = 0
         self.error = ''
         self.on_event = lambda *args, **kwargs: None
         self.log_thread = None
@@ -160,12 +163,34 @@ class LocalEngine:
         self.stop()
         raise AIUnavailable('Нейросеть не запустилась. Проверьте local-ai.log; для GPU нужен драйвер Vulkan.')
 
-    def complete(self, system, prompt, schema, tokens=128, temperature=0):
+    def acquire_request(self,priority=0,timeout=180):
+        """FIFO within each priority; interactive work goes before waiting background checks."""
+        deadline=time.monotonic()+timeout
+        with self.queue:
+            self.request_sequence+=1
+            ticket=(priority,self.request_sequence)
+            self.waiters.append(ticket)
+            try:
+                while True:
+                    if ticket==min(self.waiters) and self.lock.acquire(blocking=False):return
+                    remaining=deadline-time.monotonic()
+                    if remaining<=0:raise AIUnavailable('Не удалось дождаться ответа сервера. Запрос не выполнен.')
+                    self.queue.wait(min(remaining,.2))
+            finally:
+                self.waiters.remove(ticket)
+                self.queue.notify_all()
+
+    def release_request(self):
+        with self.queue:
+            self.lock.release()
+            self.queue.notify_all()
+
+    def complete(self, system, prompt, schema, tokens=128, temperature=0, *, priority=0):
         if self.delegate and self.config()['execution']=='workstations':
             result=self.delegate(system,prompt,schema,tokens,temperature)
             if result is not None:return result
-        # Fail fast instead of holding an unbounded queue on the minimum CPU.
-        if not self.lock.acquire(blocking=False): raise AIUnavailable('Нейросеть занята другим запросом. Повторите через несколько секунд.')
+        queued=time.monotonic()
+        self.acquire_request(priority)
         started = time.monotonic()
         warm=self.process is not None and self.process.poll() is None
         try:
@@ -185,6 +210,7 @@ class LocalEngine:
             value=json.loads(choice['message']['content'])
             self.error=''
             timing={'seconds':round(time.monotonic()-started,3),
+                    'queue_seconds':round(started-queued,3),
                     'startup_seconds':round(ready-started,3),
                     'inference_seconds':round(time.monotonic()-ready,3)}
             self.on_event('ai_request_finished',**timing,usage=result.get('usage',{}))
@@ -199,7 +225,7 @@ class LocalEngine:
             self.on_event('ai_request_failed',error_type=type(error).__name__,error=str(error))
             self.error='Не удалось получить корректный ответ локальной модели.'
             raise AIUnavailable(self.error) from error
-        finally: self.lock.release()
+        finally: self.release_request()
 
 
 engine = LocalEngine()

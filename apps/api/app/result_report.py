@@ -80,7 +80,7 @@ def generate(attempt_id):
     try:
         prompt=json.dumps(payload,ensure_ascii=False)
         if len(prompt)>24000:raise ValueError('Слишком большой объём данных для локального отчёта. Требуется проверка преподавателя.')
-        value,meta=ai.complete(SYSTEM,prompt,SCHEMA,tokens=550)
+        value,meta=ai.complete(SYSTEM,prompt,SCHEMA,tokens=550,priority=10)
         if not all(isinstance(value.get(k),str) and value[k].strip() for k in ('summary','recommendation')):raise ValueError('Модель вернула пустой отчёт')
         result={**value,**meta,'at':now(),'advisory':True}
         job={'status':'done','at':now()}

@@ -67,7 +67,7 @@ def review_attempt(attempt_id):
             if apply_cached(c,p.state):continue
             payload=json.dumps({'criterion':c['label'],'expected':c['expected'],'teacher_approved_examples':approved[c['id']],'teacher_rejected_examples':rejected[c['id']],'learner_text':c['actual'],'context':context},ensure_ascii=False,separators=(',',':'))
             if len(payload)>14000:raise ValueError('Слишком большой объём текста для локальной проверки; нужна проверка преподавателя.')
-            value,meta=ai.complete(SYSTEM,payload,SCHEMA,tokens=240)
+            value,meta=ai.complete(SYSTEM,payload,SCHEMA,tokens=240,priority=10)
             verdict=value.get('verdict');reason=value.get('reason');quote=value.get('evidence')
             if verdict not in ['full','partial','incorrect','uncertain'] or not isinstance(reason,str) or not reason.strip() or not isinstance(quote,str):
                 raise ValueError('Некорректный формат оценки модели')

@@ -63,7 +63,7 @@ async def warm_models():
         with _lock:_rows[key]={'state':'warming','signature':signature}
         try:
             if key=='speech':await asyncio.to_thread(worker.warm)
-            else:await asyncio.to_thread(worker.complete,'Return JSON only.','Return ready=true.',schema,tokens=16)
+            else:await asyncio.to_thread(worker.complete,'Return JSON only.','Return ready=true.',schema,tokens=16,priority=20)
             with _lock:_rows[key]={'state':'ready','signature':signature,'pid':worker.process.pid}
             event('model_warm_ready',model=key)
         except Exception as error:

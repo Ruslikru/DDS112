@@ -30,7 +30,7 @@ def generate(id):
     try:
         payload=json.dumps({'criterion':c['label'],'expected':c['expected'],'learner_text':c['actual'],'context':context,'teacher_approved_examples':approved,'teacher_rejected_examples':rejected},ensure_ascii=False)
         if len(payload)>14000:raise ValueError('Слишком большой объём разговора для локальной проверки')
-        value,meta=ai.complete(SYSTEM,payload,SCHEMA,tokens=240)
+        value,meta=ai.complete(SYSTEM,payload,SCHEMA,tokens=240,priority=10)
         if not isinstance(value.get('reason'),str) or not value['reason'].strip() or not isinstance(value.get('evidence'),str):raise ValueError('Некорректный ответ модели')
         verdict=value['verdict']
         if verdict not in ('full','partial','incorrect','uncertain'):raise ValueError('Некорректная оценка')
